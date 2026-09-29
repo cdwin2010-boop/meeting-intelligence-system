@@ -21,6 +21,8 @@ class Meeting(CamelModel):
     title: str
     started_at: str
     attendees: list[Attendee]
+    # 전사 원문. 아직 전사 전이거나 시드 데이터면 None (프론트 화면의 모달/토글에서 열람)
+    transcript_text: str | None = None
 
 
 class Quote(CamelModel):
@@ -56,3 +58,19 @@ class AdminJob(CamelModel):
     started_at: str | None = None
     worker: JobWorker | None = None
     error_log: list[str] = []
+
+
+class UploadReceipt(CamelModel):
+    """업로드 성공(202) 응답: '접수증'. 전사가 끝나기를 기다리지 않고 바로 돌려준다."""
+    meeting_id: str
+    job_id: str
+    status: Literal["queued"]
+
+
+class JobStatus(CamelModel):
+    """일반 사용자가 자기 작업 하나의 진행 상태를 볼 때 쓴다 (관리자용 AdminJob과 별개)."""
+    id: str
+    meeting_id: str  # 시드 작업처럼 회의와 연결되지 않은 경우 "" (None 대신 빈 문자열)
+    status: Literal["queued", "processing", "completed", "failed"]
+    stage: Literal["STT", "LLM"] | None = None
+    error_message: str = ""

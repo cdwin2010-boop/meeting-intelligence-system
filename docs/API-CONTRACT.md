@@ -21,7 +21,7 @@
 
 ## 타입 (`frontend/lib/types.ts`와 동일)
 ```ts
-Meeting    { id, title, startedAt(ISO), attendees: { id, name, role }[] }
+Meeting    { id, title, startedAt(ISO), attendees: { id, name, role }[], transcriptText: string|null }
 ActionItem { id, task, assignee, dueDate(YYYY-MM-DD), status: "open"|"in_progress"|"done"|"overdue",
              quote: { speaker, timestamp(HH:MM:SS), text } }
 AdminJob   { id, meetingTitle, audioSeconds, elapsedSeconds|null, status: "queued"|"processing"|"completed"|"failed",
@@ -29,3 +29,74 @@ AdminJob   { id, meetingTitle, audioSeconds, elapsedSeconds|null, status: "queue
              errorLog: string[] }
 ```
 빈 값 주의: 프로젝트 지침상 `speaker` 등 미정 항목은 `null`이 아니라 `""`. 단 `elapsedSeconds/startedAt/worker/gpu`는 타입대로 `null` 허용.
+
+---
+
+## 음성 등록 API (v1.8)
+
+> 상태: **계약 확정. 스텁 서버는 구현됨(2단계). 프론트(3단계)·실제 백엔드(4단계)는 아직 이 표를 따르지 않음.**
+> 접수창구 비유: 파일을 **맡기면 접수증(작업 ID)을 바로 주고**, 실제 전사는 뒤에서 진행합니다. 손님이 전사가 끝날 때까지 창구 앞에서 기다리지 않습니다.
+
+| 프론트 함수 (예정) | 메서드 | 경로 | 성공 | 실패 |
+|---|---|---|---|---|
+| `uploadMeetingAudio` | POST | `/meetings` (multipart/form-data) | **202** `UploadReceipt` | 400, 409, 413, 415 |
+| `fetchJob` | GET | `/jobs/{jobId}` | 200 `JobStatus` | 404 |
+
+`/admin/jobs`(관리자용 목록)와 별개입니다. 일반 사용자는 **자기 작업 하나의 진행 상태**만 `/jobs/{jobId}`로 봅니다.
+
+### 1) 업로드 요청 (`POST /meetings`)
+| 필드 | 필수 | 설명 |
+|---|---|---|
+| `file` | 필수 | 음성 파일. 확장자 `.mp3 .m4a .wav`만 허용 |
+| `title` | 필수 | 회의 제목 (1~200자, 앞뒤 공백 제거) |
+| `startedAt` | 필수 | 회의 일시 (ISO 8601, 예: `2026-09-29T14:00:00+09:00`). 마감일 계산의 기준 |
+| `engine` | 선택 | `gemini-api`(기본) 또는 `faster-whisper` |
+| `forceLocal` | 선택 | `true`이면 GPU 가드 경고(아래 3번)를 알고도 로컬로 진행 |
+
+- 프론트는 `FormData`로 보내며 **`Content-Type` 헤더를 직접 적지 않는다.** (브라우저가 파일 구분선 값을 붙여야 함)
+- 서버는 확장자만 믿지 않고 **파일 앞부분(시그니처)도 확인**한다. 이름만 `fake.mp3`인 텍스트 파일은 415.
+- 최대 크기는 `.env`의 `MAX_UPLOAD_MB`(기본 500)로 정한다. 넘으면 413, 작업은 만들지 않는다.
+
+### 2) 성공 응답 — 202 `UploadReceipt`
+```ts
+UploadReceipt { meetingId, jobId, status: "queued" }
+```
+- **전사가 끝나기를 기다리지 않고 바로** 돌려준다 (수 초 이내). 202는 "접수됨, 처리는 아직"이라는 뜻.
+- 응답을 주기 전에 회의(`meetings`)와 작업(`jobs`)이 저장되어 있어야 한다. 그래서 곧바로 `/admin/jobs` 큐에 `queued` 또는 `processing`으로 보인다.
+
+### 3) 실패 코드 (프론트는 상태 코드로 분기)
+| 코드 | 언제 | 프론트가 하는 일 |
+|---|---|---|
+| 400 | `title`/`file`/`startedAt` 누락·형식 오류, `engine` 값 오류, 빈 파일(0바이트) | 필드별 안내 표시 (FastAPI가 422를 내면 400과 같게 취급) |
+| 409 | **GPU 가드 경고**: `engine=faster-whisper`이고 예상 처리 시간이 20분 이상, `forceLocal`이 없음. 본문 `detail`: `{"code":"gpu_guard","expectedMinutes":<숫자>}` | 경고창에서 "Gemini로 전환 / 그래도 로컬로 / 취소" 선택. 이 경우 작업은 만들어지지 않음 |
+| 413 | 파일이 `MAX_UPLOAD_MB` 초과 | "파일이 너무 큽니다 (최대 N MB)" |
+| 415 | 확장자 불허 또는 시그니처가 음성이 아님 | "지원하지 않는 파일 형식" |
+
+- 오류가 나면 **회의·작업을 저장하지 않는다.** (반쯤 만들어진 작업 방지)
+- 409는 기존 규칙 1(`invalid_state`)과 겹치므로, 프론트는 **업로드 함수에서만** 본문의 `detail.code == "gpu_guard"`를 먼저 확인한다.
+
+### 3-1) 전사 원문 (`transcriptText`) — 확정
+- 전사 원문은 **서버 파일이 아니라 `Meeting.transcriptText`(문자열, 없으면 `null`)** 로 응답에 담는다. 화면(모달 또는 토글 영역)이 `GET /meetings/{meetingId}`로 바로 읽는다.
+- 전사 전(`queued`/`processing`)과 시드 회의는 `null`. `completed`가 되면 채워진다.
+- 진행 조회(`/jobs/{jobId}`)에는 넣지 않는다 (폴링마다 긴 글을 주고받지 않기 위해). 원문이 길어지는 문제(1시간 녹음 등)는 4단계에서 다시 본다.
+
+### 4) 작업 상태 조회 — `GET /jobs/{jobId}`
+```ts
+JobStatus { id, meetingId, status: "queued"|"processing"|"completed"|"failed",
+            stage: "STT"|"LLM"|null, errorMessage: string }   // 실패가 아니면 errorMessage는 ""
+```
+- `completed`가 되면 `/meetings/{meetingId}/action-items`에 결과가 있다. `failed`면 `errorMessage`에 사람이 읽을 이유(내부 스택 트레이스 금지).
+- 화면은 몇 초 간격으로 조회(폴링)하되, 탭이 보일 때만 하고 `completed`/`failed`에서 멈춘다 (AdminConsole과 같은 방식).
+
+### 5) 요청 기한 (타임아웃)
+- 업로드는 큰 파일이라 기존 기본 10초로는 부족하다. 업로드에만 `NEXT_PUBLIC_UPLOAD_TIMEOUT_MS`(기본 600000 = 10분)를 따로 쓴다. 조회 계열은 기존 `NEXT_PUBLIC_API_TIMEOUT_MS`(10초) 유지.
+- 서버가 응답한 뒤(202)의 전사 시간은 이 기한과 무관하다.
+
+### 6) 이 계약에서 일부러 정하지 않은 것
+- 화자 분리 결과의 응답 모양, 업로드 취소, 같은 파일 중복 업로드 처리.
+- 인증: 스텁에는 없음. 운영에서는 업로드도 로그인 사용자만 가능해야 한다.
+
+### 7) 스텁 서버가 하는 일 (참고)
+- 음성을 해석하지 않고 **버린다.** 길이는 파일 크기로 어림(16,000 바이트 ≈ 1초)하고, 확장자와 파일 앞부분(시그니처)만 검사한다.
+- 가짜 처리기: 접수 후 `FAKE_WORKER_STEP_SECONDS`(기본 3초)마다 `queued → processing(STT) → processing(LLM) → completed`. 완료 시 테스트 가이드 A파일 정답표와 같은 액션아이템 2건과 전사 원문을 만든다. 처리 중 Kill 하면 처리기가 멈추고 결과를 저장하지 않는다.
+- 업로드로 만든 작업을 Retry하면 처리기가 다시 돈다. 시드 작업은 Retry해도 `queued`로 남는다.

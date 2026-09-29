@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.8.0-draft — 2026-09-29 (계약 + 스텁 구현, 프론트는 아직)
+### 추가
+- `docs/API-CONTRACT.md` — "음성 등록 API" 절: `POST /meetings`(multipart, 202 접수증), `GET /jobs/{jobId}`, 오류 코드(400·409 GPU 가드·413·415), 업로드 전용 타임아웃. `Meeting.transcriptText`(문자열|null)로 전사 원문 제공을 확정.
+- `backend-contract-stub` — 위 계약 구현: `app/uploads.py`(확장자·시그니처 검사, 가짜 결과), `app/fake_worker.py`(가짜 처리기), 저장소 확장(조건부 UPDATE), `tests/test_upload.py`. 설정 4개 추가(`MAX_UPLOAD_MB`, `GPU_GUARD_THRESHOLD_MINUTES`, `FAKE_WORKER_ENABLED`, `FAKE_WORKER_STEP_SECONDS`).
+- `requirements.txt`에 `python-multipart` 추가 → **`pip install -r requirements.txt`를 다시 실행해야 서버가 켜집니다.**
+### 알려진 한계
+- 이 패키지를 만든 환경은 PyPI가 막혀 있어 **스텁 서버와 pytest(기존 12 + 신규)는 실행해 보지 못했습니다.** 순수 로직(`uploads.py`)만 단독으로 검증했습니다. 사용자 PC에서 `pytest -q` 확인 필요.
+- 프론트(`/upload` 화면, `uploadMeetingAudio`, `fetchJob`, 전사 원문 보기)는 3단계.
+
+## v1.7.2 — 2026-09-29
+### 수정
+- `.gitignore` — `!.env.local.example` 추가. 기존 `.env.*` 패턴이 예시 파일까지 제외해서 Git에 추적되지 않던 문제(가이드가 복사하라고 안내하는 파일이 저장소에 빠짐)를 고침. 실제 `.env.local`은 계속 제외.
+- API 기본 주소 기본값을 `localhost` → `127.0.0.1`로 변경 (`api-http.ts`, `.env.local.example`, README, CLAUDE.md, API-CONTRACT.md). Windows에서 서버 컴포넌트가 `localhost`를 IPv6(`::1`)로 먼저 찾아 `ECONNREFUSED`(사용자 화면 500)가 나던 문제 방지.
+### 확인됨
+- 사용자 PC에서 `npm run typecheck` 통과(오류 0건), 스텁 `pytest -q` 12건 통과, 화면 ↔ 스텁 연동(`USE_MOCK=false`) 확인.
+
 ## v1.7.1 — 2026-09-29
 ### 수정
 - `frontend/lib/api-http.ts` — 요청 기한(타임아웃, 기본 10초) 추가. 서버가 응답을 안 주면 화면이 "Loading…"에서 영원히 멈추던 문제를 "오류 안내"로 바꿈. 화면이 취소한 요청은 규칙대로 `AbortError` 그대로 통과.

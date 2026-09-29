@@ -2,6 +2,8 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 pydantic>=2.7
 pydantic-settings>=2.4
+# 파일 업로드(multipart/form-data)를 받으려면 필요합니다 (v1.8부터)
+python-multipart>=0.0.9
 # 테스트용
 pytest>=8
 httpx>=0.27
