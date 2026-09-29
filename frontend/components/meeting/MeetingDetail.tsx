@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { deleteActionItem, fetchActionItems, isAbortError } from "@/lib/api";
 import type { ActionItem, Meeting, SortKey, SortState } from "@/lib/types";
 import { ActionItemTable } from "./ActionItemTable";
 import { DeleteActionItemModal } from "./DeleteActionItemModal";
 import { MeetingHeader } from "./MeetingHeader";
+import { TranscriptViewer } from "./TranscriptViewer";
 
 /** 단일 열 3-State 정렬: 없음 → 오름차순 → 내림차순 → 없음 (다른 열을 누르면 그 열의 오름차순부터) */
 function nextSort(current: SortState, key: SortKey): SortState {
@@ -107,6 +109,15 @@ export function MeetingDetail({ meeting }: { meeting: Meeting }) {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-12">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <TranscriptViewer transcriptText={meeting.transcriptText} />
+        <Link
+          href="/upload"
+          className="mn-focus inline-flex h-8 items-center rounded-mn-control border border-mn-border px-3 text-[13px] font-medium text-mn-text hover:bg-mn-elevated"
+        >
+          음성 등록
+        </Link>
+      </div>
       <MeetingHeader meeting={meeting} />
 
       <section aria-labelledby="action-items-heading" className="flex flex-col gap-3">

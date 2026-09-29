@@ -12,7 +12,7 @@ meeting-intelligence-system-v1.7/
 ├── CLAUDE.md               ← Claude CLI가 매번 읽는 프로젝트 규칙 (루트에 그대로 둘 것)
 ├── .gitignore              ← node_modules, .env, venv 등을 Git에서 제외
 ├── docs/API-CONTRACT.md    ← 프론트 ↔ 백엔드 API 계약서 (경로·오류코드·타입)
-├── frontend/               ← Next.js 15 + Tailwind v4 (회의록 상세 "/", 관리자 콘솔 "/admin")
+├── frontend/               ← Next.js 15 + Tailwind v4 (회의록 상세 "/", 회의별 상세 "/meetings/[id]", 음성 등록 "/upload", 관리자 콘솔 "/admin")
 ├── backend-contract-stub/  ← API 계약 확인용 참고 서버 (운영 백엔드가 아님, 아래 설명)
 └── backend/                ← (직접 만드는 폴더) 기존 FastAPI 백엔드를 여기에 복사
 ```
@@ -28,7 +28,7 @@ VS Code에서 이 폴더를 열고 터미널(**Ctrl + 백틱**, 숫자 1 왼쪽 
 cd frontend
 npm install          # 부품 내려받기 (몇 분)
 npm run typecheck    # 타입 검사: 아무 출력 없이 끝나면 통과
-npm run dev          # http://localhost:3000  (관리자: /admin)
+npm run dev          # http://localhost:3000  (음성 등록: /upload, 회의별 상세: /meetings/[id], 관리자: /admin)
 ```
 
 > ⚠️ 이 패키지는 npm이 막힌 환경에서 만들어져 **`npm install` / `typecheck` / 첫 `next build`는 실행해 보지 못했습니다.**

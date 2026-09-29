@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.8.0 — 2026-09-29 (프론트 음성 등록 화면, 전사 원문 보기, /meetings/[id])
+### 추가
+- `/upload` — 음성 등록 화면(`components/upload/UploadForm.tsx`). 파일(mp3·m4a·wav)·회의 제목·회의 일시(KST, `+09:00` ISO로 전송)·엔진 선택. 제출 전 검사(입력칸 아래 글자 안내, `aria-describedby`), 제출 중 "Uploading…"·이중 제출 방지·Cancel upload(AbortController), 오류 코드별 한국어 안내.
+- GPU 가드 경고 모달 — "Gemini API로 전환해 업로드 / 그래도 로컬로 진행(`forceLocal`) / 취소", 첫 포커스는 취소.
+- `components/upload/UploadProgress.tsx` — 접수증의 Job ID로 `fetchJob`을 `NEXT_PUBLIC_UPLOAD_POLL_MS`(기본 3초)마다 조회. 탭이 보일 때만, `completed`/`failed`에서 멈춤, 실패 시 조용히 재시도. 완료되면 "결과 보기"(`/meetings/{meetingId}`).
+- `/meetings/[id]` — 회의별 상세 화면(서버 컴포넌트). 없으면 404. 목 모드에서는 업로드한 회의가 브라우저 메모리에만 있으므로 `MockMeetingLoader`가 브라우저에서 다시 조회.
+- 전사 원문 보기(`components/meeting/TranscriptViewer.tsx`) — `Meeting.transcriptText`를 모달에서 Geist Mono로 표시. 원문이 없으면 버튼 비활성화 + "전사 전이거나 원문이 없습니다".
+- 진입 링크 — 회의 상세 상단 "음성 등록", `/upload`의 "회의 목록으로"(현재는 `/` 기본 회의로 이동).
+- (3단계-A) `lib/` 통신 코드: `uploadMeetingAudio`, `fetchJob`, `GpuGuardError`, 업로드 오류 코드, 목 업로드 흐름, `.env.local.example`에 `NEXT_PUBLIC_UPLOAD_TIMEOUT_MS`·`NEXT_PUBLIC_UPLOAD_POLL_MS`.
+### 알려진 한계
+- 목 모드에서 업로드한 회의·작업은 브라우저 메모리에만 있어 새로고침하면 사라지고, 관리자 큐(`/admin`)에는 보이지 않습니다.
+- 회의 목록 화면은 아직 없습니다("회의 목록으로"는 `/`로 이동).
+
 ## v1.8.0-draft — 2026-09-29 (계약 + 스텁 구현, 프론트는 아직)
 ### 추가
 - `docs/API-CONTRACT.md` — "음성 등록 API" 절: `POST /meetings`(multipart, 202 접수증), `GET /jobs/{jobId}`, 오류 코드(400·409 GPU 가드·413·415), 업로드 전용 타임아웃. `Meeting.transcriptText`(문자열|null)로 전사 원문 제공을 확정.
