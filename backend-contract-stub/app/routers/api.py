@@ -109,7 +109,12 @@ async def upload_meeting(
             raise HTTPException(status_code=501, detail="local engine (faster-whisper) is not supported yet")
         # 키가 없어도 서버는 켜지되, 처리할 수 없는 작업은 받지 않는다
         if settings.uses_gemini and not settings.has_gemini_key:
-            raise HTTPException(status_code=503, detail="Gemini API key is not configured on the server")
+            # 어느 모드의 키가 비었는지만 알린다 (변수 이름만, 값은 절대 넣지 않음)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Gemini API key for GEMINI_KEY_MODE={settings.gemini_key_mode} "
+                       f"({settings.gemini_key_env_name}) is not configured on the server",
+            )
 
         meeting_id, job_id = store.create_upload(title, started.isoformat(), engine, audio_seconds)
         temp.replace(job_path(job_id, ext))  # 작업 ID가 정해진 뒤 이름을 바꿔 보관 (경로는 응답에 넣지 않는다)

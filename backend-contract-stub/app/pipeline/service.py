@@ -39,9 +39,8 @@ _KEY_PATTERN = re.compile(r"AIza[0-9A-Za-z_\-]{20,}")  # Google API 키 모양
 
 
 def redact(text: str) -> str:
-    """혹시라도 문장에 API 키가 섞이면 가린다 (설정된 키 값 + 키 모양 문자열)."""
-    key = settings.gemini_api_key.get_secret_value().strip()
-    if key:
+    """혹시라도 문장에 API 키가 섞이면 가린다 (무료·유료 키 값 모두 + 키 모양 문자열)."""
+    for key in settings.all_gemini_keys():
         text = text.replace(key, "***")
     return _KEY_PATTERN.sub("***", text)
 
@@ -70,6 +69,9 @@ def describe_error(exc: BaseException) -> str:
     if genai_errors is not None and isinstance(exc, genai_errors.APIError):
         code = exc.code
         if code == 429:
+            if settings.gemini_key_mode == "free":
+                # 자동으로 유료 키로 넘어가지 않는다. 전환은 사람이 설정으로 결정한다.
+                return "무료 키 한도(할당량) 초과(429). GEMINI_KEY_MODE=paid로 바꾸면 유료 키를 씁니다."
             return "Gemini API 사용 한도(할당량)를 초과했습니다(429). 잠시 후 Retry 하세요."
         if code in (401, 403):
             return f"Gemini API 인증에 실패했습니다({code}). 서버의 API 키 설정을 확인해 주세요."
@@ -97,6 +99,7 @@ def process_job(
     with _slot:
         if not store.start_if_queued(job_id):
             return  # 이미 시작됐거나 취소됨 → 중복 실행 방지
+        log.info("job=%s 키 모드: %s", job_id, settings.gemini_key_mode)  # 모드만. 키 값·일부 글자도 남기지 않는다
 
         audio = find_upload(job_id)
         if audio is None:

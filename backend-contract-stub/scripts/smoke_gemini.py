@@ -43,10 +43,10 @@ def main(argv: list[str]) -> int:
 
     print(f"STT_PROVIDER={settings.stt_provider} ({settings.gemini_stt_model if settings.stt_provider == 'gemini' else '가짜'})")
     print(f"LLM_PROVIDER={settings.llm_provider} ({settings.gemini_llm_model if settings.llm_provider == 'gemini' else '가짜'})")
-    print(f"GEMINI_API_KEY: {'설정됨' if settings.has_gemini_key else '없음'}")
+    print(f"키 모드: {settings.gemini_key_mode}, 키: {'설정됨' if settings.has_gemini_key else '없음'}")
     print(f"음성: {audio.name} ({audio.stat().st_size:,} bytes, {AUDIO_MIME_TYPES[ext]}), 회의일시: {started_at.isoformat()}")
     if settings.uses_gemini and not settings.has_gemini_key:
-        print("gemini 모드인데 GEMINI_API_KEY 가 비어 있습니다. .env 를 확인하세요.")
+        print(f"키 모드가 {settings.gemini_key_mode} 인데 {settings.gemini_key_env_name} 가 비어 있습니다. .env 를 확인하세요.")
         return 1
 
     # ---- STT ----

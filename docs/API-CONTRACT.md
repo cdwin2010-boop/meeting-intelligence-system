@@ -72,7 +72,7 @@ UploadReceipt { meetingId, jobId, status: "queued" }
 | 413 | 파일이 `MAX_UPLOAD_MB` 초과 | "파일이 너무 큽니다 (최대 N MB)" |
 | 415 | 확장자 불허 또는 시그니처가 음성이 아님 | "지원하지 않는 파일 형식" |
 | 501 | (v1.9) 서버가 Gemini 파이프라인(`STT_PROVIDER=gemini`)인데 `engine=faster-whisper`. 로컬 엔진은 아직 지원하지 않음. GPU 가드(409) 검사가 먼저 | "로컬 엔진은 아직 지원하지 않습니다. Gemini로 올려 주세요" |
-| 503 | (v1.9) 서버가 gemini 모드인데 `GEMINI_API_KEY`가 설정되지 않음 (서버는 켜져 있음) | "서버 설정 문제로 지금은 접수할 수 없습니다. 관리자에게 문의" |
+| 503 | (v1.9) 서버가 gemini 모드인데 `GEMINI_KEY_MODE`로 고른 키(free=`GEMINI_API_KEY`, paid=`GEMINI_PAID_API_KEY`)가 비어 있음 (서버는 켜져 있음). `detail`에 모드와 변수 이름만 적고 키 값은 넣지 않음 | "서버 설정 문제로 지금은 접수할 수 없습니다. 관리자에게 문의" |
 
 - 오류가 나면 **회의·작업을 저장하지 않는다.** (반쯤 만들어진 작업 방지)
 - 409는 기존 규칙 1(`invalid_state`)과 겹치므로, 프론트는 **업로드 함수에서만** 본문의 `detail.code == "gpu_guard"`를 먼저 확인한다.

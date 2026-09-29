@@ -24,9 +24,12 @@ class Settings(BaseSettings):
     stt_provider: Literal["fake", "gemini"] = "fake"
     llm_provider: Literal["fake", "gemini"] = "fake"
     # SecretStr: 실수로 print/로그에 찍혀도 '**********'로만 보인다. 값은 get_secret_value()로만 꺼낸다.
-    gemini_api_key: SecretStr = SecretStr("")
-    gemini_stt_model: str = "gemini-3.8-flash"
-    gemini_llm_model: str = "gemini-3.8-flash"
+    gemini_api_key: SecretStr = SecretStr("")  # 무료 키
+    gemini_paid_api_key: SecretStr = SecretStr("")  # 유료 키
+    # 어느 키를 쓸지는 이 값으로만 정한다. 무료 키가 429에 걸려도 유료 키로 자동 전환하지 않는다(모르는 새 비용 방지).
+    gemini_key_mode: Literal["free", "paid"] = "free"
+    gemini_stt_model: str = "gemini-2.5-flash"
+    gemini_llm_model: str = "gemini-2.5-flash"
     gemini_timeout_seconds: float = 300.0  # Gemini 요청 1건의 기한(초)
     # 업로드한 음성을 처리 전까지 보관하는 폴더. completed 면 지우고, failed 면 Retry 를 위해 남긴다.
     upload_dir: Path = Path(tempfile.gettempdir()) / "meeting-uploads"
@@ -41,8 +44,24 @@ class Settings(BaseSettings):
         return self.stt_provider == "gemini" or self.llm_provider == "gemini"
 
     @property
+    def gemini_key_env_name(self) -> str:
+        """현재 모드가 쓰는 키의 환경변수 이름 (안내 문구용. 값이 아님)"""
+        return "GEMINI_PAID_API_KEY" if self.gemini_key_mode == "paid" else "GEMINI_API_KEY"
+
+    def selected_gemini_key(self) -> str:
+        """GEMINI_KEY_MODE 로 고른 키 값. 클라이언트 생성에만 쓰고 출력·로그에는 절대 쓰지 않는다."""
+        key = self.gemini_paid_api_key if self.gemini_key_mode == "paid" else self.gemini_api_key
+        return key.get_secret_value().strip()
+
+    def all_gemini_keys(self) -> list[str]:
+        """오류 문구 가리기(redact)용: 설정된 키 전부 (무료·유료)"""
+        keys = (self.gemini_api_key.get_secret_value().strip(), self.gemini_paid_api_key.get_secret_value().strip())
+        return [k for k in keys if k]
+
+    @property
     def has_gemini_key(self) -> bool:
-        return bool(self.gemini_api_key.get_secret_value().strip())
+        """현재 모드의 키가 있는지 (다른 모드의 키는 보지 않는다)"""
+        return bool(self.selected_gemini_key())
 
 
 settings = Settings()

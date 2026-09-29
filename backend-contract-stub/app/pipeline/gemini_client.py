@@ -8,6 +8,6 @@ def make_gemini_client():
 
     # HttpOptions.timeout 단위는 밀리초 (설치된 google-genai 에서 확인)
     return genai.Client(
-        api_key=settings.gemini_api_key.get_secret_value(),
+        api_key=settings.selected_gemini_key(),  # GEMINI_KEY_MODE 로 고른 키 (free/paid)
         http_options=types.HttpOptions(timeout=int(settings.gemini_timeout_seconds * 1000)),
     )

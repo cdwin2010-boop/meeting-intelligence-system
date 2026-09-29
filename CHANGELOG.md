@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.9.1 — 2026-09-29 (Gemini 무료/유료 키, 모델 기본값)
+### 추가
+- 설정 `GEMINI_PAID_API_KEY`(유료 키), `GEMINI_KEY_MODE`(`free` | `paid`, 기본 `free`). `GEMINI_API_KEY`는 무료 키. 쓰는 키는 모드로만 고르며, 무료 키가 429에 걸려도 **유료 키로 자동 전환하지 않음**(free 모드의 429 실패 이유에 "GEMINI_KEY_MODE=paid로 바꾸면 유료 키를 씁니다" 안내).
+- 503은 선택된 모드의 키가 비었을 때만. `detail`에 모드와 변수 이름만 적음. 작업 시작 로그에 "키 모드: free/paid"만 남김. 오류 문구 가리기(redact)는 두 키 모두에 적용.
+- `tests/test_gemini_keys.py`(13건). conftest가 두 키와 모드도 테스트용 값으로 고정.
+### 변경
+- 모델 기본값 `gemini-3.8-flash` → `gemini-2.5-flash` (`GEMINI_STT_MODEL`, `GEMINI_LLM_MODEL`). 계정의 모델 목록에서 확인된 이름.
+- smoke 스크립트는 "키 모드: free/paid, 키: 설정됨/없음"만 표시.
+
 ## v1.9.0 — 2026-09-29 (4단계-A: Gemini 처리 파이프라인, 스텁)
 ### 추가
 - `backend-contract-stub/app/pipeline/` — `stt.py`(FakeStt / GeminiStt: 파일 업로드 → ACTIVE 대기 → 전사 → finally 원격 파일 삭제), `extractor.py`(Pydantic `ActionItemList` 구조화 출력, FakeExtractor / GeminiExtractor, 날짜·빈 task 후처리), `service.py`(`process_job`: STT → LLM, 조건부 UPDATE, 동시 처리 1건, 단계별 소요 시간 로그, 실패 요약·키 가림), `gemini_client.py`.
