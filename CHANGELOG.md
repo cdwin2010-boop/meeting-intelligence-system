@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.9.0 — 2026-09-29 (4단계-A: Gemini 처리 파이프라인, 스텁)
+### 추가
+- `backend-contract-stub/app/pipeline/` — `stt.py`(FakeStt / GeminiStt: 파일 업로드 → ACTIVE 대기 → 전사 → finally 원격 파일 삭제), `extractor.py`(Pydantic `ActionItemList` 구조화 출력, FakeExtractor / GeminiExtractor, 날짜·빈 task 후처리), `service.py`(`process_job`: STT → LLM, 조건부 UPDATE, 동시 처리 1건, 단계별 소요 시간 로그, 실패 요약·키 가림), `gemini_client.py`.
+- 설정: `STT_PROVIDER`, `LLM_PROVIDER`(기본 `fake`), `GEMINI_API_KEY`(SecretStr), `GEMINI_STT_MODEL`, `GEMINI_LLM_MODEL`, `GEMINI_TIMEOUT_SECONDS`, `UPLOAD_DIR`.
+- 업로드 음성 보관(`app/upload_storage.py`): `UPLOAD_DIR/<jobId>.<확장자>`. completed면 삭제, failed면 Retry용으로 보관, 검사 실패 시 즉시 삭제.
+- 오류 코드: 501(gemini 모드 + `engine=faster-whisper`), 503(gemini 모드인데 키 없음), Retry 시 음성 파일이 없으면 409.
+- `store.fail_if_processing` (조건부 UPDATE).
+- `scripts/smoke_gemini.py` — `.env` 설정으로 STT → 추출을 수동 확인(키 값 미출력).
+- 테스트 `tests/test_pipeline.py`(34건, 네트워크·키 없이 가짜 클라이언트 주입), `tests/conftest.py`(테스트마다 임시 `UPLOAD_DIR`, 파이프라인 설정 fake 고정).
+- `requirements.txt`에 `google-genai>=2.25.0` 추가 → **`pip install -r requirements.txt` 다시 실행 필요.**
+### 변경
+- `docs/API-CONTRACT.md` — 실패 코드 표에 501·503, "3-2) 음성 저장·삭제 정책", 7) 스텁 설명 갱신.
+- `backend-contract-stub/requirements.txt` 주석을 ASCII로 바꿈. Python 3.11 기본 pip(24.0)가 한국어 Windows에서 이 파일을 cp949로 읽어 `UnicodeDecodeError`로 설치가 멈추던 문제(v1.8 한국어 주석부터 발생). pip 26 이상에서는 원래 문제 없음.
+- `.gitignore`에 `meeting-uploads/` 추가 (`UPLOAD_DIR`를 저장소 안에 둘 때 녹음 파일이 커밋되지 않게).
+### 알려진 한계
+- 실제 Gemini 호출은 이 작업에서 실행하지 않았습니다(키 없음). `python -m scripts.smoke_gemini`로 확인 필요. MIME 표(.mp3 `audio/mp3`, .m4a `audio/mp4`, .wav `audio/wav`)가 API에서 거절되면 그 오류가 그대로 실패 이유에 표시됩니다.
+- 프론트는 501·503을 아직 구분하지 않습니다(일반 오류 안내). 다음 단계에서 반영.
+
 ## v1.8.0 — 2026-09-29 (프론트 음성 등록 화면, 전사 원문 보기, /meetings/[id])
 ### 추가
 - `/upload` — 음성 등록 화면(`components/upload/UploadForm.tsx`). 파일(mp3·m4a·wav)·회의 제목·회의 일시(KST, `+09:00` ISO로 전송)·엔진 선택. 제출 전 검사(입력칸 아래 글자 안내, `aria-describedby`), 제출 중 "Uploading…"·이중 제출 방지·Cancel upload(AbortController), 오류 코드별 한국어 안내.

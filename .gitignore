@@ -16,6 +16,9 @@ __pycache__/
 .env.*
 !.env.example
 
+# 업로드 음성 보관 폴더(UPLOAD_DIR). 기본값은 시스템 임시 폴더(저장소 밖)지만, 저장소 안에 둘 때를 대비해 제외
+meeting-uploads/
+
 # 로컬 DB(회의 내용이 들어 있을 수 있음) / 개인 설정 — 실제 DB 파일 이름에 맞게 조정
 *.db
 *.sqlite3

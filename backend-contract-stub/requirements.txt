@@ -2,8 +2,11 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 pydantic>=2.7
 pydantic-settings>=2.4
-# 파일 업로드(multipart/form-data)를 받으려면 필요합니다 (v1.8부터)
+# multipart/form-data file upload (since v1.8)
 python-multipart>=0.0.9
-# 테스트용
+# Gemini API STT/extraction (v1.9, STT_PROVIDER/LLM_PROVIDER=gemini). Verified with 2.25.0
+google-genai>=2.25.0
+# Keep this file ASCII-only: pip < 25 on Korean Windows reads it as cp949 and fails on non-ASCII comments
+# tests
 pytest>=8
 httpx>=0.27

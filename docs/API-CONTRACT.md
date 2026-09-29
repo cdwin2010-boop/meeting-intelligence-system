@@ -9,7 +9,7 @@
 | `fetchActionItems` | GET | `/meetings/{meetingId}/action-items?sortKey=&direction=` | 200 `ActionItem[]` | 404, 400(잘못된 sortKey) |
 | `deleteActionItem` | DELETE | `/action-items/{id}` | 204 (본문 없음) | 404 |
 | `fetchAdminJobs` | GET | `/admin/jobs?sortKey=&direction=` | 200 `AdminJob[]` | 400, 401/403 |
-| `retryJob` | POST | `/admin/jobs/{id}/retry` | 200 `AdminJob` (status=`queued`) | 404, 409(실패 상태가 아님) |
+| `retryJob` | POST | `/admin/jobs/{id}/retry` | 200 `AdminJob` (status=`queued`) | 404, 409(실패 상태가 아님, 또는 업로드 작업의 음성 파일이 없어짐) |
 | `killJob` | POST | `/admin/jobs/{id}/kill` | 200 `AdminJob` (status=`failed`) | 404, 409(처리 중이 아님) |
 
 ## 규칙
@@ -71,6 +71,8 @@ UploadReceipt { meetingId, jobId, status: "queued" }
 | 409 | **GPU 가드 경고**: `engine=faster-whisper`이고 예상 처리 시간이 20분 이상, `forceLocal`이 없음. 본문 `detail`: `{"code":"gpu_guard","expectedMinutes":<숫자>}` | 경고창에서 "Gemini로 전환 / 그래도 로컬로 / 취소" 선택. 이 경우 작업은 만들어지지 않음 |
 | 413 | 파일이 `MAX_UPLOAD_MB` 초과 | "파일이 너무 큽니다 (최대 N MB)" |
 | 415 | 확장자 불허 또는 시그니처가 음성이 아님 | "지원하지 않는 파일 형식" |
+| 501 | (v1.9) 서버가 Gemini 파이프라인(`STT_PROVIDER=gemini`)인데 `engine=faster-whisper`. 로컬 엔진은 아직 지원하지 않음. GPU 가드(409) 검사가 먼저 | "로컬 엔진은 아직 지원하지 않습니다. Gemini로 올려 주세요" |
+| 503 | (v1.9) 서버가 gemini 모드인데 `GEMINI_API_KEY`가 설정되지 않음 (서버는 켜져 있음) | "서버 설정 문제로 지금은 접수할 수 없습니다. 관리자에게 문의" |
 
 - 오류가 나면 **회의·작업을 저장하지 않는다.** (반쯤 만들어진 작업 방지)
 - 409는 기존 규칙 1(`invalid_state`)과 겹치므로, 프론트는 **업로드 함수에서만** 본문의 `detail.code == "gpu_guard"`를 먼저 확인한다.
@@ -79,6 +81,13 @@ UploadReceipt { meetingId, jobId, status: "queued" }
 - 전사 원문은 **서버 파일이 아니라 `Meeting.transcriptText`(문자열, 없으면 `null`)** 로 응답에 담는다. 화면(모달 또는 토글 영역)이 `GET /meetings/{meetingId}`로 바로 읽는다.
 - 전사 전(`queued`/`processing`)과 시드 회의는 `null`. `completed`가 되면 채워진다.
 - 진행 조회(`/jobs/{jobId}`)에는 넣지 않는다 (폴링마다 긴 글을 주고받지 않기 위해). 원문이 길어지는 문제(1시간 녹음 등)는 4단계에서 다시 본다.
+
+### 3-2) 음성 저장·삭제 정책 (v1.9)
+- 검사를 통과한 음성만 서버의 `UPLOAD_DIR/<jobId>.<확장자>`에 보관한다. 받는 중에는 임시 이름으로 쓰고, 어떤 검사(400·409·413·415·501·503)에 걸려도 지운다.
+- 파일 경로는 **어떤 API 응답에도 넣지 않는다.**
+- 작업이 `completed`가 되면 음성을 지운다. `failed`(무음, Gemini 오류, Kill 등)로 끝나면 Retry를 위해 남긴다.
+- Retry(`POST /admin/jobs/{id}/retry`)할 때 업로드 작업의 음성 파일이 없으면 **409**로 거절하고 상태는 바꾸지 않는다 (다시 업로드해야 함).
+- 실패 이유(`errorMessage`, `errorLog`)는 사람이 읽을 한 줄이다. API 키와 스택 트레이스는 넣지 않는다. 예: "말소리가 감지되지 않았습니다…", "Gemini API 사용 한도(할당량)를 초과했습니다(429)…".
 
 ### 4) 작업 상태 조회 — `GET /jobs/{jobId}`
 ```ts
@@ -97,6 +106,10 @@ JobStatus { id, meetingId, status: "queued"|"processing"|"completed"|"failed",
 - 인증: 스텁에는 없음. 운영에서는 업로드도 로그인 사용자만 가능해야 한다.
 
 ### 7) 스텁 서버가 하는 일 (참고)
-- 음성을 해석하지 않고 **버린다.** 길이는 파일 크기로 어림(16,000 바이트 ≈ 1초)하고, 확장자와 파일 앞부분(시그니처)만 검사한다.
-- 가짜 처리기: 접수 후 `FAKE_WORKER_STEP_SECONDS`(기본 3초)마다 `queued → processing(STT) → processing(LLM) → completed`. 완료 시 테스트 가이드 A파일 정답표와 같은 액션아이템 2건과 전사 원문을 만든다. 처리 중 Kill 하면 처리기가 멈추고 결과를 저장하지 않는다.
-- 업로드로 만든 작업을 Retry하면 처리기가 다시 돈다. 시드 작업은 Retry해도 `queued`로 남는다.
+- 확장자와 파일 앞부분(시그니처)을 검사하고, 통과한 음성을 위 3-2) 정책대로 보관·삭제한다. 길이는 파일 크기로 어림(16,000 바이트 ≈ 1초, GPU 가드 계산용).
+- 처리기는 `.env`의 `STT_PROVIDER`·`LLM_PROVIDER`(각각 `fake` | `gemini`, 기본 `fake`)로 고른다.
+  - **둘 다 `fake`(기본)**: 가짜 처리기. 접수 후 `FAKE_WORKER_STEP_SECONDS`(기본 3초)마다 `queued → processing(STT) → processing(LLM) → completed`. 완료 시 테스트 가이드 A파일 정답표와 같은 액션아이템 2건과 전사 원문을 만든다.
+  - **하나라도 `gemini`**: `app/pipeline`이 STT(Gemini 파일 업로드 → 전사) → LLM(구조화 출력 `ActionItemList`로 추출)을 실행한다. 한 번에 한 작업만 처리하고 나머지는 `queued`로 기다린다. 전사가 비었거나 `[NO_SPEECH]`이면 `failed`. Gemini 오류(429·인증·타임아웃 등)도 `failed` + 사람이 읽을 요약 한 줄. 모델·키·기한은 `GEMINI_*` 설정으로 정한다.
+- 처리 중 Kill 하면 처리기가 멈추고 결과를 저장하지 않는다 (단계마다 조건부 UPDATE).
+- 업로드로 만든 작업을 Retry하면 처리기가 다시 돈다(음성 파일이 있어야 함). 시드 작업은 Retry해도 `queued`로 남는다.
+- 수동 확인: `python -m scripts.smoke_gemini <음성파일> [회의일시 ISO]` — 서버 없이 `.env` 설정으로 STT → 추출 결과와 단계별 소요 시간을 출력한다(키 값은 출력하지 않음).

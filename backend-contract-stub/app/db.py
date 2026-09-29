@@ -205,6 +205,16 @@ class Store:
             self._db.commit()
             return cur.rowcount == 1
 
+    def fail_if_processing(self, job_id: str, log_line: str) -> bool:
+        """처리 중일 때만 failed 로 바꾸고 실패 이유 한 줄을 남긴다. (그 사이 Kill 되었으면 False, 덮어쓰지 않음)"""
+        with self._lock:
+            cur = self._db.execute(
+                "UPDATE jobs SET status = 'failed', error_log = ? WHERE id = ? AND status = 'processing'",
+                (json.dumps([log_line], ensure_ascii=False), job_id),
+            )
+            self._db.commit()
+            return cur.rowcount == 1
+
     def complete_if_processing(self, job_id: str, transcript: str, items: list[dict]) -> bool:
         """처리 중일 때만 completed 로 바꾸고, 같은 트랜잭션에서 전사 원문과 액션아이템을 저장한다."""
         with self._lock:
