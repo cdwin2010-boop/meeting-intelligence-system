@@ -41,7 +41,7 @@ npm run dev          # http://localhost:3000  (관리자: /admin)
 | 변수 | 기본값 | 의미 |
 |---|---|---|
 | `NEXT_PUBLIC_USE_MOCK` | `true` | `true` 목 데이터 / `false` 실제 FastAPI |
-| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000/api` | 실제 서버 기본 주소 (끝에 `/` 없이) |
+| `NEXT_PUBLIC_API_BASE_URL` | `http://127.0.0.1:8000/api` | 실제 서버 기본 주소 (끝에 `/` 없이) |
 | `NEXT_PUBLIC_ADMIN_POLL_MS` | `10000` | 관리자 콘솔 자동 새로고침 주기(ms), `0`이면 끔 |
 | `NEXT_PUBLIC_DEFAULT_MEETING_ID` | `mtg-2026-0925` | `/` 화면이 여는 회의 ID |
 

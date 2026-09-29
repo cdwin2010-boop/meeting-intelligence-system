@@ -1,7 +1,7 @@
 # API 규격 (프론트 ↔ 백엔드 계약서) — v1.7
 
 프론트 `frontend/lib/api-http.ts`와 백엔드가 **같은 표를 보고** 만듭니다. 기존 백엔드 경로가 다르면 이 표를 먼저 고치고 양쪽을 맞추세요.
-기본 주소: `NEXT_PUBLIC_API_BASE_URL` (기본 `http://localhost:8000/api`). JSON 필드는 **camelCase**.
+기본 주소: `NEXT_PUBLIC_API_BASE_URL` (기본 `http://127.0.0.1:8000/api`). JSON 필드는 **camelCase**.
 
 | 프론트 함수 | 메서드 | 경로 (기본 주소 뒤) | 성공 | 실패 |
 |---|---|---|---|---|

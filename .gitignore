@@ -24,3 +24,4 @@ CLAUDE.local.md
 # OS / 에디터
 .DS_Store
 Thumbs.db
+!.env.local.example

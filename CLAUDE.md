@@ -22,7 +22,7 @@
 - 관리자 API(`/api/admin/*`)는 서버에서 권한을 검증한다. 프론트 화면 숨김만으로 보호하지 않는다.
 
 ## API 규약 (프론트 ↔ 백엔드)
-- 기본 주소: `NEXT_PUBLIC_API_BASE_URL` (기본값 http://localhost:8000/api)
+- 기본 주소: `NEXT_PUBLIC_API_BASE_URL` (기본값 http://127.0.0.1:8000/api)
 - JSON 필드는 camelCase로 내려준다(예: meetingTitle). 파이썬 내부는 snake_case를 유지하고 Pydantic alias로 변환한다.
 - 오류: 404 not_found, 409 invalid_state(이미 종료된 작업 등), 401/403 인증·권한, 5xx 서버 오류.
 - 프론트 `lib/api-mock.ts`, `lib/api-http.ts`의 모든 요청 함수는 `signal?: AbortSignal`을 받아 `fetch`에 그대로 전달한다. AbortError는 다시 감싸지 말고 그대로 던진다(호출부의 `isAbortError`가 판별한다).

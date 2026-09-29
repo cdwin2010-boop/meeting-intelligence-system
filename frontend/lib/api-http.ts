@@ -11,7 +11,7 @@ import { ApiError } from "./api-errors";
 import type { ActionItem, AdminJob, JobSortState, Meeting, SortState } from "./types";
 
 // 끝의 "/"는 제거해서 `${BASE_URL}${path}`가 "//"로 겹치지 않게 합니다.
-const BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api").replace(/\/+$/, "");
+const BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api").replace(/\/+$/, "");
 
 // 서버가 연결은 받아 놓고 응답을 안 주면 fetch는 영원히 기다립니다(화면이 "Loading…"에서 멈춤).
 // 그래서 기한(기본 10초)을 두고, 넘기면 "일반 오류"로 바꿔 화면이 오류 안내를 보여 주게 합니다.
