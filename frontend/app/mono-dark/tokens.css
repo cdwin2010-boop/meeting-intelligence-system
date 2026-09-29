@@ -1,0 +1,50 @@
+/*
+ * Mono Dark 디자인 토큰
+ * - 모든 값은 --mn- 접두사를 사용해 shadcn/ui 등 다른 변수와 충돌하지 않게 합니다.
+ * - 컴포넌트 안에서는 hex를 직접 쓰지 않고 반드시 이 변수(또는 Tailwind 유틸)를 씁니다.
+ */
+:root {
+  /* 배경 / 표면 */
+  --mn-background: #000000; /* 페이지 */
+  --mn-surface: #0a0a0a; /* 카드 (항상 1px 테두리와 함께) */
+  --mn-surface-elevated: #171717; /* hover, 모달, 메뉴 */
+  --mn-overlay: #000000b3; /* 모달 백드롭 */
+  --mn-border: #262626; /* 1px 테두리 / 구분선 */
+
+  /* 인터랙션 (Primary Accent = 흰색) */
+  --mn-accent: #ffffff;
+  --mn-accent-hover: #e5e5e5;
+  --mn-on-accent: #000000;
+
+  /* 텍스트 (순백 금지) */
+  --mn-text: #ededed;
+  --mn-text-muted: #a1a1a1;
+  --mn-focus: #a3a3a3;
+
+  /* 상태 전용 유채색 */
+  --mn-blue: #0070f3;
+  --mn-teal: #50e3c2;
+  --mn-red: #ee0000;
+  --mn-red-hover: #cc0000;
+  --mn-on-red: #ffffff;
+
+  /* 그림자는 포커스 링 하나만 허용 */
+  --mn-focus-ring: 0 0 0 1px #000000, 0 0 0 3px #a3a3a3;
+
+  /* 간격 (4px 기준) */
+  --mn-space-1: 4px;
+  --mn-space-2: 8px;
+  --mn-space-3: 12px;
+  --mn-space-4: 16px;
+  --mn-space-6: 24px;
+  --mn-space-8: 32px;
+  --mn-space-12: 48px;
+
+  /* 라운드 */
+  --mn-radius-badge: 4px;
+  --mn-radius-control: 6px;
+  --mn-radius-card: 8px;
+
+  /* 테이블 행 높이 (명세: 48px) */
+  --mn-row-height: 48px;
+}

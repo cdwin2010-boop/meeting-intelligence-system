@@ -1,0 +1,169 @@
+/*
+ * 목(Mock) API — 백엔드 없이 화면을 개발/시연할 때 사용합니다.
+ * 실제 서버 버전은 api-http.ts, 둘 중 무엇을 쓸지는 api.ts가 환경변수로 고릅니다.
+ * 두 파일의 함수 이름/인자/반환 타입은 항상 같아야 합니다.
+ */
+import { ApiError, createAbortError } from "./api-errors";
+import { MOCK_ACTION_ITEMS, MOCK_MEETING } from "./mock-data";
+import { MOCK_JOBS } from "./mock-admin";
+import type {
+  ActionItem,
+  ActionItemStatus,
+  AdminJob,
+  JobSortState,
+  JobStatus,
+  Meeting,
+  SortState,
+} from "./types";
+
+// 삭제가 반영되도록 모듈 안에 "가짜 DB"를 복사해 둡니다.
+let store: ActionItem[] = MOCK_ACTION_ITEMS.map((item) => ({ ...item }));
+
+// 네트워크 지연을 흉내 내되, signal이 abort되면 즉시 reject 합니다.
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(createAbortError());
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(createAbortError());
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+// 상태 정렬 우선순위: 급한 것(overdue)부터
+const STATUS_RANK: Record<ActionItemStatus, number> = {
+  overdue: 0,
+  in_progress: 1,
+  open: 2,
+  done: 3,
+};
+
+function sortItems(items: ActionItem[], sort: SortState): ActionItem[] {
+  if (!sort) return [...items]; // 정렬 없음 = 원래 순서
+  const factor = sort.direction === "asc" ? 1 : -1;
+
+  return [...items].sort((a, b) => {
+    switch (sort.key) {
+      case "status":
+        return (STATUS_RANK[a.status] - STATUS_RANK[b.status]) * factor;
+      case "id":
+      case "dueDate": // ISO 날짜/ID 문자열은 사전순 비교가 곧 시간/번호순
+        return a[sort.key].localeCompare(b[sort.key]) * factor;
+      default:
+        return a[sort.key].localeCompare(b[sort.key], "ko") * factor;
+    }
+  });
+}
+
+export async function fetchMeeting(meetingId: string, signal?: AbortSignal): Promise<Meeting> {
+  await delay(0, signal);
+  if (meetingId !== MOCK_MEETING.id) throw new ApiError("not_found", `Meeting ${meetingId} not found.`);
+  return MOCK_MEETING;
+}
+
+export async function fetchActionItems(
+  _meetingId: string,
+  sort: SortState,
+  signal?: AbortSignal,
+): Promise<ActionItem[]> {
+  await delay(400, signal);
+  return sortItems(store, sort);
+}
+
+export async function deleteActionItem(id: string, signal?: AbortSignal): Promise<void> {
+  await delay(600, signal);
+  store = store.filter((item) => item.id !== id);
+}
+
+/* ------------------------------------------------------------------ *
+ * 관리자 콘솔 목 API: 큐 조회 / 재시도 / 강제 종료
+ * 실제 연동 시 각각 GET /admin/jobs, POST /admin/jobs/{id}/retry, POST /admin/jobs/{id}/kill 로 교체
+ * ------------------------------------------------------------------ */
+
+const cloneJob = (job: AdminJob): AdminJob => ({
+  ...job,
+  worker: job.worker ? { ...job.worker } : null,
+  errorLog: [...job.errorLog],
+});
+
+let jobStore: AdminJob[] = MOCK_JOBS.map(cloneJob);
+
+// 정렬 우선순위: 문제가 있는 것(failed)부터 위로
+const JOB_STATUS_RANK: Record<JobStatus, number> = {
+  failed: 0,
+  processing: 1,
+  queued: 2,
+  completed: 3,
+};
+
+function sortJobs(jobs: AdminJob[], sort: JobSortState): AdminJob[] {
+  if (!sort) return [...jobs]; // 정렬 없음 = 원래 순서
+  const factor = sort.direction === "asc" ? 1 : -1;
+
+  return [...jobs].sort((a, b) => {
+    switch (sort.key) {
+      case "status":
+        return (JOB_STATUS_RANK[a.status] - JOB_STATUS_RANK[b.status]) * factor;
+      case "audioSeconds":
+        return (a.audioSeconds - b.audioSeconds) * factor;
+      case "elapsedSeconds":
+        // 시작 전(null)은 가장 작은 값(-1)으로 취급
+        return ((a.elapsedSeconds ?? -1) - (b.elapsedSeconds ?? -1)) * factor;
+      case "meetingTitle":
+        return a.meetingTitle.localeCompare(b.meetingTitle, "ko") * factor;
+      default:
+        return a.id.localeCompare(b.id) * factor;
+    }
+  });
+}
+
+export async function fetchAdminJobs(sort: JobSortState, signal?: AbortSignal): Promise<AdminJob[]> {
+  await delay(400, signal);
+  return sortJobs(jobStore, sort).map(cloneJob);
+}
+
+/** 실패한 작업을 대기열로 되돌립니다. (failed → queued, 시도 횟수 +1) */
+export async function retryJob(id: string, signal?: AbortSignal): Promise<AdminJob> {
+  await delay(500, signal);
+  const job = jobStore.find((j) => j.id === id);
+  if (!job) throw new ApiError("not_found", `Job ${id} not found.`);
+  if (job.status !== "failed") throw new ApiError("invalid_state", `Job ${id} is not failed.`);
+
+  const updated: AdminJob = {
+    ...job,
+    status: "queued",
+    attempt: job.attempt + 1,
+    elapsedSeconds: null,
+    startedAt: null,
+    worker: null,
+    errorLog: [],
+  };
+  jobStore = jobStore.map((j) => (j.id === id ? updated : j));
+  return cloneJob(updated);
+}
+
+/** 처리 중인 작업을 강제 종료합니다. (processing → failed, 부분 결과 폐기) */
+export async function killJob(id: string, signal?: AbortSignal): Promise<AdminJob> {
+  await delay(600, signal);
+  const job = jobStore.find((j) => j.id === id);
+  if (!job) throw new ApiError("not_found", `Job ${id} not found.`);
+  // 서버에서 한 번 더 확인: 화면을 보는 사이 작업이 이미 끝났을 수 있습니다(경쟁 상태).
+  if (job.status !== "processing") throw new ApiError("invalid_state", `Job ${id} is not processing.`);
+
+  const now = new Date().toISOString();
+  const updated: AdminJob = {
+    ...job,
+    status: "failed",
+    errorLog: [
+      `${now} [WARN]  kill requested by administrator`,
+      `${now} [ERROR] worker ${job.worker?.id ?? "unknown"} received SIGTERM; partial output discarded`,
+    ],
+  };
+  jobStore = jobStore.map((j) => (j.id === id ? updated : j));
+  return cloneJob(updated);
+}

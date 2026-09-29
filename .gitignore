@@ -1,0 +1,26 @@
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 환경변수: API 키가 들어 있으므로 절대 커밋 금지
+.env
+.env.*
+!.env.example
+
+# 로컬 DB(회의 내용이 들어 있을 수 있음) / 개인 설정 — 실제 DB 파일 이름에 맞게 조정
+*.db
+*.sqlite3
+CLAUDE.local.md
+
+# OS / 에디터
+.DS_Store
+Thumbs.db

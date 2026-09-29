@@ -1,0 +1,34 @@
+/* 공통 베이스 스타일 (Tailwind 유틸로 표현하기 번거로운 것만 모읍니다) */
+
+.mn-body {
+  background: var(--mn-background);
+  color: var(--mn-text);
+  font-family: var(--font-geist-sans), "Inter", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 키보드 포커스 링: :focus-visible 일 때만 보여서 마우스 클릭엔 나타나지 않습니다 */
+.mn-focus:focus-visible {
+  outline: none;
+  box-shadow: var(--mn-focus-ring);
+}
+
+/* 모달 컨테이너 자체(tabIndex=-1)에 포커스가 갈 때는 링을 숨깁니다 */
+.mn-dialog:focus {
+  outline: none;
+}
+
+/* 접근성용: 화면에는 안 보이지만 스크린리더는 읽는 텍스트 */
+.mn-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

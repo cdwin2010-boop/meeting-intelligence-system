@@ -1,0 +1,4 @@
+@import "tailwindcss";
+@import "./mono-dark/tokens.css";
+@import "./mono-dark/components.css";
+@import "./mono-dark/tailwind-theme.css";

@@ -1,0 +1,29 @@
+/*
+ * Tailwind v4 테마 매핑
+ * --mn-* 변수를 bg-mn-*, text-mn-*, border-mn-*, rounded-mn-*, font-mn-mono 유틸리티로 노출합니다.
+ * `inline` 옵션 덕분에 유틸리티가 var(--mn-*)를 그대로 참조합니다.
+ */
+@theme inline {
+  --color-mn-bg: var(--mn-background);
+  --color-mn-surface: var(--mn-surface);
+  --color-mn-elevated: var(--mn-surface-elevated);
+  --color-mn-overlay: var(--mn-overlay);
+  --color-mn-border: var(--mn-border);
+  --color-mn-accent: var(--mn-accent);
+  --color-mn-accent-hover: var(--mn-accent-hover);
+  --color-mn-on-accent: var(--mn-on-accent);
+  --color-mn-text: var(--mn-text);
+  --color-mn-muted: var(--mn-text-muted);
+  --color-mn-blue: var(--mn-blue);
+  --color-mn-teal: var(--mn-teal);
+  --color-mn-red: var(--mn-red);
+  --color-mn-red-hover: var(--mn-red-hover);
+  --color-mn-on-red: var(--mn-on-red);
+
+  --radius-mn-badge: var(--mn-radius-badge);
+  --radius-mn-control: var(--mn-radius-control);
+  --radius-mn-card: var(--mn-radius-card);
+
+  --font-mn-sans: var(--font-geist-sans), "Inter", system-ui, sans-serif;
+  --font-mn-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
