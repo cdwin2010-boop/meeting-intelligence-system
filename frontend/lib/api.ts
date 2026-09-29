@@ -10,7 +10,7 @@
 import * as http from "./api-http";
 import * as mock from "./api-mock";
 
-export { ApiError, isAbortError } from "./api-errors";
+export { ApiError, GpuGuardError, isAbortError } from "./api-errors";
 
 // "false"라고 명시했을 때만 실제 서버를 씁니다. (오타가 나도 안전한 쪽 = 목으로 동작)
 const useMock = process.env.NEXT_PUBLIC_USE_MOCK !== "false";
@@ -23,3 +23,5 @@ export const deleteActionItem = impl.deleteActionItem;
 export const fetchAdminJobs = impl.fetchAdminJobs;
 export const retryJob = impl.retryJob;
 export const killJob = impl.killJob;
+export const uploadMeetingAudio = impl.uploadMeetingAudio;
+export const fetchJob = impl.fetchJob;

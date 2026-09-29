@@ -30,6 +30,8 @@ export interface Meeting {
   /** ISO 8601 일시 */
   startedAt: string;
   attendees: Attendee[];
+  /** 전사 원문. 전사 전(queued/processing)과 시드 회의는 null */
+  transcriptText: string | null;
 }
 
 export type SortKey = "id" | "task" | "assignee" | "dueDate" | "status";
@@ -74,3 +76,37 @@ export interface AdminJob {
 
 export type JobSortKey = "id" | "meetingTitle" | "audioSeconds" | "elapsedSeconds" | "status";
 export type JobSortState = { key: JobSortKey; direction: SortDirection } | null;
+
+/* ------------------------------------------------------------------ *
+ * 음성 등록(업로드) 타입 — docs/API-CONTRACT.md "음성 등록 API"
+ * ------------------------------------------------------------------ */
+
+export type SttEngine = "gemini-api" | "faster-whisper";
+
+/** POST /meetings 에 보낼 값 (FormData로 변환해 전송) */
+export interface UploadInput {
+  file: File;
+  title: string;
+  /** ISO 8601 회의 일시. 마감일 계산의 기준 */
+  startedAt: string;
+  engine: SttEngine;
+  /** true면 GPU 가드 경고를 알고도 로컬로 진행 */
+  forceLocal?: boolean;
+}
+
+/** 202 접수증: 전사를 기다리지 않고 바로 돌려받는다 */
+export interface UploadReceipt {
+  meetingId: string;
+  jobId: string;
+  status: "queued";
+}
+
+/** GET /jobs/{jobId} 응답 (계약서의 JobStatus. 상태 문자열 타입 JobStatus와 이름이 겹쳐 UploadedJob으로 부름) */
+export interface UploadedJob {
+  id: string;
+  meetingId: string;
+  status: JobStatus;
+  stage: "STT" | "LLM" | null;
+  /** 실패가 아니면 "" */
+  errorMessage: string;
+}

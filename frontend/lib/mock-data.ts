@@ -11,6 +11,7 @@ export const MOCK_MEETING: Meeting = {
     { id: "u4", name: "최유나", role: "QA" },
     { id: "u5", name: "정민수", role: "Design" },
   ],
+  transcriptText: null, // 시드 회의에는 전사 원문이 없다
 };
 
 export const MOCK_ACTION_ITEMS: ActionItem[] = [
