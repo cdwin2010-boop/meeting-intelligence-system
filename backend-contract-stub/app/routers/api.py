@@ -6,7 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query
 from app.config import settings
 from app.db import ACTION_ITEM_SORT, JOB_SORT, store
 from app.pipeline.service import run_job
-from app.schemas.models import ActionItem, AdminJob, JobStatus, Meeting, UploadReceipt
+from app.schemas.models import ActionItem, AdminJob, JobStatus, Meeting, MeetingSummary, UploadReceipt
 from app.upload_storage import find_upload, incoming_path, job_path
 from app.uploads import (
     ALLOWED_EXTENSIONS, detect_audio_kind, estimate_audio_seconds, expected_local_minutes, extension_of, parse_started_at,
@@ -21,6 +21,13 @@ def _check_sort(sort_key: str | None, allowed: dict[str, str]) -> None:
     # 허용 목록에 없는 sortKey는 400. (값을 SQL에 이어 붙이지 않는다)
     if sort_key is not None and sort_key not in allowed:
         raise HTTPException(status_code=400, detail=f"invalid sortKey: {sort_key}")
+
+
+# 회의 목록. POST /meetings(업로드)와 경로는 같고 메서드만 다르다.
+# 정렬 옵션·페이지 나눔은 계약에 없다: startedAt 내림차순(같으면 id 내림차순)으로 전체를 돌려준다.
+@router.get("/meetings", response_model=list[MeetingSummary], response_model_by_alias=True)
+def list_meetings():
+    return store.list_meetings()
 
 
 @router.get("/meetings/{meeting_id}", response_model=Meeting, response_model_by_alias=True)

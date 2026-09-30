@@ -25,6 +25,15 @@ class Meeting(CamelModel):
     transcript_text: str | None = None
 
 
+class MeetingSummary(CamelModel):
+    """회의 목록(GET /meetings)의 한 줄. 상세(Meeting)와 달리 참석자·전사 원문은 싣지 않는다."""
+    id: str
+    title: str
+    started_at: str
+    # 가장 최근 작업의 상태. 업로드 작업이 없는 시드 회의는 None
+    job_status: Literal["queued", "processing", "completed", "failed"] | None = None
+
+
 class Quote(CamelModel):
     speaker: str
     timestamp: str

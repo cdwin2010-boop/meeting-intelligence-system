@@ -5,6 +5,7 @@
 
 | 프론트 함수 | 메서드 | 경로 (기본 주소 뒤) | 성공 | 실패 |
 |---|---|---|---|---|
+| `fetchMeetings` | GET | `/meetings` | 200 `MeetingSummary[]` (startedAt 내림차순, 같으면 id 내림차순) | — |
 | `fetchMeeting` | GET | `/meetings/{meetingId}` | 200 `Meeting` | 404 |
 | `fetchActionItems` | GET | `/meetings/{meetingId}/action-items?sortKey=&direction=` | 200 `ActionItem[]` | 404, 400(잘못된 sortKey) |
 | `deleteActionItem` | DELETE | `/action-items/{id}` | 204 (본문 없음) | 404 |
@@ -22,6 +23,7 @@
 ## 타입 (`frontend/lib/types.ts`와 동일)
 ```ts
 Meeting    { id, title, startedAt(ISO), attendees: { id, name, role }[], transcriptText: string|null }
+MeetingSummary { id, title, startedAt(ISO), jobStatus: "queued"|"processing"|"completed"|"failed"|null }
 ActionItem { id, task, assignee, dueDate(YYYY-MM-DD), status: "open"|"in_progress"|"done"|"overdue",
              quote: { speaker, timestamp(HH:MM:SS), text } }
 AdminJob   { id, meetingTitle, audioSeconds, elapsedSeconds|null, status: "queued"|"processing"|"completed"|"failed",
@@ -29,6 +31,13 @@ AdminJob   { id, meetingTitle, audioSeconds, elapsedSeconds|null, status: "queue
              errorLog: string[] }
 ```
 빈 값 주의: 프로젝트 지침상 `speaker` 등 미정 항목은 `null`이 아니라 `""`. 단 `elapsedSeconds/startedAt/worker/gpu`는 타입대로 `null` 허용.
+
+### 회의 목록 `GET /meetings` (v1.9.3)
+- 같은 경로의 `POST /meetings`(업로드)와 메서드만 다르다. 업로드 동작은 바뀌지 않는다.
+- `MeetingSummary`는 목록 한 줄이다. 참석자·전사 원문은 싣지 않는다(상세는 `GET /meetings/{meetingId}`).
+- `jobStatus`: 그 회의의 **가장 최근 작업**의 상태. 업로드 작업이 없는 시드 회의는 `null` (타입대로 `null` 허용).
+- 순서는 **`startedAt` 내림차순, 같으면 `id` 내림차순**으로 고정하고 전체를 돌려준다. `startedAt`은 문자열이 아니라 시각으로 비교한다(시간대 표기가 달라도 같은 순서).
+- **정렬 옵션과 페이지 나눔은 이번 계약에 없음.** `sortKey`·`direction`·페이지 파라미터를 받지 않는다(아래 6) 참고).
 
 ---
 
@@ -103,6 +112,7 @@ JobStatus { id, meetingId, status: "queued"|"processing"|"completed"|"failed",
 
 ### 6) 이 계약에서 일부러 정하지 않은 것
 - 화자 분리 결과의 응답 모양, 업로드 취소, 같은 파일 중복 업로드 처리.
+- 회의 목록(`GET /meetings`)의 정렬 옵션, 페이지 나눔, 검색. 지금은 고정 순서로 전체를 돌려준다.
 - 인증: 스텁에는 없음. 운영에서는 업로드도 로그인 사용자만 가능해야 한다.
 
 ### 7) 스텁 서버가 하는 일 (참고)

@@ -7,7 +7,7 @@
 import json
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 _SEED = json.loads((Path(__file__).parent / "seed.json").read_text(encoding="utf-8"))
@@ -27,6 +27,18 @@ JOB_SORT = {
     "elapsedSeconds": "COALESCE(elapsed_seconds, -1)",
     "status": "CASE status WHEN 'failed' THEN 0 WHEN 'processing' THEN 1 WHEN 'queued' THEN 2 ELSE 3 END",
 }
+
+
+_KST = timezone(timedelta(hours=9))
+
+
+def _instant(value: str) -> datetime:
+    """정렬용 시각. 시간대가 없으면 KST(화면 입력 기준)로 보고, 읽을 수 없으면 가장 과거로 보낸다."""
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return datetime.min.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=_KST)
 
 
 class Store:
@@ -75,6 +87,27 @@ class Store:
         if row is None:
             return None
         return {**json.loads(row["body"]), "transcriptText": row["transcript"]}
+
+    def list_meetings(self) -> list[dict]:
+        """회의 목록 (GET /meetings). 작업이 여러 개면 가장 최근(seq 최대) 작업의 상태, 작업이 없는 시드 회의는 None.
+        정렬은 startedAt 내림차순, 같으면 id 내림차순으로 고정한다."""
+        with self._lock:
+            rows = self._db.execute(
+                """
+                SELECT m.body,
+                       (SELECT j.status FROM jobs j WHERE j.meeting_id = m.id ORDER BY j.seq DESC LIMIT 1) AS job_status
+                FROM meetings m
+                """
+            ).fetchall()
+        meetings = []
+        for r in rows:
+            body = json.loads(r["body"])
+            meetings.append(
+                {"id": body["id"], "title": body["title"], "startedAt": body["startedAt"], "jobStatus": r["job_status"]}
+            )
+        # startedAt은 시간대 표기(+09:00, Z 등)가 섞일 수 있어 문자열이 아니라 시각으로 비교한다
+        meetings.sort(key=lambda m: (_instant(m["startedAt"]), m["id"]), reverse=True)
+        return meetings
 
     def list_action_items(self, meeting_id: str, sort_key: str | None, direction: str) -> list[dict]:
         order = f"ORDER BY {ACTION_ITEM_SORT[sort_key]} {'DESC' if direction == 'desc' else 'ASC'}, seq" if sort_key else "ORDER BY seq"

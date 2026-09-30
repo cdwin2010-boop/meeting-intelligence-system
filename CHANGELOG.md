@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.9.3 — 2026-09-30 (회의 목록 1단계: 계약서 + 스텁)
+### 추가
+- `GET /meetings` (`fetchMeetings`) → 200 `MeetingSummary[]`. 같은 경로의 `POST /meetings`(업로드)는 그대로 202.
+- 타입 `MeetingSummary { id, title, startedAt, jobStatus }`. `jobStatus`는 그 회의의 **가장 최근 작업** 상태(`queued | processing | completed | failed`), 업로드 작업이 없는 시드 회의는 `null`.
+- 순서: `startedAt` 내림차순, 같으면 `id` 내림차순 고정. `startedAt`은 문자열이 아니라 시각으로 비교하고, 시간대 표기가 없으면 KST로 본다.
+- 스텁: `app/db.py` `list_meetings()`, `app/schemas/models.py` `MeetingSummary`(camelCase alias), `app/routers/api.py` `GET /api/meetings`.
+- `docs/API-CONTRACT.md`에 엔드포인트·타입·"회의 목록" 절 추가, "6) 일부러 정하지 않은 것"에 정렬 옵션·페이지 나눔·검색 명시.
+- 테스트 `tests/test_meetings_list.py`(6건). pytest 88건 통과.
+### 알려진 한계
+- 프론트의 `/` 화면은 아직 목록을 부르지 않음(다음 단계).
+- 정렬 옵션·페이지 나눔·검색 없음.
+- `startedAt`은 사용자가 입력한 회의 일시라서, 과거 일시로 올린 회의는 방금 올렸어도 목록 아래쪽에 표시됨.
+
 ## v1.9.2 — 2026-09-30 (4단계-B: 프론트 예외 화면)
 ### 추가
 - 업로드 501/503 안내 문구 구분. 501 → "로컬 Faster-Whisper 엔진은 아직 지원되지 않습니다. Gemini API를 선택해 주세요.", 503 → "서버에 Gemini API 키가 설정되지 않아 처리할 수 없습니다. 관리자에게 문의해 주세요." 응답 본문은 읽지 않고 상태 코드로만 구분해 키 이름·값이 화면에 나오지 않음. 기존 409(gpu_guard)·400·413·415 처리는 그대로.
