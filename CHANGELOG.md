@@ -1,5 +1,8 @@
 # Changelog
 
+## v1.9.10 이후 문서 정정 — 2026-09-30
+- 문서 표기만 현재 기준으로 정정(코드·설정·계약 내용 변경 없음, 태그 v1.9.10은 그대로): 루트 `README.md` 제목 v1.7 → v1.9.10·스텁 pytest 88건 → 125건(3곳), `CLAUDE.md` "현재 v1.7" → v1.9.10, `docs/API-CONTRACT.md` 제목 v1.7 → v1.9.10.
+
 ## v1.9.10 — 2026-09-30 (스텁 등록 데이터 파일 저장, 재시작 복구)
 ### 변경
 - 스텁 저장소를 메모리 SQLite → 파일 SQLite로. 설정 `stub_db_path`(환경변수 `STUB_DB_PATH`), 기본 `backend-contract-stub/data/stub.db`. 폴더가 없으면 만든다. API 계약·응답 형태는 그대로.

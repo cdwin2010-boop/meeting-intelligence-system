@@ -44,7 +44,7 @@
 - 파괴적 모달: `tone="danger"`, 확인 버튼은 구체적 행동명("Kill Processing Job", "Delete action item"), Cancel에 먼저 포커스, ESC는 최상단 모달만 닫음, 닫으면 여는 버튼으로 포커스 복귀.
 
 ## 버전
-- 현재 v1.7. 변경 내역은 CHANGELOG.md, 화면·API 규격은 docs/API-CONTRACT.md.
+- 현재 v1.9.10. 변경 내역은 CHANGELOG.md, 화면·API 규격은 docs/API-CONTRACT.md.
 - `frontend/.env.local`의 `NEXT_PUBLIC_USE_MOCK=true`(기본)면 목 데이터, `false`면 FastAPI 서버와 통신한다. 화면 코드는 항상 `@/lib/api`만 import한다.
 - `backend-contract-stub/`은 API 규격을 확인하는 참고용 서버다. 운영 백엔드(`backend/`, 아직 이 저장소에 없음)를 대체하지 않으며 덮어쓰지 않는다.
 
