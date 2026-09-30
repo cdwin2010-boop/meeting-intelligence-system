@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.9.7 — 2026-09-30 (회의 상세: 회의 목록으로 돌아가기 링크)
+### 추가
+- 회의 상세 화면(`/meetings/[id]`) 맨 위에 "← 회의 목록으로" 링크(`href="/"`). `components/meeting/MeetingDetail.tsx`에 추가.
+  - 음성 등록 화면(`components/upload/UploadForm.tsx`)의 같은 링크와 문구·마크업(`<nav>` + `next/link`)·클래스(`mn-focus rounded-mn-control text-sm text-mn-muted hover:text-mn-text`)를 그대로 맞춤. `UploadForm.tsx`는 수정 안 함.
+  - 실서버 모드(`page.tsx`)와 목 모드(`MockMeetingLoader`) 모두 `MeetingDetail`을 렌더링하므로 두 모드에서 같은 링크가 보임. 서버 호출 추가 없음.
+### 확인한 것
+- `npx tsc --noEmit` 통과.
+- 목 모드 화면 동작(링크 표시, `/`로 이동) (사용자 확인).
+### 확인하지 못한 것
+- 실서버 모드 화면 동작.
+- `npm run build` (dev 서버 보호를 위해 미실행).
+
 ## v1.9.6 — 2026-09-30 (회의 상세: 전사 원문 다운로드)
 ### 추가
 - 회의 상세 화면 "전사 원문 보기" 옆에 "전사 원문 다운로드" 버튼(`components/meeting/TranscriptViewer.tsx`, 기존 `Button` secondary/sm 재사용, `aria-label="전사 원문 다운로드 (.txt 파일)"`).

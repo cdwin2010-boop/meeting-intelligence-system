@@ -118,6 +118,12 @@ export function MeetingDetail({ meeting }: { meeting: Meeting }) {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-12">
+      {/* 음성 등록 화면(UploadForm)의 돌아가기 링크와 문구·스타일을 똑같이 맞춘다 */}
+      <nav>
+        <Link href="/" className="mn-focus rounded-mn-control text-sm text-mn-muted hover:text-mn-text">
+          ← 회의 목록으로
+        </Link>
+      </nav>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <TranscriptViewer
           transcriptText={meeting.transcriptText}
