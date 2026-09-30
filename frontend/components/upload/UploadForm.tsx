@@ -44,6 +44,11 @@ function messageFor(error: unknown): string {
         return "파일이 너무 큽니다.";
       case "unsupported_type":
         return "지원하지 않는 파일 형식입니다(mp3, m4a, wav).";
+      // 501/503: 서버 설정 변수 이름·키 값은 절대 화면에 싣지 않고, 고정 문구로만 안내한다
+      case "engine_unsupported":
+        return "로컬 Faster-Whisper 엔진은 아직 지원되지 않습니다. Gemini API를 선택해 주세요.";
+      case "engine_unavailable":
+        return "서버에 Gemini API 키가 설정되지 않아 처리할 수 없습니다. 관리자에게 문의해 주세요.";
       default:
         break;
     }
@@ -139,6 +144,12 @@ export function UploadForm() {
     setGpuGuardMinutes(null);
     void submit({ engine: "faster-whisper", forceLocal: true });
   };
+
+  // 작업이 failed로 끝났을 때: 입력값은 그대로 두고 폼 잠금만 풀어 다시 제출할 수 있게 한다
+  const resetForRetry = useCallback(() => {
+    setReceipt(null);
+    setFormError(null);
+  }, []);
 
   const locked = uploading || receipt !== null;
 
@@ -272,7 +283,7 @@ export function UploadForm() {
         ) : null}
       </form>
 
-      {receipt ? <UploadProgress receipt={receipt} /> : null}
+      {receipt ? <UploadProgress receipt={receipt} onRetry={resetForRetry} /> : null}
 
       {/* GPU 가드 경고: 버튼 3개가 필요해 Modal의 확인 버튼 대신 children에 둔다.
           tone="default"는 첫 포커스 가능 요소에 포커스하므로 "취소"를 맨 앞에 둔다. */}

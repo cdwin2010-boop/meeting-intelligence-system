@@ -180,12 +180,33 @@ export async function killJob(id: string, signal?: AbortSignal): Promise<AdminJo
  * 음성 등록 목 API — 계약(docs/API-CONTRACT.md "음성 등록 API")과 같은 검사·흐름
  * 작업 상태는 타이머로 바꾸지 않고 "접수 후 경과 시간"으로 매번 계산한다.
  * 그래서 몇 번을 폴링해도, 탭을 숨겼다 돌아와도 항상 같은 규칙으로 답한다.
+ *
+ * 서버 없이 예외 화면을 확인하는 시나리오: 회의 제목에 아래 태그를 넣는다 (대소문자 무시)
+ *   #501    → 업로드 501 (로컬 엔진 미지원)
+ *   #503    → 업로드 503 (서버에 Gemini 키 미설정)
+ *   #nodue  → 완료, 마감일이 빈 문자열("")인 액션아이템 포함
+ *   #empty  → 완료, 전사 원문 "" + 액션아이템 0건
+ *   #fail   → STT 단계에서 failed + errorMessage
  * ------------------------------------------------------------------ */
 
 const ALLOWED_EXTENSIONS = [".mp3", ".m4a", ".wav"];
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024; // 계약 기본 MAX_UPLOAD_MB=500
 const BYTES_PER_AUDIO_SECOND = 16_000; // 스텁과 같은 어림: 128kbps ≈ 16,000 바이트/초
 const GPU_GUARD_MINUTES = 20;
+
+type MockScenario = "normal" | "nodue" | "empty" | "fail";
+
+/** 제목의 태그 → 시나리오 (501/503은 접수 단계에서 바로 거절하므로 여기엔 없다) */
+function scenarioOf(title: string): MockScenario {
+  const lower = title.toLowerCase();
+  if (lower.includes("#fail")) return "fail";
+  if (lower.includes("#empty")) return "empty";
+  if (lower.includes("#nodue")) return "nodue";
+  return "normal";
+}
+
+// 실제 서버 문구와 같은 형식의 사람이 읽을 한 줄 (API 키·스택 트레이스 없음)
+const MOCK_FAIL_MESSAGE = "말소리가 감지되지 않았습니다. 음성이 담긴 파일인지 확인해 주세요.";
 
 interface MockUpload {
   meetingId: string;
@@ -194,6 +215,7 @@ interface MockUpload {
   startedAt: string;
   /** 접수 시각 (Date.now()) */
   acceptedAt: number;
+  scenario: MockScenario;
 }
 
 let uploads: MockUpload[] = [];
@@ -210,6 +232,8 @@ function uploadedJob(upload: MockUpload): UploadedJob {
   const base = { id: upload.jobId, meetingId: upload.meetingId, errorMessage: "" };
   if (elapsed < 2_000) return { ...base, status: "queued", stage: null };
   if (elapsed < 5_000) return { ...base, status: "processing", stage: "STT" };
+  // #fail: STT 단계가 끝날 무렵 실패로 끝난다 (결과 없음)
+  if (upload.scenario === "fail") return { ...base, status: "failed", stage: "STT", errorMessage: MOCK_FAIL_MESSAGE };
   if (elapsed < 8_000) return { ...base, status: "processing", stage: "LLM" };
   return { ...base, status: "completed", stage: null };
 }
@@ -231,10 +255,12 @@ function uploadedMeeting(upload: MockUpload): Meeting {
     title: upload.title,
     startedAt: upload.startedAt,
     attendees: [],
-    // 전사 원문은 완료 후에만 채워진다
-    transcriptText: isCompleted(upload)
-      ? SCRIPT.map((line) => `[${line.timestamp}] ${line.speaker}: ${line.text}`).join("\n")
-      : null,
+    // 전사 원문은 완료 후에만 채워진다. #empty는 "회의 내용이 없는" 녹음이라 빈 문자열.
+    transcriptText: !isCompleted(upload)
+      ? null
+      : upload.scenario === "empty"
+        ? ""
+        : SCRIPT.map((line) => `[${line.timestamp}] ${line.speaker}: ${line.text}`).join("\n"),
   };
 }
 
@@ -249,6 +275,7 @@ function dueDates(startedAt: string): { thisThursday: string; nextFriday: string
 
 function uploadedActionItems(upload: MockUpload): ActionItem[] {
   if (!isCompleted(upload)) return []; // 완료 전에는 결과 없음
+  if (upload.scenario === "empty") return []; // 지시·수락이 없는 회의 → 0건
   const { thisThursday, nextFriday } = dueDates(upload.startedAt);
   const suffix = upload.jobId.replace(/^job-/, "");
   const items: ActionItem[] = [
@@ -269,6 +296,17 @@ function uploadedActionItems(upload: MockUpload): ActionItem[] {
       quote: { ...SCRIPT[2] },
     },
   ];
+  // #nodue: 마감일을 말하지 않은 지시 → 계약대로 dueDate는 null이 아니라 ""
+  if (upload.scenario === "nodue") {
+    items.push({
+      id: `AI-${suffix}-3`,
+      task: "점심 메뉴 결정",
+      assignee: "김도현",
+      dueDate: "",
+      status: "open",
+      quote: { ...SCRIPT[4] },
+    });
+  }
   return items.filter((item) => !deletedUploadItemIds.has(item.id));
 }
 
@@ -293,6 +331,15 @@ export async function uploadMeetingAudio(input: UploadInput, signal?: AbortSigna
     if (expectedMinutes >= GPU_GUARD_MINUTES) throw new GpuGuardError(expectedMinutes);
   }
 
+  // 서버와 같은 순서: GPU 가드(409) 다음에 501/503 검사. 실패 시 아무것도 저장하지 않는다.
+  const lowerTitle = title.toLowerCase();
+  if (lowerTitle.includes("#501")) {
+    throw new ApiError("engine_unsupported", "The selected engine is not supported.");
+  }
+  if (lowerTitle.includes("#503")) {
+    throw new ApiError("engine_unavailable", "The server is not configured to process this request.");
+  }
+
   uploadSeq += 1;
   const no = String(uploadSeq).padStart(3, "0");
   const upload: MockUpload = {
@@ -301,6 +348,7 @@ export async function uploadMeetingAudio(input: UploadInput, signal?: AbortSigna
     title,
     startedAt: input.startedAt,
     acceptedAt: Date.now(),
+    scenario: scenarioOf(title),
   };
   uploads = [...uploads, upload];
   return { meetingId: upload.meetingId, jobId: upload.jobId, status: "queued" };

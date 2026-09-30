@@ -132,6 +132,11 @@ async function mapUploadError(response: Response): Promise<Error | null> {
       return new ApiError("too_large", "The file is too large.");
     case 415:
       return new ApiError("unsupported_type", "Unsupported file type.");
+    // 501/503 본문(detail)에는 서버 설정 변수 이름이 들어 있을 수 있어 읽지 않는다. 상태 코드만으로 구분.
+    case 501:
+      return new ApiError("engine_unsupported", "The selected engine is not supported.");
+    case 503:
+      return new ApiError("engine_unavailable", "The server is not configured to process this request.");
     case 409: {
       // 본문이 JSON이 아니면 무시(null). 단 본문을 읽다 취소된 AbortError는 그대로 던진다.
       const body: unknown = await response.json().catch((error: unknown) => {

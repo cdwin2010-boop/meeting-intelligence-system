@@ -42,6 +42,8 @@ interface ActionItemTableProps {
   expandedIds: ReadonlySet<string>;
   onToggleExpand: (id: string) => void;
   onDelete: (item: ActionItem) => void;
+  /** 0건일 때 보여 줄 문구 (처리 완료 후 추출 0건이면 부모가 안내 문구를 넘긴다) */
+  emptyMessage?: string;
 }
 
 export function ActionItemTable({
@@ -53,6 +55,7 @@ export function ActionItemTable({
   expandedIds,
   onToggleExpand,
   onDelete,
+  emptyMessage = "No action items in this meeting.",
 }: ActionItemTableProps) {
   return (
     <div className="overflow-x-auto rounded-mn-card border border-mn-border bg-mn-surface">
@@ -121,7 +124,7 @@ export function ActionItemTable({
           {!error && !loading && items.length === 0 ? (
             <tr className="h-12">
               <td colSpan={COLUMN_COUNT} className="px-4 text-sm text-mn-muted">
-                No action items in this meeting.
+                {emptyMessage}
               </td>
             </tr>
           ) : null}
@@ -201,7 +204,12 @@ function ActionItemRows({
         </td>
 
         <td className="px-4 text-sm text-mn-text">{item.assignee}</td>
-        <td className="px-4 font-mn-mono text-xs text-mn-text">{item.dueDate}</td>
+        {/* 마감일 미정은 ""로 온다 → 빈칸 대신 "미정"(날짜가 아니므로 Mono가 아닌 보조색 글자) */}
+        {item.dueDate.trim() ? (
+          <td className="px-4 font-mn-mono text-xs text-mn-text">{item.dueDate}</td>
+        ) : (
+          <td className="px-4 text-xs text-mn-muted">미정</td>
+        )}
         <td className="px-4">
           <StatusDot tone={status.tone} label={status.label} />
         </td>

@@ -27,6 +27,7 @@ export function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState(""); // 스크린리더용 결과 안내
+  const [deletedAny, setDeletedAny] = useState(false); // 사용자가 지워서 0건이 된 경우를 구분
 
   const deleteAbortRef = useRef<AbortController | null>(null);
   const regionRef = useRef<HTMLDivElement>(null);
@@ -94,6 +95,7 @@ export function MeetingDetail({ meeting }: { meeting: Meeting }) {
         return next;
       });
       setAnnouncement(`Action item ${target.id} deleted.`);
+      setDeletedAny(true);
       deleteAbortRef.current = null;
       setDeleting(false);
       setDeleteTarget(null);
@@ -106,6 +108,13 @@ export function MeetingDetail({ meeting }: { meeting: Meeting }) {
       setDeleteError("Could not delete the action item. Try again.");
     }
   }, [deleteTarget]);
+
+  // 전사 원문이 있으면(null이 아니면, ""도 포함) 처리가 끝난 회의다.
+  // 그런데 처음부터 0건이면 "추출 결과 없음" 안내, 사용자가 지워서 0건이면 기본 문구.
+  const extractionEmpty = meeting.transcriptText !== null && !deletedAny;
+  const emptyMessage = extractionEmpty
+    ? "추출된 액션아이템이 없습니다. 회의 내용이 없거나 지시·수락이 확인되지 않았습니다."
+    : undefined;
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-12">
@@ -139,6 +148,7 @@ export function MeetingDetail({ meeting }: { meeting: Meeting }) {
             expandedIds={expandedIds}
             onToggleExpand={handleToggleExpand}
             onDelete={setDeleteTarget}
+            emptyMessage={emptyMessage}
           />
         </div>
       </section>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { StatusDot, type StatusDotTone } from "@/components/mono";
+import { Button, StatusDot, type StatusDotTone } from "@/components/mono";
 import { fetchJob, isAbortError } from "@/lib/api";
 import type { UploadedJob, UploadReceipt } from "@/lib/types";
 
@@ -25,7 +25,13 @@ function statusView(job: UploadedJob): { tone: StatusDotTone; label: string } {
   }
 }
 
-export function UploadProgress({ receipt }: { receipt: UploadReceipt }) {
+interface UploadProgressProps {
+  receipt: UploadReceipt;
+  /** failed일 때 "다시 업로드"를 누르면 호출 (폼 잠금 해제) */
+  onRetry?: () => void;
+}
+
+export function UploadProgress({ receipt, onRetry }: UploadProgressProps) {
   // 첫 조회 전에는 접수증 내용으로 "Queued"를 보여 준다
   const [job, setJob] = useState<UploadedJob>({
     id: receipt.jobId,
@@ -88,10 +94,23 @@ export function UploadProgress({ receipt }: { receipt: UploadReceipt }) {
         </dd>
       </dl>
 
-      {job.status === "failed" && job.errorMessage ? (
-        <p className="rounded-mn-control border border-mn-border bg-mn-bg p-3 font-mn-mono text-xs text-mn-text">
-          {job.errorMessage}
-        </p>
+      {/* 실패: 서버가 준 이유(errorMessage) + 다시 시도 안내. 이유가 비어 오면 일반 문구로 대신한다 */}
+      {job.status === "failed" ? (
+        <div className="flex flex-col gap-3">
+          <p className="rounded-mn-control border border-mn-border bg-mn-bg p-3 font-mn-mono text-xs text-mn-text">
+            {job.errorMessage || "처리 중 오류가 발생했습니다."}
+          </p>
+          <p className="text-sm text-mn-muted">
+            위 내용을 확인한 뒤 파일이나 설정을 바꿔 다시 업로드해 주세요. 입력한 값은 그대로 남아 있습니다.
+          </p>
+          {onRetry ? (
+            <div>
+              <Button variant="secondary" onClick={onRetry}>
+                다시 업로드
+              </Button>
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       {job.status === "completed" ? (
