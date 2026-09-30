@@ -11,7 +11,7 @@ export const isAbortError = (error: unknown): boolean =>
 /**
  * 상태 코드로 구분되는 API 오류
  *  404 not_found / 409 invalid_state
- *  (업로드 전용) 400 invalid_input / 413 too_large / 415 unsupported_type
+ *  (업로드·화자 이름 저장) 400 invalid_input / (업로드 전용) 413 too_large / 415 unsupported_type
  *  (업로드 전용, v1.9) 501 engine_unsupported: 서버가 로컬 엔진을 아직 지원하지 않음
  *                      503 engine_unavailable: 서버에 Gemini 키가 설정되지 않음 (키 이름·값은 화면에 싣지 않는다)
  */

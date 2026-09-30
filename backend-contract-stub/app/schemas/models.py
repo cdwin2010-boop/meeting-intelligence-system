@@ -23,6 +23,13 @@ class Meeting(CamelModel):
     attendees: list[Attendee]
     # 전사 원문. 아직 전사 전이거나 시드 데이터면 None (프론트 화면의 모달/토글에서 열람)
     transcript_text: str | None = None
+    # v1.9.9: 화자 표기("화자1") → 실제 이름/직함. 매핑이 없으면 {} (원본 assignee·전사는 그대로 두고 화면이 적용)
+    speaker_names: dict[str, str] = {}
+
+
+class SpeakerNames(CamelModel):
+    """PUT /meetings/{id}/speakers 응답: 실제로 저장된 매핑 (공백 제거·빈 값 삭제 반영)"""
+    speaker_names: dict[str, str]
 
 
 class MeetingSummary(CamelModel):

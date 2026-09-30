@@ -15,6 +15,7 @@ import type {
   Meeting,
   MeetingSummary,
   SortState,
+  SpeakerNames,
   UploadedJob,
   UploadInput,
   UploadReceipt,
@@ -96,8 +97,37 @@ export function fetchMeetings(signal?: AbortSignal): Promise<MeetingSummary[]> {
   return request<MeetingSummary[]>("/meetings", { signal });
 }
 
-export function fetchMeeting(meetingId: string, signal?: AbortSignal): Promise<Meeting> {
-  return request<Meeting>(`/meetings/${segment(meetingId)}`, { signal });
+export async function fetchMeeting(meetingId: string, signal?: AbortSignal): Promise<Meeting> {
+  const meeting = await request<Meeting>(`/meetings/${segment(meetingId)}`, { signal });
+  // v1.9.9 이전 서버는 speakerNames를 보내지 않는다 → {}로 채워 하위 호환
+  return { ...meeting, speakerNames: meeting.speakerNames ?? {} };
+}
+
+/** 화자 이름 저장 오류 매핑: 400/422 → invalid_input (본문은 읽지 않는다) */
+async function mapSpeakerNamesError(response: Response): Promise<Error | null> {
+  if (response.status === 400 || response.status === 422) {
+    return new ApiError("invalid_input", "Some speaker names are invalid.");
+  }
+  return null;
+}
+
+/** 화자 이름 매핑 저장 (전체 교체). 서버가 실제로 저장한 매핑(공백 제거·빈 값 삭제 반영)을 돌려준다. */
+export async function saveSpeakerNames(
+  meetingId: string,
+  speakers: SpeakerNames,
+  signal?: AbortSignal,
+): Promise<SpeakerNames> {
+  const body = await request<{ speakerNames: SpeakerNames }>(
+    `/meetings/${segment(meetingId)}/speakers`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speakers }),
+      signal,
+    },
+    { mapError: mapSpeakerNamesError },
+  );
+  return body.speakerNames;
 }
 
 export function fetchActionItems(

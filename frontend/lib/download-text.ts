@@ -12,6 +12,16 @@ export function toSafeFileBaseName(name: string, fallback: string): string {
 }
 
 /**
+ * 전사 원문 다운로드 파일명.
+ *  original → "{제목}_전사원문.txt" (화자N 원본)
+ *  named    → "{제목}_전사원문_이름적용.txt" (화자 이름 적용본)
+ */
+export function transcriptFileName(title: string, meetingId: string, kind: "original" | "named"): string {
+  const base = `${toSafeFileBaseName(title, meetingId)}_전사원문`;
+  return kind === "named" ? `${base}_이름적용.txt` : `${base}.txt`;
+}
+
+/**
  * text를 UTF-8 .txt 파일로 내려받는다. 내용은 가공하지 않는다(줄바꿈 추가·변환 없음).
  * 맨 앞 BOM(﻿): 윈도우 메모장이 UTF-8로 알아보게 해 한글이 깨지지 않게 한다.
  */

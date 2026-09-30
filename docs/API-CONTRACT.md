@@ -7,6 +7,7 @@
 |---|---|---|---|---|
 | `fetchMeetings` | GET | `/meetings` | 200 `MeetingSummary[]` (startedAt 내림차순, 같으면 id 내림차순) | — |
 | `fetchMeeting` | GET | `/meetings/{meetingId}` | 200 `Meeting` | 404 |
+| `saveSpeakerNames` | PUT | `/meetings/{meetingId}/speakers` | 200 `{ speakerNames }` (v1.9.9) | 404, 400(검증 실패) |
 | `fetchActionItems` | GET | `/meetings/{meetingId}/action-items?sortKey=&direction=` | 200 `ActionItem[]` | 404, 400(잘못된 sortKey) |
 | `deleteActionItem` | DELETE | `/action-items/{id}` | 204 (본문 없음) | 404 |
 | `fetchAdminJobs` | GET | `/admin/jobs?sortKey=&direction=` | 200 `AdminJob[]` | 400, 401/403 |
@@ -22,7 +23,8 @@
 
 ## 타입 (`frontend/lib/types.ts`와 동일)
 ```ts
-Meeting    { id, title, startedAt(ISO), attendees: { id, name, role }[], transcriptText: string|null }
+Meeting    { id, title, startedAt(ISO), attendees: { id, name, role }[], transcriptText: string|null,
+             speakerNames: { [화자N]: string } }   // v1.9.9, 없으면 {}
 MeetingSummary { id, title, startedAt(ISO), jobStatus: "queued"|"processing"|"completed"|"failed"|null }
 ActionItem { id, task, assignee, dueDate(YYYY-MM-DD), status: "open"|"in_progress"|"done"|"overdue",
              quote: { speaker, timestamp(HH:MM:SS), text } }
@@ -38,6 +40,21 @@ AdminJob   { id, meetingTitle, audioSeconds, elapsedSeconds|null, status: "queue
 - `jobStatus`: 그 회의의 **가장 최근 작업**의 상태. 업로드 작업이 없는 시드 회의는 `null` (타입대로 `null` 허용).
 - 순서는 **`startedAt` 내림차순, 같으면 `id` 내림차순**으로 고정하고 전체를 돌려준다. `startedAt`은 문자열이 아니라 시각으로 비교한다(시간대 표기가 달라도 같은 순서).
 - **정렬 옵션과 페이지 나눔은 이번 계약에 없음.** `sortKey`·`direction`·페이지 파라미터를 받지 않는다(아래 6) 참고).
+
+
+### 화자 이름 `PUT /meetings/{meetingId}/speakers` (v1.9.9)
+- 목적: 전사·추출 결과의 "화자N"에 실제 이름/직함을 붙인다. 회의별 **매핑만** 저장하고, 액션아이템의 `assignee`·`quote.speaker`와 `transcriptText` 원본은 바꾸지 않는다. 표시할 때 프런트가 매핑을 적용한다.
+- 상세 조회(`GET /meetings/{meetingId}`) 응답에 `speakerNames`(객체) 필드를 **추가**한다. 매핑이 없으면(시드 회의 포함) `{}`. 기존 필드는 그대로(하위 호환).
+- 요청: `{"speakers": {"화자1": "권영우 부장", "화자3": "한 팀장"}}` — **전체 교체** 방식. 요청에 없는 키는 지워진다. `{"speakers": {}}`는 매핑 전체 삭제.
+- 검증 (하나라도 어기면 **400**, 저장하지 않음)
+  - 본문이 JSON 객체이고 `speakers`가 객체여야 한다. 값은 문자열.
+  - 키는 `^화자\d+$`만 허용 (예: `화자1`, `화자12`). `화자`, `화자A`, ` 화자1`, `Speaker1`은 400.
+  - 값은 앞뒤 공백을 제거한 뒤 **1~30자**. 제거 후 빈 값(`""`, `"  "`)이면 400이 아니라 **그 키를 삭제**한다. 30자 초과는 400.
+- 없는 회의는 **404** (검증보다 먼저 확인). 오류 본문은 기존과 같이 FastAPI 기본 `{"detail": ...}`.
+- 성공 **200**: `{"speakerNames": {...}}` — 공백 제거·빈 값 삭제를 반영해 **실제로 저장된** 매핑.
+- 같은 이름을 여러 화자에 지정해도 서버는 허용한다(화면이 경고만 표시).
+- 표시 규칙(프런트 `applySpeakerNames`): 텍스트에서 `화자\d+`를 한 번에(단일 패스) 매핑 값으로 바꾼다. 바꾼 결과를 다시 바꾸지 않는다. 매핑에 없는 화자N과 `""`는 그대로. 전사 원문 **다운로드 파일은 원본(화자N) 그대로**.
+- 이 계약에서 정하지 않은 것: 재추출 후 매핑 유지 규칙, Slack/Notion 등 외부 반영, 사용자가 삭제·수정한 항목과의 관계.
 
 ---
 

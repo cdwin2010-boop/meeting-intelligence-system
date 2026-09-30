@@ -6,6 +6,7 @@
 import { ApiError, GpuGuardError, createAbortError } from "./api-errors";
 import { MOCK_ACTION_ITEMS, MOCK_MEETING } from "./mock-data";
 import { MOCK_JOBS } from "./mock-admin";
+import { normalizeSpeakerNames } from "./speaker-names";
 import type {
   ActionItem,
   ActionItemStatus,
@@ -15,6 +16,7 @@ import type {
   Meeting,
   MeetingSummary,
   SortState,
+  SpeakerNames,
   UploadedJob,
   UploadInput,
   UploadReceipt,
@@ -64,12 +66,33 @@ function sortItems(items: ActionItem[], sort: SortState): ActionItem[] {
   });
 }
 
+// 회의별 화자 이름 매핑 (브라우저 메모리. 새로고침하면 사라진다)
+const speakerNamesStore = new Map<string, SpeakerNames>();
+
+const meetingExists = (meetingId: string) =>
+  meetingId === MOCK_MEETING.id || findUploadByMeeting(meetingId) !== undefined;
+
 export async function fetchMeeting(meetingId: string, signal?: AbortSignal): Promise<Meeting> {
   await delay(0, signal);
   const upload = findUploadByMeeting(meetingId);
-  if (upload) return uploadedMeeting(upload);
+  const speakerNames = { ...(speakerNamesStore.get(meetingId) ?? {}) };
+  if (upload) return { ...uploadedMeeting(upload), speakerNames };
   if (meetingId !== MOCK_MEETING.id) throw new ApiError("not_found", `Meeting ${meetingId} not found.`);
-  return MOCK_MEETING;
+  return { ...MOCK_MEETING, speakerNames };
+}
+
+/** 화자 이름 저장 (전체 교체). 서버와 같은 순서·규칙: 없는 회의 404 → 검증 실패 400(아무것도 저장 안 함) */
+export async function saveSpeakerNames(
+  meetingId: string,
+  speakers: SpeakerNames,
+  signal?: AbortSignal,
+): Promise<SpeakerNames> {
+  await delay(400, signal);
+  if (!meetingExists(meetingId)) throw new ApiError("not_found", `Meeting ${meetingId} not found.`);
+  const normalized = normalizeSpeakerNames(speakers);
+  if (!normalized) throw new ApiError("invalid_input", "Some speaker names are invalid.");
+  speakerNamesStore.set(meetingId, normalized);
+  return { ...normalized };
 }
 
 export async function fetchActionItems(
@@ -262,6 +285,7 @@ function uploadedMeeting(upload: MockUpload): Meeting {
       : upload.scenario === "empty"
         ? ""
         : SCRIPT.map((line) => `[${line.timestamp}] ${line.speaker}: ${line.text}`).join("\n"),
+    speakerNames: {}, // 실제 매핑은 fetchMeeting이 speakerNamesStore에서 채운다
   };
 }
 

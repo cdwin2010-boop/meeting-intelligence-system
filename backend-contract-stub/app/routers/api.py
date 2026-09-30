@@ -1,12 +1,14 @@
+import json
+import re
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, Response, UploadFile
 
 from app.config import settings
 from app.db import ACTION_ITEM_SORT, JOB_SORT, store
 from app.pipeline.service import run_job
-from app.schemas.models import ActionItem, AdminJob, JobStatus, Meeting, MeetingSummary, UploadReceipt
+from app.schemas.models import ActionItem, AdminJob, JobStatus, Meeting, MeetingSummary, SpeakerNames, UploadReceipt
 from app.upload_storage import find_upload, incoming_path, job_path
 from app.uploads import (
     ALLOWED_EXTENSIONS, detect_audio_kind, estimate_audio_seconds, expected_local_minutes, extension_of, parse_started_at,
@@ -36,6 +38,46 @@ def get_meeting(meeting_id: str):
     if meeting is None:
         raise HTTPException(status_code=404, detail="meeting not found")
     return meeting
+
+
+# ---------------- 화자 이름 (docs/API-CONTRACT.md "화자 이름", v1.9.9) ----------------
+SPEAKER_KEY = re.compile(r"^화자\d+$", re.ASCII)  # \d는 0-9만 (프런트 JS 정규식과 같게)
+SPEAKER_NAME_MAX = 30
+
+
+def _normalize_speakers(payload: object) -> dict[str, str]:
+    """요청 본문 검사 → 저장할 매핑. 키는 "화자N"만, 값은 앞뒤 공백 제거 후 1~30자(빈 값이면 그 키 삭제). 어기면 400."""
+    speakers = payload.get("speakers") if isinstance(payload, dict) else None
+    if not isinstance(speakers, dict):
+        raise HTTPException(status_code=400, detail="body must be {\"speakers\": {...}}")
+    names: dict[str, str] = {}
+    for key, value in speakers.items():
+        if not SPEAKER_KEY.fullmatch(key):
+            raise HTTPException(status_code=400, detail=f"invalid speaker key: {key}")
+        if not isinstance(value, str):
+            raise HTTPException(status_code=400, detail=f"speaker name must be a string: {key}")
+        name = value.strip()
+        if not name:
+            continue  # 빈 값 = 그 화자의 이름 지정 해제
+        if len(name) > SPEAKER_NAME_MAX:
+            raise HTTPException(status_code=400, detail=f"speaker name must be 1-{SPEAKER_NAME_MAX} chars: {key}")
+        names[key] = name
+    return names
+
+
+# 전체 교체 방식. 본문을 직접 읽는 이유: 형식 오류도 FastAPI 기본 422가 아니라 계약대로 400으로 돌려주기 위해서.
+@router.put("/meetings/{meeting_id}/speakers", response_model=SpeakerNames, response_model_by_alias=True)
+async def save_speaker_names(meeting_id: str, request: Request):
+    if store.get_meeting(meeting_id) is None:  # 없는 회의는 검증보다 먼저 404
+        raise HTTPException(status_code=404, detail="meeting not found")
+    try:
+        payload = json.loads(await request.body())
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="body must be JSON") from None
+    names = _normalize_speakers(payload)
+    if not store.set_speaker_names(meeting_id, names):
+        raise HTTPException(status_code=404, detail="meeting not found")
+    return {"speakerNames": names}
 
 
 @router.get("/meetings/{meeting_id}/action-items", response_model=list[ActionItem], response_model_by_alias=True)

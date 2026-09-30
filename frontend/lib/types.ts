@@ -1,3 +1,7 @@
+import type { SpeakerNames } from "./speaker-names";
+
+export type { SpeakerNames };
+
 export type ActionItemStatus = "open" | "in_progress" | "done" | "overdue";
 
 /** 발화 근거: LLM이 액션아이템을 추출한 원문 발언 */
@@ -32,6 +36,8 @@ export interface Meeting {
   attendees: Attendee[];
   /** 전사 원문. 전사 전(queued/processing)과 시드 회의는 null */
   transcriptText: string | null;
+  /** v1.9.9: "화자N" → 실제 이름/직함. 매핑이 없으면 {}. 원본(assignee·전사 원문)은 바뀌지 않고 화면이 적용한다 */
+  speakerNames: SpeakerNames;
 }
 
 /**

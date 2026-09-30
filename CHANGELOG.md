@@ -1,5 +1,39 @@
 # Changelog
 
+## v1.9.9 — 2026-09-30 (화자 이름 지정, 전사 원문 다운로드 두 가지·창 크기 조절)
+### 추가
+- 계약서(`docs/API-CONTRACT.md` "화자 이름"): `Meeting.speakerNames`(객체, 없으면 `{}`) 필드 추가, `PUT /meetings/{meetingId}/speakers` 추가. 기존 필드는 그대로(하위 호환).
+  - 요청 `{"speakers": {"화자1": "권영우 부장"}}`, 전체 교체. 키 `^화자\d+$`만, 값은 앞뒤 공백 제거 후 1~30자(빈 값이면 그 키 삭제). 위반 400(아무것도 저장 안 함), 없는 회의 404(검증보다 먼저). 성공 200 `{"speakerNames": {...}}`(실제 저장된 값).
+- 스텁(`backend-contract-stub`)
+  - `meetings.speaker_names` 열(기본 `'{}'`), `Store.set_speaker_names()`. 상세 조회에 `speakerNames` 포함, 시드 회의는 `{}`.
+  - `PUT /api/meetings/{id}/speakers`: 본문을 직접 읽어 형식 오류도 422가 아니라 400으로 응답. `\d`는 ASCII 숫자만(프런트 정규식과 같게).
+  - CORS `allow_methods`에 `PUT` 추가(실서버 모드에서 브라우저가 PUT을 보낼 수 있게).
+  - `tests/test_speaker_names.py` 19건: 저장·조회, 공백 제거, 전체 교체·빈 값 삭제, 잘못된 키 400(일부 저장 안 됨), 30자 초과 400·30자 허용, 본문 형식 오류 400, 없는 회의 404, 다른 회의·원본(assignee·전사 원문) 영향 없음.
+- 프런트(`frontend`)
+  - `lib/speaker-names.ts`(순수 함수, import 없음): `applySpeakerNames`(단일 패스 치환, 매핑에 없는 화자N·`""`는 그대로, "화자12"를 "화자1"로 자르지 않음), `findSpeakerLabels`, `normalizeSpeakerNames`(서버와 같은 검증), `duplicateSpeakerNames`.
+  - `lib/speaker-names.test.mjs` 9건(이름 적용 변환이 줄바꿈 등 다른 글자를 바꾸지 않음, 다운로드 파일 이름, 근거 인용 화자 표시 포함): 새 패키지 없이 Node 내장 test runner로 실행(`node --test lib/speaker-names.test.mjs`, Node 22.18+/23.6+의 TS 타입 제거 실행 사용).
+  - `types.ts` `Meeting.speakerNames`, `api-http.ts`/`api-mock.ts`/`api.ts`에 `saveSpeakerNames(meetingId, speakers, signal?)`. http는 400/422 → `invalid_input`, 옛 서버 응답에 `speakerNames`가 없으면 `{}`로 채움. mock은 같은 검증 규칙으로 브라우저 메모리에 저장.
+  - `components/meeting/SpeakerNamesPanel.tsx`: 전사 원문·담당자에서 찾은 화자N(+ 이미 저장된 키) 목록, 화자별 입력칸(최대 30자), "화자 이름 저장" 버튼(Enter로도 저장), 저장 중/저장했습니다/오류를 `StatusDot` 라벨로 표시(`role="status"`), 같은 이름 중복 시 경고만 표시. 화자N이 없으면 안내 문구만.
+  - `MeetingDetail.tsx`: 저장 성공 시 표의 담당자·근거 인용(Evidence quote) 화자·전사 원문 모달에 바로 반영. 원본 `items`(`quote.speaker` 포함)·`transcriptText`와 API 응답은 그대로 두고 표시용 복사본에만 적용.
+  - `TranscriptViewer.tsx`: 모달 표시에 매핑 적용. 다운로드는 원본/이름 적용 두 가지, 두 버튼은 전사 원문 영역(모달) 상단. 기존 "전사 원문 보기" 옆 다운로드 버튼은 제거(중복 방지). 원문이 없거나 비면 버튼 없음.
+    - "원본 다운로드": `{제목}_전사원문.txt`, 화자N 원본 그대로(기존 다운로드와 같은 내용), BOM 유지.
+    - "이름 적용 다운로드": `{제목}_전사원문_이름적용.txt`, 다운로드 직전에 `applySpeakerNames`만 적용(줄 나누기 등 다른 가공 없음), BOM 유지. 저장된 화자 이름이 없으면 비활성화하고 "저장된 화자 이름이 없어 원본과 같습니다" 표시.
+    - 원문 창 상하좌우 크기 조절, 초기 크기는 기존과 동일: 창의 네 가장자리·네 모서리를 끌어 가로·세로 크기 조절(창이 가운데 정렬이라 끈 만큼의 2배로 바꿔 가장자리가 포인터를 따라옴). 원문 상자가 함께 늘고 줄며 넘치면 상자 안에서 스크롤. 최소 288×256px, 최대는 화면 크기(여백 제외)를 넘지 않음. 어떤 크기에서도 원문 상자만 줄어들어 위쪽 다운로드 버튼과 "닫기" 버튼은 잘리지 않음. 열 때마다 기본 크기(폭 = 기존 창 28rem, 원문 상자 기본 60vh·최소 12rem·최대 화면 높이 - 18rem)로 시작. 줄바꿈 표시는 기존 그대로. 손잡이는 마우스·터치 전용(키보드는 기본 크기 + 상자 스크롤).
+    - 공용 `components/mono/Modal.tsx`: 선택 속성 `panelClassName` 추가(기본값 `"w-full max-w-md"` = 기존과 동일). 창 폭이 Modal 안에 고정돼 있어 TranscriptViewer만으로는 넓힐 수 없어서 추가. 이 속성을 넘기는 곳은 TranscriptViewer뿐이며 다른 모달(삭제·Kill·GPU 가드)은 영향 없음.
+    - 창을 열면 처음 포커스가 "원본 다운로드"가 아니라 "닫기" 버튼으로 감(TranscriptViewer에서 열린 직후 포커스 이동, 공용 `Modal` 미수정). 닫으면 포커스는 "전사 원문 보기"로 돌아감.
+  - `lib/download-text.ts`: `transcriptFileName(title, meetingId, "original" | "named")` 추가. `downloadTextFile`은 그대로.
+### 확인한 것
+- 스텁 `pytest -q` 111건 통과(기존 92 + 신규 19, 실제 Gemini 호출 없음).
+- 프런트 `npx tsc --noEmit` 통과.
+- 프런트 `node --test lib/speaker-names.test.mjs` 9건 통과.
+### 확인하지 못한 것
+- 브라우저 화면 확인은 통합 테스트에서 진행 예정.
+- `npm run build` 미실행(dev 서버 보호). lint 스크립트는 프런트에 없음.
+- Slack/Notion 반영 미구현.
+- 재추출 시 매핑 동작 미검증(재추출하면 화자 번호가 바뀔 수 있음).
+- 사용자가 삭제·수정한 항목과 매핑의 관계 규칙 미설계.
+- 알려진 제한: 담당자 정렬은 서버의 원본 값 기준. 목 모드의 시드 회의는 상세 화면을 서버에서 그리므로 새로고침하면 브라우저 메모리의 매핑이 보이지 않음.
+
 ## v1.9.8 — 2026-09-30 (초안: LLM 추출 프롬프트 누락 줄이기)
 ### 변경
 - `backend-contract-stub/app/pipeline/extractor.py` `build_prompt()`에 누락을 줄이는 규칙 추가. 기존 포함·제외 정책, 담당자·작업·마감일·인용 규칙, 스키마(`ActionItemList`)·API 응답 형태는 그대로, 미정 값은 계속 `""`.

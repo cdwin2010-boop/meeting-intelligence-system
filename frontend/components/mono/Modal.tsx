@@ -55,6 +55,11 @@ export interface ModalProps {
   confirmLoading?: boolean;
   closeOnEsc?: boolean;
   closeOnOverlayClick?: boolean;
+  /**
+   * 대화상자 상자의 크기·위치 클래스. 없으면 기존 그대로 "w-full max-w-md".
+   * 크기를 직접 조절하는 창(전사 원문)처럼 기본 폭 제한을 풀어야 할 때만 넘긴다.
+   */
+  panelClassName?: string;
   children?: ReactNode;
 }
 
@@ -71,6 +76,7 @@ export function Modal({
   confirmLoading = false,
   closeOnEsc = true,
   closeOnOverlayClick = true,
+  panelClassName = "w-full max-w-md",
   children,
 }: ModalProps) {
   const id = useId();
@@ -174,7 +180,7 @@ export function Modal({
         aria-labelledby={titleId}
         aria-describedby={description ? descId : undefined}
         tabIndex={-1}
-        className="mn-dialog w-full max-w-md rounded-mn-card border border-mn-border bg-mn-elevated"
+        className={`mn-dialog ${panelClassName} rounded-mn-card border border-mn-border bg-mn-elevated`}
       >
         <div className="flex flex-col gap-2 p-6">
           <h2 id={titleId} className="text-xl font-semibold leading-7 text-mn-text">

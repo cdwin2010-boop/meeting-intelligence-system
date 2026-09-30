@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { deleteActionItem, fetchActionItems, isAbortError } from "@/lib/api";
+import { applySpeakerNames, findSpeakerLabels, type SpeakerNames } from "@/lib/speaker-names";
 import type { ActionItem, Meeting, SortKey, SortState } from "@/lib/types";
 import { ActionItemTable } from "./ActionItemTable";
 import { DeleteActionItemModal } from "./DeleteActionItemModal";
 import { MeetingHeader } from "./MeetingHeader";
+import { SpeakerNamesPanel } from "./SpeakerNamesPanel";
 import { TranscriptViewer } from "./TranscriptViewer";
 
 /** 단일 열 3-State 정렬: 없음 → 오름차순 → 내림차순 → 없음 (다른 열을 누르면 그 열의 오름차순부터) */
@@ -28,6 +30,9 @@ export function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState(""); // 스크린리더용 결과 안내
   const [deletedAny, setDeletedAny] = useState(false); // 사용자가 지워서 0건이 된 경우를 구분
+
+  // v1.9.9: 화자 이름 매핑. 원본 items·전사 원문은 그대로 두고, 보여 줄 때만 적용한다
+  const [speakerNames, setSpeakerNames] = useState<SpeakerNames>(meeting.speakerNames);
 
   const deleteAbortRef = useRef<AbortController | null>(null);
   const regionRef = useRef<HTMLDivElement>(null);
@@ -109,6 +114,24 @@ export function MeetingDetail({ meeting }: { meeting: Meeting }) {
     }
   }, [deleteTarget]);
 
+  // 표에 보일 담당자·근거 인용 화자만 바꾼 복사본 (정렬·삭제는 원본 기준 그대로. 매핑에 없는 화자N과 ""는 그대로)
+  const displayItems = useMemo(
+    () =>
+      items.map((item) => ({
+        ...item,
+        assignee: applySpeakerNames(item.assignee, speakerNames),
+        // 근거 인용의 화자도 표시만 바꾼다 (원본 quote 객체는 복사해서 건드리지 않음)
+        quote: { ...item.quote, speaker: applySpeakerNames(item.quote.speaker, speakerNames) },
+      })),
+    [items, speakerNames],
+  );
+
+  // 이름을 지정할 화자 목록: 전사 원문 + 담당자에서 찾은 화자N, 그리고 이미 저장된 키(지정 해제할 수 있게)
+  const speakerLabels = useMemo(() => {
+    const found = findSpeakerLabels([meeting.transcriptText, ...items.map((item) => item.assignee)]);
+    return findSpeakerLabels([...found, ...Object.keys(speakerNames)]);
+  }, [meeting.transcriptText, items, speakerNames]);
+
   // 전사 원문이 있으면(null이 아니면, ""도 포함) 처리가 끝난 회의다.
   // 그런데 처음부터 0건이면 "추출 결과 없음" 안내, 사용자가 지워서 0건이면 기본 문구.
   const extractionEmpty = meeting.transcriptText !== null && !deletedAny;
@@ -129,6 +152,7 @@ export function MeetingDetail({ meeting }: { meeting: Meeting }) {
           transcriptText={meeting.transcriptText}
           meetingTitle={meeting.title}
           meetingId={meeting.id}
+          speakerNames={speakerNames}
         />
         <Link
           href="/upload"
@@ -138,6 +162,13 @@ export function MeetingDetail({ meeting }: { meeting: Meeting }) {
         </Link>
       </div>
       <MeetingHeader meeting={meeting} />
+
+      <SpeakerNamesPanel
+        meetingId={meeting.id}
+        labels={speakerLabels}
+        saved={speakerNames}
+        onSaved={setSpeakerNames}
+      />
 
       <section aria-labelledby="action-items-heading" className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between">
@@ -150,7 +181,7 @@ export function MeetingDetail({ meeting }: { meeting: Meeting }) {
         {/* tabIndex=-1: 코드로만 포커스를 받을 수 있는 영역 (삭제 후 포커스 복귀용) */}
         <div ref={regionRef} tabIndex={-1} className="outline-none">
           <ActionItemTable
-            items={items}
+            items={displayItems}
             sort={sort}
             onSort={handleSort}
             loading={loading}

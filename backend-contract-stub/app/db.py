@@ -54,7 +54,8 @@ class Store:
             d.executescript(
                 """
                 DROP TABLE IF EXISTS action_items; DROP TABLE IF EXISTS jobs; DROP TABLE IF EXISTS meetings;
-                CREATE TABLE meetings (id TEXT PRIMARY KEY, body TEXT NOT NULL, transcript TEXT);
+                CREATE TABLE meetings (id TEXT PRIMARY KEY, body TEXT NOT NULL, transcript TEXT,
+                    speaker_names TEXT NOT NULL DEFAULT '{}');
                 CREATE TABLE action_items (
                     seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE, meeting_id TEXT, task TEXT,
                     assignee TEXT, due_date TEXT, status TEXT, quote TEXT);
@@ -83,10 +84,23 @@ class Store:
     # ---------- 회의 / 액션아이템 ----------
     def get_meeting(self, meeting_id: str) -> dict | None:
         with self._lock:
-            row = self._db.execute("SELECT body, transcript FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
+            row = self._db.execute(
+                "SELECT body, transcript, speaker_names FROM meetings WHERE id = ?", (meeting_id,)
+            ).fetchone()
         if row is None:
             return None
-        return {**json.loads(row["body"]), "transcriptText": row["transcript"]}
+        return {**json.loads(row["body"]), "transcriptText": row["transcript"],
+                "speakerNames": json.loads(row["speaker_names"])}
+
+    def set_speaker_names(self, meeting_id: str, names: dict[str, str]) -> bool:
+        """화자 이름 매핑을 통째로 바꾼다(전체 교체). 회의가 없으면 False. 액션아이템·전사 원본은 건드리지 않는다."""
+        with self._lock:
+            cur = self._db.execute(
+                "UPDATE meetings SET speaker_names = ? WHERE id = ?",
+                (json.dumps(names, ensure_ascii=False), meeting_id),
+            )
+            self._db.commit()
+            return cur.rowcount == 1
 
     def list_meetings(self) -> list[dict]:
         """회의 목록 (GET /meetings). 작업이 여러 개면 가장 최근(seq 최대) 작업의 상태, 작업이 없는 시드 회의는 None.

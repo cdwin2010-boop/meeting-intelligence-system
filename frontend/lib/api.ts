@@ -19,6 +19,7 @@ const impl = useMock ? mock : http;
 export const isMockApi = useMock;
 export const fetchMeetings = impl.fetchMeetings;
 export const fetchMeeting = impl.fetchMeeting;
+export const saveSpeakerNames = impl.saveSpeakerNames;
 export const fetchActionItems = impl.fetchActionItems;
 export const deleteActionItem = impl.deleteActionItem;
 export const fetchAdminJobs = impl.fetchAdminJobs;

@@ -10,7 +10,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,  # .env에서 읽은 허용 출처 목록
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],  # 필요한 것만 열어 둔다
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # 필요한 것만 열어 둔다 (PUT: 화자 이름 저장, v1.9.9)
     allow_headers=["*"],
 )
 
