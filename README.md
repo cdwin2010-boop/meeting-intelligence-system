@@ -14,11 +14,11 @@ meeting-intelligence-system-v1.7/
 ├── docs/API-CONTRACT.md    ← 프론트 ↔ 백엔드 API 계약서 (경로·오류코드·타입)
 ├── frontend/               ← Next.js 15 + Tailwind v4 (회의록 상세 "/", 회의별 상세 "/meetings/[id]", 음성 등록 "/upload", 관리자 콘솔 "/admin")
 ├── backend-contract-stub/  ← API 계약 확인용 참고 서버 (운영 백엔드가 아님, 아래 설명)
-└── backend/                ← (직접 만드는 폴더) 기존 FastAPI 백엔드를 여기에 복사
+└── backend/                ← (아직 없음) 운영 백엔드 자리
 ```
 
-> `backend/`는 이 ZIP에 **일부러 넣지 않았습니다.** 이미 가지고 있는 백엔드(pytest 76건)를 덮어쓰지 않기 위해서입니다.
-> 기존 백엔드 폴더를 이 안에 `backend/`라는 이름으로 복사하세요. (`venv/`는 복사하지 말고 새로 만드세요)
+> 운영 백엔드(`backend/`)는 **아직 이 저장소에 없습니다.** 지금 실행되는 서버는 `backend-contract-stub/`(스텁)이고, 스텁 테스트(`pytest -q`)는 현재 88건이 통과합니다.
+> 운영 백엔드를 가져올 때는 이 안에 `backend/`라는 이름으로 복사하세요. (`venv/`는 복사하지 말고 새로 만드세요)
 
 ## 1분 시작 (프론트엔드, 백엔드 없이 목 데이터로)
 
@@ -43,7 +43,7 @@ npm run dev          # http://localhost:3000  (음성 등록: /upload, 회의별
 | `NEXT_PUBLIC_USE_MOCK` | `true` | `true` 목 데이터 / `false` 실제 FastAPI |
 | `NEXT_PUBLIC_API_BASE_URL` | `http://127.0.0.1:8000/api` | 실제 서버 기본 주소 (끝에 `/` 없이) |
 | `NEXT_PUBLIC_ADMIN_POLL_MS` | `10000` | 관리자 콘솔 자동 새로고침 주기(ms), `0`이면 끔 |
-| `NEXT_PUBLIC_DEFAULT_MEETING_ID` | `mtg-2026-0925` | `/` 화면이 여는 회의 ID |
+| `NEXT_PUBLIC_DEFAULT_MEETING_ID` | `mtg-2026-0925` | 더는 쓰이지 않음 (v1.9.4부터 `/`는 회의 목록) |
 
 값을 바꾸면 `npm run dev`를 **Ctrl + C로 끄고 다시** 실행해야 반영됩니다. `NEXT_PUBLIC_` 값은 브라우저에 노출되니 비밀 값을 넣지 마세요.
 
@@ -58,7 +58,7 @@ python -m venv venv
 # PowerShell: .\venv\Scripts\Activate.ps1   /  Git Bash: source venv/Scripts/activate   /  macOS·Linux: source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env            # PowerShell: Copy-Item .env.example .env
-pytest -q                       # API 계약 테스트 (먼저 통과하는지 확인)
+pytest -q                       # API 계약 테스트 (현재 88건 통과, 먼저 통과하는지 확인)
 uvicorn app.main:app --reload --port 8000    # http://localhost:8000/docs
 ```
 
@@ -77,7 +77,7 @@ git commit -m "chore: import meeting-intelligence v1.7"
 ## 다음 단계 (권장 순서)
 
 1. `npm run typecheck` 통과 확인 → 첫 커밋
-2. 기존 백엔드를 `backend/`로 복사 → `pytest -q` 76건 통과 확인 → CORS를 `.env`(`CORS_ALLOW_ORIGINS`)로 옮기기
+2. 운영 백엔드를 `backend/`로 가져오기(아직 없음. 현재는 스텁 `backend-contract-stub/`이 실행되며 pytest 88건 통과) → 그 테스트 통과 확인 → CORS를 `.env`(`CORS_ALLOW_ORIGINS`)로 옮기기
 3. `docs/API-CONTRACT.md`대로 운영 백엔드에 엔드포인트 추가 (Claude CLI에 계약서를 붙여 요청)
 4. 관리자 API 서버 권한 검증(RBAC) + 감사 로그
 5. 프론트 자동 테스트(Playwright) 추가 — 지금 프론트에는 저장소에 포함된 자동 테스트가 없습니다

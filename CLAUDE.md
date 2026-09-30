@@ -1,12 +1,13 @@
 # 프로젝트 규칙: 음성 회의록 AI 의사결정 추적관리 시스템
 
 ## 구조와 실행 명령
-- backend/: FastAPI + SQLite + STT/LLM 파이프라인 (Python 3.11+, venv)
+- backend-contract-stub/: FastAPI + SQLite(메모리) + STT/LLM 파이프라인(fake / Gemini) 참고 서버 (Python 3.11+, `.venv`). **현재 실행되는 서버는 이 스텁이다.**
+- backend/: 운영 백엔드 자리. **아직 이 저장소에 없다.**
 - frontend/: Next.js(App Router) + TypeScript + Tailwind CSS v4
 - 프론트 실행: `cd frontend && npm run dev` (http://localhost:3000)
 - 프론트 검사: `cd frontend && npm run typecheck`
-- 백엔드 실행: `cd backend && uvicorn app.main:app --reload --port 8000`
-- 백엔드 테스트: `cd backend && pytest -q` (기존 76건이 항상 통과해야 함)
+- 백엔드(스텁) 실행: `cd backend-contract-stub && uvicorn app.main:app --reload --port 8000`
+- 백엔드(스텁) 테스트: `cd backend-contract-stub && pytest -q` (현재 88건이 항상 통과해야 함)
 
 ## 작업 원칙
 - 코드를 바꾸면 해당 검사 명령(typecheck / pytest)을 실행하고 결과를 보고한다.
@@ -45,5 +46,5 @@
 ## 버전
 - 현재 v1.7. 변경 내역은 CHANGELOG.md, 화면·API 규격은 docs/API-CONTRACT.md.
 - `frontend/.env.local`의 `NEXT_PUBLIC_USE_MOCK=true`(기본)면 목 데이터, `false`면 FastAPI 서버와 통신한다. 화면 코드는 항상 `@/lib/api`만 import한다.
-- `backend-contract-stub/`은 API 규격을 확인하는 참고용 서버다. 운영 백엔드(`backend/`)를 대체하지 않으며 덮어쓰지 않는다.
+- `backend-contract-stub/`은 API 규격을 확인하는 참고용 서버다. 운영 백엔드(`backend/`, 아직 이 저장소에 없음)를 대체하지 않으며 덮어쓰지 않는다.
 
