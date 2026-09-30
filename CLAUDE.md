@@ -1,13 +1,13 @@
 # 프로젝트 규칙: 음성 회의록 AI 의사결정 추적관리 시스템
 
 ## 구조와 실행 명령
-- backend-contract-stub/: FastAPI + SQLite(메모리) + STT/LLM 파이프라인(fake / Gemini) 참고 서버 (Python 3.11+, `.venv`). **현재 실행되는 서버는 이 스텁이다.**
+- backend-contract-stub/: FastAPI + SQLite(파일, `STUB_DB_PATH` 기본 `data/stub.db`, 재시작해도 유지·자동 초기화 없음) + STT/LLM 파이프라인(fake / Gemini) 참고 서버 (Python 3.11+, `.venv`). **현재 실행되는 서버는 이 스텁이다.**
 - backend/: 운영 백엔드 자리. **아직 이 저장소에 없다.**
 - frontend/: Next.js(App Router) + TypeScript + Tailwind CSS v4
 - 프론트 실행: `cd frontend && npm run dev` (http://localhost:3000)
 - 프론트 검사: `cd frontend && npm run typecheck`
 - 백엔드(스텁) 실행: `cd backend-contract-stub && uvicorn app.main:app --reload --port 8000`
-- 백엔드(스텁) 테스트: `cd backend-contract-stub && pytest -q` (현재 88건이 항상 통과해야 함)
+- 백엔드(스텁) 테스트: `cd backend-contract-stub && pytest -q` (현재 125건이 항상 통과해야 함. 테스트는 임시 DB만 쓰고 실제 `data/stub.db`는 건드리지 않음)
 
 ## 작업 원칙
 - 코드를 바꾸면 해당 검사 명령(typecheck / pytest)을 실행하고 결과를 보고한다.

@@ -1,10 +1,21 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.pipeline.service import recover_interrupted_jobs
 from app.routers.api import router
 
-app = FastAPI(title="Meeting Decision Intelligence API (contract stub)")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # (v1.9.10) 서버 시작 때 한 번: 이전 서버에서 처리 중·대기였던 업로드 작업을 failed("서버 재시작으로 중단됨")로 → Retry 가능
+    recover_interrupted_jobs()
+    yield
+
+
+app = FastAPI(title="Meeting Decision Intelligence API (contract stub)", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,9 +1,12 @@
-import tempfile
 from pathlib import Path
 from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# 저장소 안 데이터 폴더(backend-contract-stub/data). 실제 회의 내용이 들어가므로 .gitignore 로 커밋 제외
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
 class Settings(BaseSettings):
@@ -32,7 +35,11 @@ class Settings(BaseSettings):
     gemini_llm_model: str = "gemini-2.5-flash"
     gemini_timeout_seconds: float = 300.0  # Gemini 요청 1건의 기한(초)
     # 업로드한 음성을 처리 전까지 보관하는 폴더. completed 면 지우고, failed 면 Retry 를 위해 남긴다.
-    upload_dir: Path = Path(tempfile.gettempdir()) / "meeting-uploads"
+    # (v1.9.10) 시스템 임시 폴더는 OS가 비울 수 있어 재시작 뒤 Retry 가 깨질 수 있다 → 저장소 안 data/uploads (.gitignore 제외)
+    upload_dir: Path = _DATA_DIR / "uploads"
+    # (v1.9.10) 등록 데이터(회의·전사 원문·액션아이템·작업)를 담는 SQLite 파일. 재시작해도 유지되고,
+    # 초기화는 사용자가 `python -m scripts.reset_db --yes` 로 직접 실행할 때만 한다. 환경변수: STUB_DB_PATH
+    stub_db_path: Path = _DATA_DIR / "stub.db"
 
     @property
     def cors_origins(self) -> list[str]:

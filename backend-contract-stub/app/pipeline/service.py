@@ -147,6 +147,20 @@ def process_job(
             delete_upload(job_id)  # 완료되면 음성은 지운다 (실패면 Retry 를 위해 남김)
 
 
+MSG_INTERRUPTED = "서버 재시작으로 중단됨"
+
+
+def recover_interrupted_jobs() -> list[str]:
+    """서버 시작 때(app.main lifespan) 한 번만 부른다. 업로드 작업 중 처리 중·대기로 남은 것을 failed 로 바꿔 Retry 할 수 있게 한다.
+    스크립트(smoke_gemini·reset_db)나 Store 를 여는 것만으로는 실행되지 않는다(다른 프로세스가 처리 중인 작업을 건드리지 않게).
+    로그에는 작업 ID와 건수만 남긴다."""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    ids = store.fail_interrupted_uploads(f"{now} [ERROR] {MSG_INTERRUPTED}")
+    if ids:
+        log.warning("startup recovery: %d interrupted job(s) marked failed: %s", len(ids), ", ".join(ids))
+    return ids
+
+
 def run_job(job_id: str) -> None:
     """업로드·Retry 뒤 백그라운드에서 부르는 진입점. 둘 다 fake 이면 기존 가짜 처리기를 그대로 쓴다."""
     if settings.stt_provider == "fake" and settings.llm_provider == "fake":

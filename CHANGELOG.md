@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.9.10 — 2026-09-30 (스텁 등록 데이터 파일 저장, 재시작 복구)
+### 변경
+- 스텁 저장소를 메모리 SQLite → 파일 SQLite로. 설정 `stub_db_path`(환경변수 `STUB_DB_PATH`), 기본 `backend-contract-stub/data/stub.db`. 폴더가 없으면 만든다. API 계약·응답 형태는 그대로.
+  - 서버 시작 시 표는 `CREATE TABLE IF NOT EXISTS`, 나중에 추가된 열(`meetings.transcript`·`speaker_names`, `jobs.meeting_id`·`engine`)은 없으면 `ALTER TABLE ADD COLUMN`으로 보강(기존 행 유지).
+  - 시드는 DB가 비어 있을 때 한 번만(`meta.seeded` 표시). 재시작 때 다시 넣거나 덮어쓰지 않고, 이미 데이터가 있던 파일에는 넣지 않는다.
+  - 자동 초기화 없음: `Store.reset()`은 사용자 실행 스크립트와 테스트(임시 DB)에서만 호출.
+- 업로드 음성 기본 폴더 `UPLOAD_DIR`: 시스템 임시 폴더 → `backend-contract-stub/data/uploads` (OS가 임시 폴더를 비우면 재시작 뒤 Retry가 깨지던 문제).
+- `.gitignore`: `backend-contract-stub/data/`, `*.db-journal`·`*.db-wal`·`*.db-shm` 추가(`*.db`는 기존).
+- 서버 시작 복구(`app/main.py` lifespan → `app/pipeline/service.py` `recover_interrupted_jobs()` → `Store.fail_interrupted_uploads()`): 업로드로 만든 작업(`meeting_id` 있음) 중 `processing`/`queued`로 남은 것만 `failed`로 바꾸고 사유 "서버 재시작으로 중단됨"을 `errorLog`에 기록. 시드 작업(`meeting_id` 없음)과 완료·실패 작업은 그대로. 음성 파일은 지우지 않으므로 Retry 가능(파일이 없으면 기존 규칙대로 409). 로그에는 복구한 작업 ID와 건수만. Store를 여는 것만으로는 실행되지 않음(스크립트가 다른 프로세스의 작업을 건드리지 않게).
+- `README.md`(스텁), `CLAUDE.md`: 저장 방식(파일 SQLite)·초기화·재시작 복구 안내, 스텁 pytest 기준 건수 88 → 125.
+### 추가
+- `scripts/reset_db.py`: 사용자가 직접 실행하는 초기화. 인자 없이 실행하면 경로·건수만 보여 주고 아무것도 바꾸지 않음, `--yes`일 때만 DB를 시드로 되돌리고 업로드 폴더의 음성·임시 파일(`.mp3/.m4a/.wav`, `.incoming-*`)만 삭제(작업 번호가 다시 시작돼 예전 음성과 겹치는 것 방지). 전사 원문·키는 출력하지 않음.
+- `tests/conftest.py`: app import 전에 `STUB_DB_PATH`를 테스트 전용 임시 파일로 바꾸고, 저장소가 다른 파일을 가리키면 테스트 수집 단계에서 중단. 끝나면 임시 폴더 삭제.
+- `tests/test_restart_recovery.py` 5건: 재시작 시 업로드 작업만 failed(대기·처리 중 모두), 시드·완료 작업은 그대로, 두 번 시작해도 다시 바꾸지 않음, 복구 작업 Retry(음성 있음 → 다시 처리해 completed / 없음 → 409, 상태는 failed 유지), 테스트는 임시 DB 사용.
+- `tests/test_persistence.py` 9건: 재시작 후 데이터·화자 이름·삭제 유지, 시드 1회, 작업 번호 이어짐, 예전 스키마 열 보강(데이터 유지), 초기화는 `--yes`만(다른 파일은 유지), pytest가 실제 DB를 쓰지 않음, `--reload`가 data 파일을 감시하지 않음.
+### 확인한 것
+- 스텁 `pytest -q` 125건 통과(기존 111 + 신규 14). 실행 전후 `backend-contract-stub/data/`가 생기지 않음(실제 DB 경로를 열지 않음).
+- `git check-ignore`로 `data/` 아래 DB·저널·업로드 파일이 모두 무시되는 것 확인.
+- 실행 중인 스텁 서버는 `--reload` 없이 떠 있어 이번 파일 변경으로 재시작되지 않았고, 보유 데이터는 기본 시드뿐이었음(읽기 조회로 확인). uvicorn `--reload` 기본 감시 대상은 `*.py`뿐(설치된 uvicorn 0.54.0 소스 확인).
+### 확인하지 못한 것
+- 실제 서버를 새 코드로 다시 켠 뒤의 동작(사용자가 재시작할 때 `data/stub.db`가 새로 만들어지고 시드 1건으로 시작).
+- 실제 서버 재시작 시 복구 로그 출력(테스트에서는 lifespan 실행으로 확인).
+
 ## v1.9.9 — 2026-09-30 (화자 이름 지정, 전사 원문 다운로드 두 가지·창 크기 조절)
 ### 추가
 - 계약서(`docs/API-CONTRACT.md` "화자 이름"): `Meeting.speakerNames`(객체, 없으면 `{}`) 필드 추가, `PUT /meetings/{meetingId}/speakers` 추가. 기존 필드는 그대로(하위 호환).

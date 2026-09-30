@@ -21,7 +21,13 @@ meeting-uploads/
 
 # 로컬 DB(회의 내용이 들어 있을 수 있음) / 개인 설정 — 실제 DB 파일 이름에 맞게 조정
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 *.sqlite3
+
+# 스텁 등록 데이터(v1.9.10): 실제 회의 전사 원문·업로드 음성이 들어 있다. 절대 커밋 금지
+backend-contract-stub/data/
 CLAUDE.local.md
 
 # OS / 에디터
