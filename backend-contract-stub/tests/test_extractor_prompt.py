@@ -23,3 +23,21 @@ def test_prompt_states_assignee_naming_rules_and_empty_strings():
     assert "임의로 합치거나 바꾸지 않습니다" in prompt  # 업체명 원문 유지
     assert 'null 이 아니라 빈 문자열("")' in prompt  # 마감일 근거 없음 → ""
     assert prompt.rstrip().endswith("[00:00:03] 화자1: 테스트")  # 전사문은 맨 끝에 그대로
+
+
+def test_prompt_states_v198_recall_rules():
+    """v1.9.8: 한 발화 여러 항목, 제안·권유형 지시, 자발적 약속"""
+    prompt = build_prompt("[00:00:03] 화자1: 테스트", STARTED_AT)
+    assert "각각 별도 항목" in prompt and "업체·프로젝트·고객명이 다르면 다른 항목" in prompt
+    assert "제안·권유형 요청도 지시로" in prompt and "~하시는 게 좋을 것 같아요" in prompt
+    assert "자발적 약속도 포함" in prompt and "오늘 마무리될 것 같습니다" in prompt
+    assert "정리 완료했고요" in prompt  # 끝난 일 보고는 계속 제외
+
+
+def test_prompt_has_final_check_step_without_duplicates():
+    """v1.9.8: 마지막 점검 단계 — 다시 훑어 빠진 것만 추가, 겹치면 추가 안 함"""
+    prompt = build_prompt("[00:00:03] 화자1: 테스트", STARTED_AT)
+    assert "[6. 마지막 점검]" in prompt
+    assert "다시 처음부터 훑어" in prompt
+    assert "빠진 것만 추가" in prompt and "겹치는 것은 추가하지 않습니다" in prompt
+    assert prompt.index("[6. 마지막 점검]") < prompt.index("전사문:\n")  # 점검 지시는 전사문 앞
