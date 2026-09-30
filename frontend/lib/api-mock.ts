@@ -211,6 +211,7 @@ export async function killJob(id: string, signal?: AbortSignal): Promise<AdminJo
  *   #nodue  → 완료, 마감일이 빈 문자열("")인 액션아이템 포함
  *   #empty  → 완료, 전사 원문 "" + 액션아이템 0건
  *   #fail   → STT 단계에서 failed + errorMessage
+ *   #speakers → 완료, 전사 원문·담당자·근거 인용 화자가 실명 대신 "화자1/화자2/화자3" (화자 이름 지정 기능 확인·E2E 테스트용)
  * ------------------------------------------------------------------ */
 
 const ALLOWED_EXTENSIONS = [".mp3", ".m4a", ".wav"];
@@ -218,12 +219,13 @@ const MAX_UPLOAD_BYTES = 500 * 1024 * 1024; // 계약 기본 MAX_UPLOAD_MB=500
 const BYTES_PER_AUDIO_SECOND = 16_000; // 스텁과 같은 어림: 128kbps ≈ 16,000 바이트/초
 const GPU_GUARD_MINUTES = 20;
 
-type MockScenario = "normal" | "nodue" | "empty" | "fail";
+type MockScenario = "normal" | "nodue" | "empty" | "fail" | "speakers";
 
 /** 제목의 태그 → 시나리오 (501/503은 접수 단계에서 바로 거절하므로 여기엔 없다) */
 function scenarioOf(title: string): MockScenario {
   const lower = title.toLowerCase();
   if (lower.includes("#fail")) return "fail";
+  if (lower.includes("#speakers")) return "speakers";
   if (lower.includes("#empty")) return "empty";
   if (lower.includes("#nodue")) return "nodue";
   return "normal";
@@ -273,6 +275,11 @@ const SCRIPT = [
   { timestamp: "00:00:35", speaker: "김도현", text: "그리고 점심 메뉴는 다음에 정합시다." },
 ];
 
+// #speakers: 실제 Gemini 결과처럼 실명 대신 화자 번호를 쓴다
+const SPEAKER_LABELS: Record<string, string> = { 김도현: "화자1", 이서연: "화자2", 정민수: "화자3" };
+const speakerOf = (upload: MockUpload, name: string) =>
+  upload.scenario === "speakers" ? (SPEAKER_LABELS[name] ?? name) : name;
+
 function uploadedMeeting(upload: MockUpload): Meeting {
   return {
     id: upload.meetingId,
@@ -284,7 +291,7 @@ function uploadedMeeting(upload: MockUpload): Meeting {
       ? null
       : upload.scenario === "empty"
         ? ""
-        : SCRIPT.map((line) => `[${line.timestamp}] ${line.speaker}: ${line.text}`).join("\n"),
+        : SCRIPT.map((line) => `[${line.timestamp}] ${speakerOf(upload, line.speaker)}: ${line.text}`).join("\n"),
     speakerNames: {}, // 실제 매핑은 fetchMeeting이 speakerNamesStore에서 채운다
   };
 }
@@ -307,18 +314,18 @@ function uploadedActionItems(upload: MockUpload): ActionItem[] {
     {
       id: `AI-${suffix}-1`,
       task: "STT 화자 분리 정확도 개선안 정리",
-      assignee: "이서연",
+      assignee: speakerOf(upload, "이서연"),
       dueDate: nextFriday,
       status: "open",
-      quote: { ...SCRIPT[0] },
+      quote: { ...SCRIPT[0], speaker: speakerOf(upload, SCRIPT[0].speaker) },
     },
     {
       id: `AI-${suffix}-2`,
       task: "디자인 시안 확정",
-      assignee: "정민수",
+      assignee: speakerOf(upload, "정민수"),
       dueDate: thisThursday,
       status: "open",
-      quote: { ...SCRIPT[2] },
+      quote: { ...SCRIPT[2], speaker: speakerOf(upload, SCRIPT[2].speaker) },
     },
   ];
   // #nodue: 마감일을 말하지 않은 지시 → 계약대로 dueDate는 null이 아니라 ""
@@ -326,10 +333,10 @@ function uploadedActionItems(upload: MockUpload): ActionItem[] {
     items.push({
       id: `AI-${suffix}-3`,
       task: "점심 메뉴 결정",
-      assignee: "김도현",
+      assignee: speakerOf(upload, "김도현"),
       dueDate: "",
       status: "open",
-      quote: { ...SCRIPT[4] },
+      quote: { ...SCRIPT[4], speaker: speakerOf(upload, SCRIPT[4].speaker) },
     });
   }
   return items.filter((item) => !deletedUploadItemIds.has(item.id));

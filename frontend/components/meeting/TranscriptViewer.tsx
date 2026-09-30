@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button, Modal } from "@/components/mono";
 import { downloadTextFile, transcriptFileName } from "@/lib/download-text";
+import { fitRect, offsetFromCenter, resizeRect, type Limits, type Rect } from "@/lib/resize-rect";
 import { applySpeakerNames, type SpeakerNames } from "@/lib/speaker-names";
 
 interface TranscriptViewerProps {
@@ -15,23 +16,20 @@ interface TranscriptViewerProps {
 }
 
 /* ------------------------------------------------------------------ *
- * 창 크기 조절 (상하좌우 가장자리 + 네 모서리)
- * 창은 화면 가운데에 놓이므로, 가장자리를 d만큼 끌면 크기를 2d 바꿔야 끈 쪽 가장자리가 포인터를 따라온다.
- * 크기는 창 안쪽 내용 영역(본문 wrapper) 기준 px. 조절 전(null)에는 기존 기본 크기를 그대로 쓴다.
+ * 창 크기 조절 (네 변 + 네 모서리)
+ * 끄는 변만 움직이고 반대쪽 변은 고정한다. 창은 공용 Modal이 화면 가운데에 두므로,
+ * 새 위치(Rect)를 계산한 뒤 "가운데에서 얼마나 밀지"(translate)와 본문 크기로 바꿔 적용한다.
+ * 계산은 lib/resize-rect.ts 순수 함수(단위 테스트 있음). 조절 전(null)에는 기존 기본 크기를 그대로 쓴다.
  * ------------------------------------------------------------------ */
-type Size = { width: number; height: number };
-/** 조절 방향: x/y 각각 -1(왼/위), 0(안 움직임), 1(오른/아래) */
+type Layout = { width: number; height: number; x: number; y: number };
+/** 조절 방향: x/y 각각 -1(왼/위 변), 0(안 움직임), 1(오른/아래 변) + 커서·위치 클래스 */
 type Edge = { x: -1 | 0 | 1; y: -1 | 0 | 1; className: string };
 
-const MIN_WIDTH = 288; // 18rem: 다운로드 버튼 두 개가 두 줄로 접혀도 읽을 수 있는 폭
-const MIN_HEIGHT = 256; // 16rem: 다운로드 줄 + 원문 몇 줄 + 닫기 버튼
-// 창 바깥 몫(px): 화면 여백 p-4(양쪽 32) + 창 안쪽 여백 p-6(양쪽 48) + 테두리 2, 세로는 제목·간격(36)까지
-const CHROME_X = 32 + 48 + 2;
-const CHROME_Y = 32 + 48 + 2 + 36;
+const MIN_BODY_WIDTH = 288; // 18rem: 다운로드 버튼 두 개가 두 줄로 접혀도 읽을 수 있는 폭
+const MIN_BODY_HEIGHT = 256; // 16rem: 다운로드 줄 + 원문 몇 줄 + 닫기 버튼
+const VIEWPORT_MARGIN = 16; // Modal 바깥 여백 p-4 와 같게
 
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), Math.max(min, max));
-
-// 끌 수 있는 곳: 가장자리 4개(두께 8px) + 모서리 4개(16px). 창(relative)의 테두리에 맞춰 놓인다.
+// 끌 수 있는 곳: 변 4개(두께 8px) + 모서리 4개(16px, 변보다 위). 창(relative)의 테두리에 걸쳐 놓인다.
 const EDGES: Edge[] = [
   { x: 0, y: -1, className: "inset-x-4 -top-1 h-2 cursor-ns-resize" },
   { x: 0, y: 1, className: "inset-x-4 -bottom-1 h-2 cursor-ns-resize" },
@@ -43,16 +41,22 @@ const EDGES: Edge[] = [
   { x: -1, y: 1, className: "-left-1 -bottom-1 size-4 cursor-nesw-resize" },
 ];
 
+/** 스크롤바를 뺀 화면 크기 (Modal 바깥 영역 fixed inset-0 과 같은 기준) */
+const viewport = () => ({ width: document.documentElement.clientWidth, height: document.documentElement.clientHeight });
+
 /**
  * "전사 원문 보기" 버튼 + 원문 모달. 원문이 없으면(null) 버튼을 잠그고 이유를 글자로 보여 준다.
  * 모달 맨 위에 다운로드 두 가지: 원본(화자N 그대로) / 이름 적용. 둘 다 글자 치환 외에는 가공하지 않는다.
- * 창의 가장자리·모서리를 끌어 가로·세로 크기를 조절할 수 있다(원문 상자가 함께 늘고 줄며, 넘치면 상자 안에서 스크롤).
+ * 창의 네 변·네 모서리를 끌어 가로·세로 크기를 조절할 수 있다(반대쪽 변 고정, 원문 상자가 함께 늘고 줄며 넘치면 상자 안에서 스크롤).
  */
 export function TranscriptViewer({ transcriptText, meetingTitle, meetingId, speakerNames = {} }: TranscriptViewerProps) {
   const [open, setOpen] = useState(false);
-  const [size, setSize] = useState<Size | null>(null);
+  const [layout, setLayout] = useState<Layout | null>(null);
+  const [dragging, setDragging] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  // 창 테두리·여백·제목이 차지하는 크기(창 크기 - 본문 크기). 끌기를 시작할 때 실제로 잰다.
+  const chromeRef = useRef({ width: 0, height: 0 });
   const hintId = useId();
   const namedHintId = useId();
   const unavailable = transcriptText === null;
@@ -69,35 +73,88 @@ export function TranscriptViewer({ transcriptText, meetingTitle, meetingId, spea
   }, [open]);
 
   const openViewer = () => {
-    setSize(null); // 열 때마다 기존 기본 크기로 시작
+    setLayout(null); // 열 때마다 기존 기본 크기·가운데 위치로 시작
     setOpen(true);
   };
 
-  /** 가장자리를 누르면 그때의 실제 크기를 재고, 끄는 동안 2배 비율로 크기를 바꾼다(최소~화면 한도로 제한) */
+  const limits = (): Limits => {
+    const { width, height } = viewport();
+    return {
+      viewportWidth: width,
+      viewportHeight: height,
+      margin: VIEWPORT_MARGIN,
+      minWidth: MIN_BODY_WIDTH + chromeRef.current.width,
+      minHeight: MIN_BODY_HEIGHT + chromeRef.current.height,
+    };
+  };
+
+  /** 창 위치(Rect) → 본문 크기 + 가운데에서 민 거리 */
+  const applyRect = (rect: Rect) => {
+    const { width, height } = viewport();
+    const offset = offsetFromCenter(rect, width, height);
+    setLayout({
+      width: rect.right - rect.left - chromeRef.current.width,
+      height: rect.bottom - rect.top - chromeRef.current.height,
+      x: offset.x,
+      y: offset.y,
+    });
+  };
+
+  const dialogRect = (): Rect | null => {
+    const dialog = bodyRef.current?.closest<HTMLElement>('[role="dialog"]');
+    if (!dialog) return null;
+    const { left, top, right, bottom } = dialog.getBoundingClientRect();
+    return { left, top, right, bottom };
+  };
+
+  /**
+   * 변·모서리를 누르면 그때의 창 위치를 기준으로 끄는 변만 움직인다.
+   * setPointerCapture: 포인터가 창·브라우저 밖으로 나가도 놓을 때까지 이벤트를 계속 받는다.
+   * preventDefault: 끄는 동안 글자 선택을 막고, 이어지는 mousedown(바깥 클릭으로 닫기 판정)도 생기지 않게 한다.
+   */
   const startResize = (edge: Edge) => (event: ReactPointerEvent<HTMLDivElement>) => {
     const body = bodyRef.current;
-    if (!body || event.button !== 0) return;
-    event.preventDefault(); // 끄는 동안 글자 선택 방지
+    const start = dialogRect();
+    if (!body || !start || event.button !== 0) return;
+    event.preventDefault();
+    const bodyBox = body.getBoundingClientRect();
+    chromeRef.current = {
+      width: start.right - start.left - bodyBox.width,
+      height: start.bottom - start.top - bodyBox.height,
+    };
     const handle = event.currentTarget;
     handle.setPointerCapture(event.pointerId);
-    const rect = body.getBoundingClientRect();
-    const start = { x: event.clientX, y: event.clientY, width: rect.width, height: rect.height };
+    setDragging(true);
+    const origin = { x: event.clientX, y: event.clientY };
 
     const onMove = (move: PointerEvent) => {
-      setSize({
-        width: clamp(start.width + edge.x * 2 * (move.clientX - start.x), MIN_WIDTH, window.innerWidth - CHROME_X),
-        height: clamp(start.height + edge.y * 2 * (move.clientY - start.y), MIN_HEIGHT, window.innerHeight - CHROME_Y),
-      });
+      applyRect(resizeRect(start, edge, move.clientX - origin.x, move.clientY - origin.y, limits()));
     };
-    const onUp = () => {
+    const onEnd = () => {
+      setDragging(false);
       handle.removeEventListener("pointermove", onMove);
-      handle.removeEventListener("pointerup", onUp);
-      handle.removeEventListener("pointercancel", onUp);
+      handle.removeEventListener("pointerup", onEnd);
+      handle.removeEventListener("pointercancel", onEnd);
+      handle.removeEventListener("lostpointercapture", onEnd);
     };
     handle.addEventListener("pointermove", onMove);
-    handle.addEventListener("pointerup", onUp);
-    handle.addEventListener("pointercancel", onUp);
+    handle.addEventListener("pointerup", onEnd);
+    handle.addEventListener("pointercancel", onEnd);
+    handle.addEventListener("lostpointercapture", onEnd);
   };
+
+  // 크기를 조절한 뒤 브라우저 창이 작아지면: 조절한 창을 화면 안으로 다시 맞춘다
+  // (applyRect·limits·dialogRect 는 ref·상수·DOM만 읽으므로 의존성은 open·resized 로 충분)
+  const resized = layout !== null;
+  useEffect(() => {
+    if (!open || !resized) return;
+    const onWindowResize = () => {
+      const rect = dialogRect();
+      if (rect) applyRect(fitRect(rect, limits()));
+    };
+    window.addEventListener("resize", onWindowResize);
+    return () => window.removeEventListener("resize", onWindowResize);
+  }, [open, resized]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const downloadOriginal = () => {
     if (!downloadable) return;
@@ -134,17 +191,23 @@ export function TranscriptViewer({ transcriptText, meetingTitle, meetingId, spea
         확인 버튼이 필요 없는 읽기 전용 모달이라 닫기 버튼은 children에 둔다 (ESC·바깥 클릭으로도 닫힘).
         panelClassName: 기본 폭 제한(max-w-md)을 풀고 relative로 둬서 크기 조절 손잡이가 창 테두리에 붙게 한다.
       */}
-      <Modal open={open} onClose={() => setOpen(false)} title="전사 원문" panelClassName="relative w-auto max-w-none">
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="전사 원문"
+        panelClassName="relative w-auto max-w-none"
+        panelStyle={layout ? { translate: `${layout.x}px ${layout.y}px` } : undefined}
+      >
         {/*
-          본문 영역. 조절 전: 기존 기본 크기(폭 = 기존 창 폭 28rem에서 여백·테두리를 뺀 값, 높이 = 내용).
-          조절 후: 지정 크기. 어떤 크기든 화면 한도(max-*)를 넘지 않고, 원문 상자만 줄어들어 위아래 버튼은 잘리지 않는다.
+          본문 영역. 조절 전: 기존 기본 크기(폭 = 기존 창 폭 28rem에서 여백·테두리를 뺀 값, 높이 = 내용, 화면 한도 안).
+          조절 후: 계산한 크기(항상 화면 여백 안). 원문 상자만 줄어들어 위쪽 다운로드 버튼과 닫기 버튼은 잘리지 않는다.
         */}
         <div
           ref={bodyRef}
-          className={`flex max-h-[calc(100dvh_-_118px)] max-w-[calc(100vw_-_82px)] flex-col ${
-            size ? "" : "w-[min(calc(25rem_-_2px),calc(100vw_-_82px))]"
+          className={`flex flex-col ${dragging ? "select-none" : ""} ${
+            layout ? "" : "max-h-[calc(100dvh_-_118px)] w-[min(calc(25rem_-_2px),calc(100vw_-_82px))]"
           }`}
-          style={size ? { width: size.width, height: size.height } : undefined}
+          style={layout ? { width: layout.width, height: layout.height } : undefined}
         >
           {downloadable ? (
             <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -177,7 +240,7 @@ export function TranscriptViewer({ transcriptText, meetingTitle, meetingId, spea
             role="region"
             aria-label="전사 원문"
             className={`mn-focus mt-2 overflow-y-auto whitespace-pre-wrap rounded-mn-control border border-mn-border bg-mn-bg p-3 font-mn-mono text-xs leading-5 text-mn-text ${
-              size
+              layout
                 ? "min-h-0 flex-1"
                 : "h-[min(60vh,calc(100dvh_-_18rem))] min-h-[min(12rem,calc(100dvh_-_18rem))] max-h-[calc(100dvh_-_18rem)]"
             }`}
@@ -196,6 +259,7 @@ export function TranscriptViewer({ transcriptText, meetingTitle, meetingId, spea
           <div
             key={`${edge.x},${edge.y}`}
             aria-hidden="true"
+            data-edge={`${edge.y === -1 ? "top" : edge.y === 1 ? "bottom" : ""}${edge.x === -1 ? "left" : edge.x === 1 ? "right" : ""}`}
             onPointerDown={startResize(edge)}
             className={`absolute touch-none ${edge.className}`}
           />

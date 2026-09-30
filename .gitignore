@@ -1,6 +1,9 @@
 # Node / Next.js
 node_modules/
 .next/
+# Playwright 실행 결과(스크린샷·다운로드 등)
+test-results/
+playwright-report/
 out/
 *.tsbuildinfo
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "./Button";
 
@@ -60,6 +60,8 @@ export interface ModalProps {
    * 크기를 직접 조절하는 창(전사 원문)처럼 기본 폭 제한을 풀어야 할 때만 넘긴다.
    */
   panelClassName?: string;
+  /** 대화상자 상자의 인라인 스타일(예: 크기 조절 창의 위치 이동). 없으면 기존과 같이 스타일 없음 */
+  panelStyle?: CSSProperties;
   children?: ReactNode;
 }
 
@@ -77,6 +79,7 @@ export function Modal({
   closeOnEsc = true,
   closeOnOverlayClick = true,
   panelClassName = "w-full max-w-md",
+  panelStyle,
   children,
 }: ModalProps) {
   const id = useId();
@@ -169,6 +172,9 @@ export function Modal({
       onMouseDown={(event) => {
         // 백드롭 자체를 눌렀을 때만 닫음 (대화상자 내부 클릭은 제외)
         if (closeOnOverlayClick && event.target === event.currentTarget && isTop(id)) {
+          // 기본 동작(누른 곳으로 포커스 이동)을 막는다. 막지 않으면 닫힐 때 여는 버튼으로 돌려준 포커스를
+          // 브라우저가 곧바로 body 로 옮겨 버린다 (Esc 로 닫을 때와 같게 포커스 복귀)
+          event.preventDefault();
           onClose();
         }
       }}
@@ -181,6 +187,7 @@ export function Modal({
         aria-describedby={description ? descId : undefined}
         tabIndex={-1}
         className={`mn-dialog ${panelClassName} rounded-mn-card border border-mn-border bg-mn-elevated`}
+        style={panelStyle}
       >
         <div className="flex flex-col gap-2 p-6">
           <h2 id={titleId} className="text-xl font-semibold leading-7 text-mn-text">
