@@ -13,6 +13,7 @@ import type {
   JobSortState,
   JobStatus,
   Meeting,
+  MeetingSummary,
   SortState,
   UploadedJob,
   UploadInput,
@@ -352,6 +353,26 @@ export async function uploadMeetingAudio(input: UploadInput, signal?: AbortSigna
   };
   uploads = [...uploads, upload];
   return { meetingId: upload.meetingId, jobId: upload.jobId, status: "queued" };
+}
+
+/**
+ * 회의 목록: 시드 회의 + 이 탭에서 업로드한 회의(브라우저 메모리)를 합친다.
+ * 서버와 같은 순서: startedAt을 시각으로 비교해 내림차순, 같으면 id 내림차순.
+ */
+export async function fetchMeetings(signal?: AbortSignal): Promise<MeetingSummary[]> {
+  await delay(400, signal);
+  const rows: MeetingSummary[] = [
+    { id: MOCK_MEETING.id, title: MOCK_MEETING.title, startedAt: MOCK_MEETING.startedAt, jobStatus: null },
+    ...uploads.map((upload) => ({
+      id: upload.meetingId,
+      title: upload.title,
+      startedAt: upload.startedAt,
+      jobStatus: uploadedJob(upload).status,
+    })),
+  ];
+  return rows.sort(
+    (a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt) || b.id.localeCompare(a.id),
+  );
 }
 
 /** 내 작업 하나의 진행 상태 조회 (폴링용). 없으면 not_found */

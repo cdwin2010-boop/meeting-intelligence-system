@@ -34,6 +34,19 @@ export interface Meeting {
   transcriptText: string | null;
 }
 
+/**
+ * 회의 목록(GET /meetings)의 한 줄 — docs/API-CONTRACT.md "회의 목록"
+ * 서버가 startedAt 내림차순(같으면 id 내림차순)으로 준다. 정렬 옵션·페이지 나눔은 없다.
+ */
+export interface MeetingSummary {
+  id: string;
+  title: string;
+  /** ISO 8601 일시 */
+  startedAt: string;
+  /** 가장 최근 작업의 상태. 업로드 작업이 없는 시드 회의는 null */
+  jobStatus: JobStatus | null;
+}
+
 export type SortKey = "id" | "task" | "assignee" | "dueDate" | "status";
 export type SortDirection = "asc" | "desc";
 

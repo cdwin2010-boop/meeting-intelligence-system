@@ -13,6 +13,7 @@ import type {
   AdminJob,
   JobSortState,
   Meeting,
+  MeetingSummary,
   SortState,
   UploadedJob,
   UploadInput,
@@ -89,6 +90,11 @@ function sortQuery(sort: SortState | JobSortState): string {
 }
 
 const segment = encodeURIComponent; // 경로에 들어가는 id는 반드시 인코딩
+
+/** 회의 목록. 서버가 정한 순서(startedAt 내림차순) 그대로 받는다. */
+export function fetchMeetings(signal?: AbortSignal): Promise<MeetingSummary[]> {
+  return request<MeetingSummary[]>("/meetings", { signal });
+}
 
 export function fetchMeeting(meetingId: string, signal?: AbortSignal): Promise<Meeting> {
   return request<Meeting>(`/meetings/${segment(meetingId)}`, { signal });

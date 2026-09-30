@@ -17,6 +17,7 @@ const useMock = process.env.NEXT_PUBLIC_USE_MOCK !== "false";
 const impl = useMock ? mock : http;
 
 export const isMockApi = useMock;
+export const fetchMeetings = impl.fetchMeetings;
 export const fetchMeeting = impl.fetchMeeting;
 export const fetchActionItems = impl.fetchActionItems;
 export const deleteActionItem = impl.deleteActionItem;
