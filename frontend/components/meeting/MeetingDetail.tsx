@@ -119,7 +119,11 @@ export function MeetingDetail({ meeting }: { meeting: Meeting }) {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-12">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <TranscriptViewer transcriptText={meeting.transcriptText} />
+        <TranscriptViewer
+          transcriptText={meeting.transcriptText}
+          meetingTitle={meeting.title}
+          meetingId={meeting.id}
+        />
         <Link
           href="/upload"
           className="mn-focus inline-flex h-8 items-center rounded-mn-control border border-mn-border px-3 text-[13px] font-medium text-mn-text hover:bg-mn-elevated"

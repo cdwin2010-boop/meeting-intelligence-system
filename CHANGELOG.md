@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.9.6 — 2026-09-30 (회의 상세: 전사 원문 다운로드)
+### 추가
+- 회의 상세 화면 "전사 원문 보기" 옆에 "전사 원문 다운로드" 버튼(`components/meeting/TranscriptViewer.tsx`, 기존 `Button` secondary/sm 재사용, `aria-label="전사 원문 다운로드 (.txt 파일)"`).
+  - 전사 원문(`transcriptText`)이 `null`이거나 빈 문자열(공백만 포함)이면 버튼을 숨김 → 시드 회의·처리 전 회의에는 안 보임.
+  - 화면에 이미 받아 온 원문을 가공 없이 저장(줄바꿈 추가·변환 없음). 서버 엔드포인트 추가 없음 → 목/실서버 모드 동일.
+  - UTF-8 + 맨 앞 BOM(`U+FEFF`), 파일명 `{회의 제목}_전사원문.txt`(`\ / : * ? " < > |` 제거, 제목이 비면 회의 ID).
+- `lib/download-text.ts`: `toSafeFileBaseName()`, `downloadTextFile()` (Blob + 임시 링크, 끝나면 `URL.revokeObjectURL`).
+- `MeetingDetail.tsx`가 `TranscriptViewer`에 회의 제목·ID를 넘김.
+### 확인한 것
+- `npx tsc --noEmit` 통과.
+- 실서버에서 다운로드 실행 및 저장.
+- 저장한 파일을 윈도우 메모장으로 열었을 때 한글 정상 (사용자 확인).
+### 확인하지 못한 것
+- 시드 회의에서 버튼 숨김.
+- 목 모드 동작.
+- `npm run build` (dev 서버 보호를 위해 미실행).
+
 ## v1.9.5 — 2026-09-30 (초안: LLM 추출 프롬프트 보강)
 ### 변경
 - `backend-contract-stub/app/pipeline/extractor.py` `build_prompt()` 규칙을 6개 절로 다시 씀. 스키마(`ActionItemList`)·후처리·API 응답 형태는 그대로, 미정 값은 계속 `""`.

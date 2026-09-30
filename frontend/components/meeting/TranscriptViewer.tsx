@@ -2,12 +2,30 @@
 
 import { useId, useState } from "react";
 import { Button, Modal } from "@/components/mono";
+import { downloadTextFile, toSafeFileBaseName } from "@/lib/download-text";
 
-/** "전사 원문 보기" 버튼 + 원문 모달. 원문이 없으면(null) 버튼을 잠그고 이유를 글자로 보여 준다. */
-export function TranscriptViewer({ transcriptText }: { transcriptText: string | null }) {
+interface TranscriptViewerProps {
+  transcriptText: string | null;
+  /** 다운로드 파일명에 쓴다: "{제목}_전사원문.txt" (제목이 비면 회의 ID) */
+  meetingTitle: string;
+  meetingId: string;
+}
+
+/**
+ * "전사 원문 보기" 버튼 + 원문 모달. 원문이 없으면(null) 버튼을 잠그고 이유를 글자로 보여 준다.
+ * 원문이 비어 있지 않으면 "전사 원문 다운로드" 버튼도 보여 준다(화면에 받아 온 텍스트를 그대로 .txt로 저장).
+ */
+export function TranscriptViewer({ transcriptText, meetingTitle, meetingId }: TranscriptViewerProps) {
   const [open, setOpen] = useState(false);
   const hintId = useId();
   const unavailable = transcriptText === null;
+  // null·빈 문자열(공백만 있는 경우 포함)이면 받을 내용이 없으므로 버튼을 숨긴다
+  const downloadable = transcriptText !== null && transcriptText.trim() !== "";
+
+  const handleDownload = () => {
+    if (!downloadable) return;
+    downloadTextFile(`${toSafeFileBaseName(meetingTitle, meetingId)}_전사원문.txt`, transcriptText);
+  };
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -20,6 +38,11 @@ export function TranscriptViewer({ transcriptText }: { transcriptText: string | 
       >
         전사 원문 보기
       </Button>
+      {downloadable ? (
+        <Button variant="secondary" size="sm" aria-label="전사 원문 다운로드 (.txt 파일)" onClick={handleDownload}>
+          전사 원문 다운로드
+        </Button>
+      ) : null}
       {unavailable ? (
         <span id={hintId} className="text-xs text-mn-muted">
           전사 전이거나 원문이 없습니다
