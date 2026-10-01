@@ -1,5 +1,8 @@
 # Changelog
 
+## 미배포 (v2 개발 중)
+- v2 `backend/` 뼈대 추가: 설정(pydantic-settings, `DATABASE_URL`·`APP_ENV`)·SQLAlchemy 2.0 DB 연결·Alembic 초기화(마이그레이션 없음)·`GET /api/health`·pytest 1건. 스텁·프론트 변경 없음.
+
 ## v1.10.1 — 2026-10-01 (추출 결과 출처 기록, 문서 보완)
 - API 응답·계약서(`docs/API-CONTRACT.md`)·프론트 변경 없음. 스텁 내부 DB 기록만 추가.
 ### 추가
