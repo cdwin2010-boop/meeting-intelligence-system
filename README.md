@@ -17,7 +17,7 @@ meeting-intelligence-system-v1.7/
 └── backend/                ← (아직 없음) 운영 백엔드 자리
 ```
 
-> 운영 백엔드(`backend/`)는 **아직 이 저장소에 없습니다.** 지금 실행되는 서버는 `backend-contract-stub/`(스텁)이고, 스텁 테스트(`pytest -q`)는 현재 125건이 통과합니다.
+> 운영 백엔드(`backend/`)는 **아직 이 저장소에 없습니다.** 지금 실행되는 서버는 `backend-contract-stub/`(스텁)이고, 스텁 테스트(`pytest -q`)는 현재 133건이 통과합니다.
 > 운영 백엔드를 가져올 때는 이 안에 `backend/`라는 이름으로 복사하세요. (`venv/`는 복사하지 말고 새로 만드세요)
 
 ## 1분 시작 (프론트엔드, 백엔드 없이 목 데이터로)
@@ -58,7 +58,7 @@ python -m venv venv
 # PowerShell: .\venv\Scripts\Activate.ps1   /  Git Bash: source venv/Scripts/activate   /  macOS·Linux: source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env            # PowerShell: Copy-Item .env.example .env
-pytest -q                       # API 계약 테스트 (현재 125건 통과, 먼저 통과하는지 확인)
+pytest -q                       # API 계약 테스트 (현재 133건 통과, 먼저 통과하는지 확인)
 uvicorn app.main:app --reload --port 8000    # http://localhost:8000/docs
 ```
 
@@ -77,7 +77,7 @@ git commit -m "chore: import meeting-intelligence v1.7"
 ## 다음 단계 (권장 순서)
 
 1. `npm run typecheck` 통과 확인 → 첫 커밋
-2. 운영 백엔드를 `backend/`로 가져오기(아직 없음. 현재는 스텁 `backend-contract-stub/`이 실행되며 pytest 125건 통과) → 그 테스트 통과 확인 → CORS를 `.env`(`CORS_ALLOW_ORIGINS`)로 옮기기
+2. 운영 백엔드를 `backend/`로 가져오기(아직 없음. 현재는 스텁 `backend-contract-stub/`이 실행되며 pytest 133건 통과) → 그 테스트 통과 확인 → CORS를 `.env`(`CORS_ALLOW_ORIGINS`)로 옮기기
 3. `docs/API-CONTRACT.md`대로 운영 백엔드에 엔드포인트 추가 (Claude CLI에 계약서를 붙여 요청)
 4. 관리자 API 서버 권한 검증(RBAC) + 감사 로그
 5. 프론트 자동 테스트(Playwright) 확대 — 지금은 `frontend/e2e/`의 E2E 5건(전사 원문 창)이 목 모드에서만 동작하며, 실제 스텁 서버와 연결한 자동 화면 검증은 없습니다(실행 방법은 `docs/TEST-GUIDE.md`)

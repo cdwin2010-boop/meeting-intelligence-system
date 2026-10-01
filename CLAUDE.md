@@ -7,7 +7,7 @@
 - 프론트 실행: `cd frontend && npm run dev` (http://localhost:3000)
 - 프론트 검사: `cd frontend && npm run typecheck`
 - 백엔드(스텁) 실행: `cd backend-contract-stub && uvicorn app.main:app --reload --port 8000`
-- 백엔드(스텁) 테스트: `cd backend-contract-stub && pytest -q` (현재 125건이 항상 통과해야 함. 테스트는 임시 DB만 쓰고 실제 `data/stub.db`는 건드리지 않음)
+- 백엔드(스텁) 테스트: `cd backend-contract-stub && pytest -q` (현재 133건이 항상 통과해야 함. 테스트는 임시 DB만 쓰고 실제 `data/stub.db`는 건드리지 않음)
 
 ## 작업 원칙
 - 코드를 바꾸면 해당 검사 명령(typecheck / pytest)을 실행하고 결과를 보고한다.
