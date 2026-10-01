@@ -12,6 +12,7 @@
 - v2 `backend/` 보완: 확정된 업무를 PATCH 로 빈칸(업무명·담당자·기한)이 되게 바꾸면 400 `{message, missingFields}`로 거부(데이터·이벤트 변경 없음). 다른 유효한 값으로 교체는 허용, pending 업무는 기존대로 비우기 허용. pytest 7건 추가(backend 179건).
 - v2 `backend/` 자동 확정 백스톱 `app/jobs/auto_confirm.py`(`run_auto_confirm(session, now)`, `python -m app.jobs.auto_confirm [--dry-run]`): 회의록은 auto_confirm_at 경과 시 period_elapsed, 업무는 보완 완비·소속 회의록 정상일 때 마감일(KST 날짜)과 auto_confirm_at 중 먼저 오는 쪽(같은 날은 due_reached). 상태 조건 UPDATE로 멱등·경쟁 안전, 건별 트랜잭션, 실패는 id만 반환. 메일·스케줄러 연결 없음. pytest 20건 추가(backend 199건).
 - v2 `backend/` 알림 1단계(메일 없음): `meeting_views`(상세 조회 성공 시 열람 기록, 첫 열람 유지·마지막 갱신)·`notices`(회의록·업무 확정 시 수동·등록 시·자동 모두 같은 트랜잭션에서 관리자 이상 관련자에게 확정 안내, 수행자 본인 제외) 표와 마이그레이션(데이터 있으면 downgrade 거부), `GET /api/me/notices`·`POST /api/me/notices/seen`, `GET /api/me/todos`(확정 대기·보완 필요·내 업무·자동 확정 미열람, 각 50건+total, 쿼리 수 고정). 열람 권한 EXISTS 서브쿼리 별칭화. pytest 14건 추가(backend 213건).
+- v2 `backend/` 알림 2단계(실제 발송 기본 꺼짐): `mail_outbox` 표와 마이그레이션(데이터 있으면 downgrade 거부), 처리 완료로 확정 대기/확정이 된 회의록의 즉시 메일(참석자·담당자, 등록자 제외, 제목·로그인 링크만, dedupe 1회), `python -m app.jobs.daily_mail`(수신자별 KST 하루 1통, 관리자 확정 대기·보완 필요 건수, 담당자 미열람 건수), `python -m app.jobs.send_mail [--dry-run]`(MAIL_ENABLED=false면 skipped, 실패 3회 후 failed, 분류 코드만 기록, SmtpSender STARTTLS·FakeSender). 설정 `MAIL_ENABLED`·`SMTP_*`·`APP_BASE_URL`. pytest 18건 추가(backend 231건).
 
 ## v1.10.1 — 2026-10-01 (추출 결과 출처 기록, 문서 보완)
 - API 응답·계약서(`docs/API-CONTRACT.md`)·프론트 변경 없음. 스텁 내부 DB 기록만 추가.

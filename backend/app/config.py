@@ -47,6 +47,18 @@ class Settings(BaseSettings):
     # 회의 일시를 현지 시각으로 바꿀 때 쓰는 시간대(추출기의 날짜·요일 기준)
     app_timezone: str = "Asia/Seoul"
 
+    # ---- 메일 (기본 꺼짐) ----
+    # false 면 발송 작업이 아무것도 보내지 않고 대기 메일을 skipped(mail_disabled)로 처리한다
+    mail_enabled: bool = False
+    # SMTP 값은 로그·예외·이벤트에 넣지 않는다
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    smtp_from: str = ""
+    # 메일 본문의 로그인 링크
+    app_base_url: str = "http://localhost:3000"
+
     @property
     def allowed_audio_extensions(self) -> set[str]:
         return {e.strip().lower().lstrip(".") for e in self.allowed_audio_ext.split(",") if e.strip()}

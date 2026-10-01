@@ -21,6 +21,7 @@ from app.db import SessionLocal
 from app.models import Account, ActionItem, Job, Meeting, SourceDocument, Tenant, Transcript, append_event
 from app.models.common import utcnow
 from app.pipeline.errors import error_code
+from app.services.mail import queue_immediate_new_minutes
 from app.services.notices import create_confirm_notices
 from app.pipeline.extractor import ActionItemCandidate, Extractor, FakeExtractor, make_gemini_extractor
 from app.pipeline.stt import FakeStt, SttEngine, TranscriptResult, as_transcript_result, is_no_speech, make_gemini_stt
@@ -171,6 +172,8 @@ def _finish_completed(factory: sessionmaker, job_id: int, candidates: list[Actio
         else:
             meeting.status = "awaiting_confirmation"
             _event(session, job, "meeting", meeting.id, "meeting.awaiting_confirmation")
+        # 즉시 메일: 확정 대기/확정이 된 지금, 같은 트랜잭션에서 발송함에 쌓는다(재처리해도 dedupe_key 로 1회)
+        queue_immediate_new_minutes(session, meeting)
         if meeting.auto_confirm_at is None:
             tenant = session.get(Tenant, job.tenant_id)
             meeting.auto_confirm_at = auto_confirm_at(meeting.first_created_at, tenant.auto_confirm_days)
