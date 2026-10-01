@@ -85,10 +85,14 @@ def update_action_item(
 
     before = _snapshot(item)
 
+    blank_title = False
     if "title" in sent:
         if body.title is None or is_blank(body.title):
-            raise _http(status.HTTP_400_BAD_REQUEST, "업무명은 비워 둘 수 없습니다")
-        item.title = body.title.strip()
+            if item.status != "confirmed":
+                raise _http(status.HTTP_400_BAD_REQUEST, "업무명은 비워 둘 수 없습니다")
+            blank_title = True  # 확정된 업무: 아래에서 missingFields 형식으로 함께 거부
+        else:
+            item.title = body.title.strip()
 
     if "assignee_id" in sent:
         if body.assignee_id is not None:
@@ -109,6 +113,18 @@ def update_action_item(
         item.due_undetermined = body.due_undetermined
         if body.due_undetermined:
             item.due_date = None
+
+    # 확정된 업무는 적용 결과가 보완 필요(빈칸)가 되는 변경을 거부한다. 다른 유효한 값으로 바꾸는 것은 허용.
+    # 커밋 전에 거부하므로 데이터·이벤트 모두 바뀌지 않는다(세션은 커밋 없이 닫힘)
+    if item.status == "confirmed":
+        missing = item.missing_fields
+        if blank_title and "title" not in missing:
+            missing = ["title", *missing]
+        if missing:
+            raise _http(
+                status.HTTP_400_BAD_REQUEST,
+                {"message": "확정된 업무는 필수 항목을 비울 수 없습니다", "missingFields": missing},
+            )
 
     after = _snapshot(item)
     changed = {k for k in before if before[k] != after[k]}

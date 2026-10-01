@@ -9,6 +9,7 @@
 - v2 `backend/` 전사문 저장: `transcripts` 표(회의록당 1건, 구간 `segments`는 엔진이 줄 때만), STT 직후 저장해 말소리 없음·추출 실패여도 원문 보존, 이벤트 `transcript.saved`에는 길이·구간 수만. `tenants.audio_retention_days`(NULL=무기한, 자동 삭제 작업 없음, 법무 검토 후 추가 예정). 마이그레이션 downgrade는 데이터가 있으면 거부. pytest 12건 추가(backend 126건).
 - v2 `backend/` 회의록 조회 API(읽기 전용): `GET /api/meetings`(상태·mine·needsCompletion 필터, heldAt 내림차순, page/size, 업무 수·보완 필요 수를 집계 쿼리 1회로), `GET /api/meetings/{id}`(개요·참석자·업무 missingFields·최근 이벤트 20건), `GET /api/meetings/{id}/transcript`. 열람 권한은 `app/auth/access.py` 한 곳(manager·executive 고객사 전체, staff 참석·담당·등록 회의록만), 권한 없음·다른 고객사는 404. 보완 필요 계산을 SQL 식으로도 쓰도록 `needs_supplement` hybrid 속성화. pytest 14건 추가(backend 140건).
 - v2 `backend/` 쓰기 API: `PATCH /api/action-items/{id}`(업무명·담당자·기한·미확정 보완, 같은 고객사 활성 계정만, 공백만 업무명 거부), `POST /api/action-items/{id}/confirm`(보완 필요 409+missingFields, 멱등), `POST /api/meetings/{id}/confirm`(확정 대기만, 업무 보완과 무관, `withItems=true`면 완성 업무 함께 확정·건너뛴 id 반환), 수정 요청 기록·조회·해결(`/api/meetings/{id}/change-requests`, 상태·자동 확정 시계 영향 없음, 상위 직급 우선). 쓰기와 이벤트는 한 트랜잭션. pytest 32건 추가(backend 172건).
+- v2 `backend/` 보완: 확정된 업무를 PATCH 로 빈칸(업무명·담당자·기한)이 되게 바꾸면 400 `{message, missingFields}`로 거부(데이터·이벤트 변경 없음). 다른 유효한 값으로 교체는 허용, pending 업무는 기존대로 비우기 허용. pytest 7건 추가(backend 179건).
 
 ## v1.10.1 — 2026-10-01 (추출 결과 출처 기록, 문서 보완)
 - API 응답·계약서(`docs/API-CONTRACT.md`)·프론트 변경 없음. 스텁 내부 DB 기록만 추가.

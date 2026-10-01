@@ -339,3 +339,67 @@ def test_change_and_event_roll_back_together(env, team, monkeypatch):
     item = load_item(env["factory"], item_id)
     assert item.title == "원래" and item.assignee_id is None
     assert len(events(env["factory"])) == events_before
+
+
+# ---------------- 확정된 업무 빈칸 차단 ----------------
+def _confirmed_item(env, team, **fields) -> int:
+    meeting_id = make_meeting(env["factory"], team["mgr"], items=[{
+        "title": "견적서 송부", "assignee_id": team["lee"].id, "due_date": date(2026, 10, 9),
+        "status": "confirmed", "confirm_kind": "manager", "confirmed_by": team["mgr"].id, **fields,
+    }])
+    [item_id] = item_ids(env["factory"], meeting_id)
+    return item_id
+
+
+@pytest.mark.parametrize(
+    ("payload", "missing"),
+    [
+        ({"assigneeId": None}, ["assignee"]),
+        ({"title": " \t\n"}, ["title"]),
+        ({"dueDate": None}, ["dueDate"]),
+        ({"title": "", "assigneeId": None}, ["title", "assignee"]),
+        ({"dueUndetermined": False, "dueDate": None}, ["dueDate"]),
+    ],
+)
+def test_confirmed_item_cannot_be_blanked(env, team, payload, missing):
+    item_id = _confirmed_item(env, team)
+    before = load_item(env["factory"], item_id)
+    events_before = len(events(env["factory"]))
+
+    res = call(env, "PATCH", team["mgr"], f"/api/action-items/{item_id}", json=payload)
+    assert res.status_code == 400
+    assert res.json()["detail"]["missingFields"] == missing and "message" in res.json()["detail"]
+
+    after = load_item(env["factory"], item_id)
+    assert (after.title, after.assignee_id, after.due_date, after.due_undetermined, after.status) == (
+        before.title, before.assignee_id, before.due_date, before.due_undetermined, before.status)
+    assert len(events(env["factory"])) == events_before
+
+
+def test_confirmed_item_accepts_valid_replacements(env, team):
+    item_id = _confirmed_item(env, team)
+    path = f"/api/action-items/{item_id}"
+    mgr = team["mgr"]
+
+    res = call(env, "PATCH", mgr, path, json={"assigneeId": team["staff"].id})  # 담당자 교체
+    assert res.status_code == 200 and res.json()["assignee"]["id"] == team["staff"].id
+    res = call(env, "PATCH", mgr, path, json={"dueUndetermined": True})  # 날짜 → 미확정
+    assert res.status_code == 200 and res.json()["dueDate"] is None and res.json()["dueUndetermined"] is True
+    res = call(env, "PATCH", mgr, path, json={"dueDate": "2026-10-16"})  # 미확정 → 날짜
+    assert res.status_code == 200 and res.json()["dueDate"] == "2026-10-16" and res.json()["dueUndetermined"] is False
+    res = call(env, "PATCH", mgr, path, json={"title": " 견적서 재송부 "})  # 업무명 수정
+    assert res.status_code == 200 and res.json()["title"] == "견적서 재송부"
+    assert res.json()["status"] == "confirmed" and res.json()["missingFields"] == []
+    assert len(events(env["factory"], "item.updated")) == 4
+
+
+def test_pending_item_can_still_be_blanked(env, team):
+    meeting_id = make_meeting(env["factory"], team["mgr"], items=[
+        {"title": "견적서 송부", "assignee_id": team["lee"].id, "due_date": date(2026, 10, 9)}])
+    [item_id] = item_ids(env["factory"], meeting_id)
+    res = call(env, "PATCH", team["mgr"], f"/api/action-items/{item_id}", json={"assigneeId": None, "dueDate": None})
+    assert res.status_code == 200
+    assert res.json()["status"] == "pending" and res.json()["missingFields"] == ["assignee", "dueDate"]
+    # pending 업무의 공백 업무명은 기존대로 400(메시지 형식)
+    res = call(env, "PATCH", team["mgr"], f"/api/action-items/{item_id}", json={"title": "  "})
+    assert res.status_code == 400 and res.json()["detail"] == "업무명은 비워 둘 수 없습니다"
