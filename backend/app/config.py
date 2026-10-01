@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -5,6 +7,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 DEV_SECRET_KEY = "dev-only-insecure-secret-key-change-me"
 # dev 가 아닌 환경의 최소 키 길이(HS256 권장: 32바이트 이상)
 MIN_SECRET_KEY_LENGTH = 32
+
+
+class GeminiKeyMissingError(RuntimeError):
+    """선택된 GEMINI_KEY_MODE 의 키가 비어 있음. 메시지에는 설정 이름만 넣고 키 값은 넣지 않는다."""
 
 
 class Settings(BaseSettings):
@@ -20,6 +26,31 @@ class Settings(BaseSettings):
     secret_key: SecretStr = SecretStr(DEV_SECRET_KEY)
     # 로그인 토큰 유효 시간(분)
     access_token_minutes: int = 480
+
+    # ---- Gemini (STT·업무 추출) ----
+    # 어느 키를 쓸지는 이 값으로만 정한다. 무료 키가 429에 걸려도 유료 키로 자동 전환하지 않는다(모르는 새 비용 방지)
+    gemini_key_mode: Literal["free", "paid"] = "free"
+    gemini_api_key: SecretStr = SecretStr("")  # 무료 키
+    gemini_paid_api_key: SecretStr = SecretStr("")  # 유료 키
+    gemini_model: str = "gemini-3.8-flash"  # STT·추출 공통 모델
+    gemini_timeout_sec: float = 900.0  # Gemini 요청 1건·파일 처리 대기의 기한(초)
+
+    def selected_gemini_key(self) -> str:
+        """GEMINI_KEY_MODE 로 고른 키 값. 비어 있으면 오류(다른 모드의 키로 넘어가지 않음).
+        클라이언트 생성에만 쓰고 출력·로그·예외 메시지에는 넣지 않는다."""
+        if self.gemini_key_mode == "paid":
+            key, name = self.gemini_paid_api_key, "GEMINI_PAID_API_KEY"
+        else:
+            key, name = self.gemini_api_key, "GEMINI_API_KEY"
+        value = key.get_secret_value().strip()
+        if not value:
+            raise GeminiKeyMissingError(f"GEMINI_KEY_MODE={self.gemini_key_mode} 인데 {name} 가 비어 있습니다.")
+        return value
+
+    def all_gemini_keys(self) -> list[str]:
+        """오류 문구 가리기(redact)용: 설정된 키 전부(무료·유료)"""
+        keys = (self.gemini_api_key.get_secret_value().strip(), self.gemini_paid_api_key.get_secret_value().strip())
+        return [k for k in keys if k]
 
     @model_validator(mode="after")
     def _refuse_default_secret_outside_dev(self):

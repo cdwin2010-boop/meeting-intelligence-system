@@ -4,6 +4,7 @@
 - v2 `backend/` 뼈대 추가: 설정(pydantic-settings, `DATABASE_URL`·`APP_ENV`)·SQLAlchemy 2.0 DB 연결·Alembic 초기화(마이그레이션 없음)·`GET /api/health`·pytest 1건. 스텁·프론트 변경 없음.
 - v2 `backend/` 핵심 테이블 7개(tenants·accounts·source_documents·meetings·meeting_participants·action_items·events)와 첫 Alembic 마이그레이션, 업무 "보완 필요" 계산 속성, 추가 전용 `append_event()`, pytest 8건 추가(backend 9건).
 - v2 `backend/` ID 로그인(`POST /api/auth/login`, `GET /api/auth/me`, argon2 해시·PyJWT HS256 토큰), 직급 권한 의존성 `require_rank`, 고객사 범위 헬퍼 `scoped`, 3단계 검증용 `GET /api/_probe/manager`, 계정 생성 스크립트 `backend/scripts/create_account.py`, 설정 `SECRET_KEY`·`ACCESS_TOKEN_MINUTES`, pytest 23건 추가(backend 32건).
+- v2 `backend/app/pipeline/` STT·업무 추출 순수 모듈 이식(stub `stt.py`·`extractor.py`·`gemini_client.py`·`service.py`의 오류 요약): 업무 후보 데이터클래스 반환, 상대 마감일 서버 계산, NO_SPEECH 판정에 설명 붙은 경우 포함, 설정 `GEMINI_KEY_MODE`·`GEMINI_API_KEY`·`GEMINI_PAID_API_KEY`·`GEMINI_MODEL`·`GEMINI_TIMEOUT_SEC`(모드 자동 전환 없음), 의존성 google-genai, pytest 56건 추가(backend 88건). DB·API 연결 없음.
 
 ## v1.10.1 — 2026-10-01 (추출 결과 출처 기록, 문서 보완)
 - API 응답·계약서(`docs/API-CONTRACT.md`)·프론트 변경 없음. 스텁 내부 DB 기록만 추가.

@@ -11,6 +11,10 @@ os.environ["DATABASE_URL"] = f"sqlite:///{(_TEST_DB_DIR / 'test.db').as_posix()}
 os.environ["APP_ENV"] = "test"
 # test 환경은 기본 서명 키를 거부하므로 실행마다 무작위 키를 쓴다(값은 출력하지 않음)
 os.environ["SECRET_KEY"] = secrets.token_urlsafe(48)
+# Gemini 는 테스트에서 절대 실제로 부르지 않는다: .env 에 키가 있어도 빈 값·free 모드로 고정(테스트가 필요하면 직접 바꿈)
+os.environ["GEMINI_KEY_MODE"] = "free"
+os.environ["GEMINI_API_KEY"] = ""
+os.environ["GEMINI_PAID_API_KEY"] = ""
 
 
 def pytest_sessionfinish(session, exitstatus):
