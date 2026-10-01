@@ -1,10 +1,12 @@
 """
 액션아이템 추출기. 모든 추출기는 같은 모양을 따른다:
     extract(transcript, started_at) -> list[dict]   # 저장 형식 {"task","assignee","dueDate","quote":{...}}
+    model_name, prompt_version                       # (v1.10.1) 추출 결과 출처 기록용. 액션아이템 행에 함께 저장된다
 
 구조화 출력은 Pydantic 스키마 ActionItemList 를 쓰고, 미정 값은 None 이 아니라 "" 로 채운다 (프로젝트 지침).
 """
 import copy
+import hashlib
 import re
 from datetime import date, datetime
 from typing import Any, Protocol
@@ -105,11 +107,11 @@ def postprocess(result: ActionItemList) -> list[dict]:
     return items
 
 
-def build_prompt(transcript: str, started_at: datetime) -> str:
-    weekday = WEEKDAYS_KO[started_at.weekday()]
-    return f"""다음은 한국어 회의 전사문입니다. 액션아이템을 추출하세요.
+# 추출 프롬프트 템플릿. {started_at}·{weekday}·{transcript} 자리만 회의마다 바뀌고 나머지는 고정이다.
+# 템플릿 안에 다른 중괄호를 쓰면 str.format 이 깨지므로 넣지 않는다.
+PROMPT_TEMPLATE = """다음은 한국어 회의 전사문입니다. 액션아이템을 추출하세요.
 
-회의 일시: {started_at.isoformat()} ({weekday}요일)
+회의 일시: {started_at} ({weekday}요일)
 
 [1. 무엇을 잡는가]
 전사문 전체를 처음부터 끝까지 훑어, 아래 기준에 맞는 것을 빠짐없이 모두 찾습니다. 앞부분에서 몇 개 찾았다고 멈추지 않습니다.
@@ -169,22 +171,42 @@ e) 같은 화자는 회의 전체에서 항상 같은 표기를 씁니다.
 전사문:
 {transcript}"""
 
+# 프롬프트 버전: 고정 템플릿(전사문·회의 일시 제외)의 SHA-256 앞 12자. 템플릿 글자가 바뀌면 자동으로 바뀐다(수동 관리 없음).
+PROMPT_VERSION = hashlib.sha256(PROMPT_TEMPLATE.encode("utf-8")).hexdigest()[:12]
+
+# 가짜 추출기는 실제 모델·프롬프트를 쓰지 않으므로 출처를 이 값으로 기록한다
+FAKE_PROVENANCE = "fake"
+
+
+def build_prompt(transcript: str, started_at: datetime) -> str:
+    weekday = WEEKDAYS_KO[started_at.weekday()]
+    return PROMPT_TEMPLATE.format(started_at=started_at.isoformat(), weekday=weekday, transcript=transcript)
+
 
 class Extractor(Protocol):
+    model_name: str
+    prompt_version: str
+
     def extract(self, transcript: str, started_at: datetime) -> list[dict]: ...
 
 
 class FakeExtractor:
     """가짜 추출: 테스트 가이드 A파일 정답표 2건 (기존 fake_action_items 재사용)."""
 
+    model_name = FAKE_PROVENANCE
+    prompt_version = FAKE_PROVENANCE
+
     def extract(self, transcript: str, started_at: datetime) -> list[dict]:
         return fake_action_items(started_at)
 
 
 class GeminiExtractor:
+    prompt_version = PROMPT_VERSION
+
     def __init__(self, client: Any, model: str):
         self._client = client
         self._model = model
+        self.model_name = model  # make_extractor 가 설정값(GEMINI_LLM_MODEL)으로 넘긴 이름
 
     def extract(self, transcript: str, started_at: datetime) -> list[dict]:
         from google.genai import types

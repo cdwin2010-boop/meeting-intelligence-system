@@ -1,4 +1,4 @@
-# 테스트 가이드 (v1.10.0 기준)
+# 테스트 가이드 (v1.10.1 기준)
 
 이 저장소에서 확인되는 테스트·실행 방법만 정리한다. 설정값(`.env`, `.env.local`)의 값은 적지 않고 변수 이름만 쓴다.
 
@@ -9,7 +9,7 @@ cd backend-contract-stub
 pytest -q
 ```
 
-- 현재 **125건 통과**가 기준이다(`CLAUDE.md`: 항상 통과해야 함).
+- 현재 **133건 통과**가 기준이다(`CLAUDE.md`: 항상 통과해야 함).
 - warning 1건이 나온다: `StarletteDeprecationWarning`(starlette.testclient에서 `httpx` 사용 관련). 기능 영향 없음.
 - 테스트는 임시 DB 파일만 쓴다. `tests/conftest.py`가 app import 전에 `STUB_DB_PATH`를 테스트 전용 임시 파일로 바꾸고, 저장소가 다른 파일을 가리키면 수집 단계에서 중단한다. 실제 등록 데이터(`data/stub.db`)는 열지 않는다.
 - 실제 Gemini를 호출하지 않는다(가짜 클라이언트 사용).

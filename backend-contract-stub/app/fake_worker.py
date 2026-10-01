@@ -7,9 +7,11 @@
 (취소된 작업에 결과를 덮어쓰지 않는다).
 """
 import time
+from datetime import datetime, timezone
 
 from app.config import settings
 from app.db import store
+from app.pipeline.extractor import FAKE_PROVENANCE
 from app.uploads import fake_action_items, fake_transcript, parse_started_at
 
 
@@ -32,4 +34,9 @@ def run_fake_worker(job_id: str) -> None:
     started_at = parse_started_at(meeting.get("startedAt", ""))
     if started_at is None:
         return
-    store.complete_if_processing(job_id, fake_transcript(), fake_action_items(started_at))
+    # 가짜 추출이므로 모델 이름·프롬프트 버전은 "fake" 로 기록한다
+    store.complete_if_processing(
+        job_id, fake_transcript(), fake_action_items(started_at),
+        extract_model=FAKE_PROVENANCE, prompt_version=FAKE_PROVENANCE,
+        extracted_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    )

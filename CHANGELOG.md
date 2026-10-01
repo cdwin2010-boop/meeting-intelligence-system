@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.10.1 — 2026-10-01 (추출 결과 출처 기록, 문서 보완)
+- API 응답·계약서(`docs/API-CONTRACT.md`)·프론트 변경 없음. 스텁 내부 DB 기록만 추가.
+### 추가
+- 스텁 `action_items`에 NULL 허용 열 3개: `extract_model`(모델 이름), `prompt_version`, `extracted_at`(추출 시각, ISO 8601 UTC). 기존 열 보강 방식(`_ADDED_COLUMNS`)으로 추가하므로 예전 DB 파일은 서버 시작 때 열만 생기고, 기존 행과 시드는 NULL(알 수 없음).
+- 추출 결과 저장(`Store.complete_if_processing`) 때 위 3개를 같은 트랜잭션에서 기록.
+  - Gemini 추출기: 모델 이름은 설정값 `GEMINI_LLM_MODEL`(`make_extractor`가 넘긴 값), `prompt_version`은 추출 프롬프트 고정 템플릿(전사문·회의 일시 제외)의 SHA-256 앞 12자(`app/pipeline/extractor.py` `PROMPT_VERSION`, 자동 계산).
+  - 가짜 추출기(`FakeExtractor`)와 가짜 처리기(`run_fake_worker`)는 `extract_model`·`prompt_version`을 `"fake"`로 기록.
+  - 출처 속성이 없는 추출기(테스트용 가짜 등)는 NULL.
+- `tests/test_extraction_provenance.py` 8건: Gemini 추출(가짜 클라이언트) 시 설정값의 모델 이름·프롬프트 버전·추출 시각 기록, fake 추출기·가짜 처리기는 `"fake"`, 출처 속성 없는 추출기는 NULL, 시드는 NULL, 프롬프트 버전 = 템플릿 SHA-256 앞 12자, API 응답에 새 필드 없음, 구버전(v1.10.0 스키마) 파일의 복사본을 열면 기존 데이터 유지·새 열 NULL·원본 파일 변화 없음.
+### 변경
+- `app/pipeline/extractor.py`: 프롬프트를 f-string에서 모듈 상수 `PROMPT_TEMPLATE` + `str.format`으로 바꿈(버전 계산용). 만들어지는 프롬프트 글자는 이전과 동일(이전 코드와 출력 비교로 확인).
+- `docs/TEST-GUIDE.md`: pytest 기준 건수 125 → 133.
+- `backend-contract-stub/.env.example`: `UPLOAD_DIR` 주석을 실제 기본값(`backend-contract-stub/data/uploads`, `app/config.py`)에 맞게 정정. 값은 그대로.
+### 확인한 것
+- 스텁 `pytest -q` 133건 통과(기존 125 + 신규 8, warning 1건 동일, 실제 Gemini 호출 없음). 프론트 `npx tsc --noEmit` 통과.
+- 실제 `data/stub.db`의 복사본으로 열 보강 확인: 표 4개의 기존 행이 모두 그대로(회의 4·액션아이템 11·작업 12·meta 1), `action_items`에 새 열 3개 추가·전부 NULL, 다시 열어도 변화 없음. 실제 파일은 작업 전에 복사해 백업만 했고 바뀌지 않음(SHA-256 동일).
+### 알려진 제한사항 (v1.10.0 목록에 보충)
+- 로컬 Whisper·Ollama 코드 없음: 화면의 Whisper(`faster-whisper`) 선택지는 스텁 응답(가짜 전사)이며 `STT_PROVIDER=gemini` 모드에서는 501로 거절됨. 작업 화면의 GPU 이름 표시는 고정 문자열.
+- 서버 전체에 인증·권한 검사가 없음(`/api/admin/*` 포함). 외부 네트워크에 노출 금지.
+- 액션아이템 삭제는 이력 없이 행을 삭제함.
+- 원본 음성은 처리 완료 후 삭제됨(실패 시에는 Retry를 위해 남김).
+
 ## v1.10.0 — 2026-10-01 (v1 마감: 문서화·기준선 확정)
 - 코드·설정·API 계약 변경 없음. 문서만 추가·정정하고 현재 상태를 v1 기준선으로 확정.
 ### 추가

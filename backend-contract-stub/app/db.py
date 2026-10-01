@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS meetings (id TEXT PRIMARY KEY, body TEXT NOT NULL, tr
     speaker_names TEXT NOT NULL DEFAULT '{}');
 CREATE TABLE IF NOT EXISTS action_items (
     seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE, meeting_id TEXT, task TEXT,
-    assignee TEXT, due_date TEXT, status TEXT, quote TEXT);
+    assignee TEXT, due_date TEXT, status TEXT, quote TEXT,
+    extract_model TEXT, prompt_version TEXT, extracted_at TEXT);
 CREATE TABLE IF NOT EXISTS jobs (
     seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE, meeting_title TEXT, audio_seconds INTEGER,
     elapsed_seconds INTEGER, status TEXT, attempt INTEGER, started_at TEXT, worker TEXT, error_log TEXT,
@@ -65,6 +66,8 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 # 새 열을 추가할 때는 _SCHEMA 와 여기에 함께 적는다.
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     "meetings": {"transcript": "TEXT", "speaker_names": "TEXT NOT NULL DEFAULT '{}'"},
+    # (v1.10.1) 추출 결과 출처(모델 이름·프롬프트 버전·추출 시각). 이전 행과 시드는 NULL(알 수 없음). API 응답에는 싣지 않는다
+    "action_items": {"extract_model": "TEXT", "prompt_version": "TEXT", "extracted_at": "TEXT"},
     "jobs": {"meeting_id": "TEXT", "engine": "TEXT"},
 }
 
@@ -325,8 +328,18 @@ class Store:
             self._db.commit()
             return cur.rowcount == 1
 
-    def complete_if_processing(self, job_id: str, transcript: str, items: list[dict]) -> bool:
-        """처리 중일 때만 completed 로 바꾸고, 같은 트랜잭션에서 전사 원문과 액션아이템을 저장한다."""
+    def complete_if_processing(
+        self,
+        job_id: str,
+        transcript: str,
+        items: list[dict],
+        *,
+        extract_model: str | None = None,
+        prompt_version: str | None = None,
+        extracted_at: str | None = None,
+    ) -> bool:
+        """처리 중일 때만 completed 로 바꾸고, 같은 트랜잭션에서 전사 원문과 액션아이템을 저장한다.
+        extract_model·prompt_version·extracted_at 은 이번에 저장하는 액션아이템 전부에 같은 값으로 기록한다(없으면 NULL)."""
         with self._lock:
             d = self._db
             try:
@@ -345,9 +358,10 @@ class Store:
                 d.execute("UPDATE meetings SET transcript = ? WHERE id = ?", (transcript, meeting_id))
                 for n, a in enumerate(items, start=1):
                     d.execute(
-                        "INSERT INTO action_items (id, meeting_id, task, assignee, due_date, status, quote) VALUES (?,?,?,?,?,?,?)",
+                        "INSERT INTO action_items (id, meeting_id, task, assignee, due_date, status, quote,"
+                        " extract_model, prompt_version, extracted_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
                         (f"AI-{job_id[4:]}-{n}", meeting_id, a["task"], a["assignee"], a["dueDate"], "open",
-                         json.dumps(a["quote"], ensure_ascii=False)),
+                         json.dumps(a["quote"], ensure_ascii=False), extract_model, prompt_version, extracted_at),
                     )
                 d.commit()
                 return True

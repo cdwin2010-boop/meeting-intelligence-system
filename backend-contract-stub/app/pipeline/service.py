@@ -135,15 +135,24 @@ def process_job(
 
         # ---- LLM ----
         t1 = time.monotonic()
+        extractor = None
         try:
-            items = extractor_factory().extract(transcript, started_at)
+            extractor = extractor_factory()
+            items = extractor.extract(transcript, started_at)
         except Exception as exc:  # noqa: BLE001
             log.warning("job=%s stage=LLM failed after %.1fs (%s)", job_id, time.monotonic() - t1, type(exc).__name__)
             _fail(job_id, describe_error(exc))
             return
         log.info("job=%s stage=LLM seconds=%.1f items=%d", job_id, time.monotonic() - t1, len(items))
 
-        if store.complete_if_processing(job_id, transcript, items):
+        # 추출 결과 출처를 함께 저장한다. 출처 속성이 없는 추출기(테스트용 가짜 등)는 NULL(알 수 없음)
+        extracted_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        if store.complete_if_processing(
+            job_id, transcript, items,
+            extract_model=getattr(extractor, "model_name", None),
+            prompt_version=getattr(extractor, "prompt_version", None),
+            extracted_at=extracted_at,
+        ):
             delete_upload(job_id)  # 완료되면 음성은 지운다 (실패면 Retry 를 위해 남김)
 
 
