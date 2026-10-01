@@ -52,3 +52,8 @@ def get_session():
     """FastAPI 의존성: 요청마다 세션을 열고 끝나면 닫는다."""
     with SessionLocal() as session:
         yield session
+
+
+def get_session_factory() -> sessionmaker:
+    """FastAPI 의존성: 요청이 끝난 뒤 도는 백그라운드 처리가 새 세션을 열 때 쓰는 공장(테스트에서 바꿔 끼움)."""
+    return SessionLocal

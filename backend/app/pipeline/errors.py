@@ -18,6 +18,35 @@ def redact(text: str) -> str:
     return _KEY_PATTERN.sub("***", text)
 
 
+def error_code(exc: BaseException) -> str:
+    """예외 → DB(jobs.error_code)에 남길 분류 코드. 예외 원문·키·파일 경로는 넣지 않는다."""
+    if isinstance(exc, GeminiKeyMissingError):
+        return "gemini_key_missing"
+    if isinstance(exc, FileNotFoundError):
+        return "upload_missing"
+    try:
+        import httpx
+
+        if isinstance(exc, httpx.TimeoutException):
+            return "timeout"
+    except ImportError:  # pragma: no cover
+        pass
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    if isinstance(exc, GeminiFileError):
+        return "stt_file_failed"
+    if isinstance(exc, ExtractionError):
+        return "extraction_invalid"
+    try:
+        from google.genai import errors as genai_errors
+    except ImportError:  # pragma: no cover
+        genai_errors = None
+    if genai_errors is not None and isinstance(exc, genai_errors.APIError):
+        code = exc.code if isinstance(exc.code, int) else 0
+        return f"gemini_api_{code}"
+    return "internal_error"
+
+
 def describe_error(exc: BaseException) -> str:
     """예외 → 사람이 읽을 한 줄 요약 (스택 트레이스·키 없음)"""
     timeout = f"{settings.gemini_timeout_sec:g}초"

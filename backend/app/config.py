@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Literal
 
 from pydantic import SecretStr, model_validator
@@ -34,6 +35,21 @@ class Settings(BaseSettings):
     gemini_paid_api_key: SecretStr = SecretStr("")  # 유료 키
     gemini_model: str = "gemini-3.8-flash"  # STT·추출 공통 모델
     gemini_timeout_sec: float = 900.0  # Gemini 요청 1건·파일 처리 대기의 기한(초)
+
+    # ---- 음성 업로드·처리 ----
+    # 전사 엔진: fake(가짜 대본, 네트워크 없음) / gemini. 업무 추출기도 같은 값을 따른다
+    stt_provider: Literal["fake", "gemini"] = "fake"
+    # 업로드 음성 보관 폴더(실행 위치 기준 상대 경로 가능, data/ 는 커밋 제외). 하위에 {tenant_id}/{uuid}.{ext}
+    upload_dir: Path = Path("data/uploads")
+    max_upload_mb: int = 200
+    # 허용 확장자(쉼표 구분, 점 없이)
+    allowed_audio_ext: str = "m4a,mp3,wav,mp4,webm,ogg"
+    # 회의 일시를 현지 시각으로 바꿀 때 쓰는 시간대(추출기의 날짜·요일 기준)
+    app_timezone: str = "Asia/Seoul"
+
+    @property
+    def allowed_audio_extensions(self) -> set[str]:
+        return {e.strip().lower().lstrip(".") for e in self.allowed_audio_ext.split(",") if e.strip()}
 
     def selected_gemini_key(self) -> str:
         """GEMINI_KEY_MODE 로 고른 키 값. 비어 있으면 오류(다른 모드의 키로 넘어가지 않음).

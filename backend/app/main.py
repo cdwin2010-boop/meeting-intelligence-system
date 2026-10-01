@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 
-from app.api import auth, probe
+from app.api import auth, meetings, probe
 
 app = FastAPI(title="Meeting Intelligence Backend (v2)")
 app.include_router(auth.router)
+app.include_router(meetings.router)
 # 3단계 검증용 보호 엔드포인트(업무 API가 생기면 제거)
 app.include_router(probe.router)
 

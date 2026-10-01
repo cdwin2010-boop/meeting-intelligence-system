@@ -9,6 +9,10 @@ argon2-cffi>=23.1
 PyJWT>=2.8
 # Gemini API STT/extraction (same package as backend-contract-stub, verified with 2.25.0)
 google-genai>=2.25.0
+# multipart/form-data audio upload (same as backend-contract-stub)
+python-multipart>=0.0.9
+# IANA time zone data for zoneinfo (APP_TIMEZONE); Windows has no system tz database
+tzdata>=2024.1
 # Keep this file ASCII-only: pip < 25 on Korean Windows reads it as cp949 and fails on non-ASCII comments
 # tests
 pytest>=8

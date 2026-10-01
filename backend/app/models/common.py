@@ -45,9 +45,11 @@ def enum_check(column: str, values: tuple[str, ...], name: str, nullable: bool =
 ACCOUNT_RANKS = ("staff", "manager", "executive")
 # 원천 문서 출처: 음성 회의록 / 고객사 업로드 문서
 SOURCE_ORIGINS = ("audio_minutes", "uploaded")
-# 회의록 상태: 전사·추출 중 → 확정 대기 → 확정 완료
-MEETING_STATUSES = ("processing", "awaiting_confirmation", "confirmed")
+# 회의록 상태: 전사·추출 중 → 확정 대기 → 확정 완료. 처리 실패(failed)·말소리 없음(no_content)
+MEETING_STATUSES = ("processing", "awaiting_confirmation", "confirmed", "failed", "no_content")
 # 확정 경로: 관리자 확인 / 등록 시 확정 / 기간 경과 / 마감 도래
 CONFIRM_KINDS = ("manager", "registration", "period_elapsed", "due_reached")
 # 업무 상태
 ACTION_ITEM_STATUSES = ("pending", "confirmed", "closed", "deleted")
+# 처리 작업 상태: 대기 → 실행 중 → 완료 / 실패 / 말소리 없음
+JOB_STATUSES = ("queued", "running", "completed", "failed", "no_content")
