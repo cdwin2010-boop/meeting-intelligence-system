@@ -67,6 +67,7 @@ uvicorn app.main:app --reload --port 8000
 - 값은 `free` | `paid`(기본 `free`). 무료 키는 `GEMINI_API_KEY`, 유료 키는 `GEMINI_PAID_API_KEY`.
 - **평소에는 `free`로 둔다. `paid`는 사용자가 승인했을 때만 쓴다.**
 - 무료 키가 429에 걸려도 유료 키로 자동 전환하지 않는다(모드로만 고른다).
+- 문제 해결: "Gemini 접속 오류가 나는데 키 모드를 바꿨는데도 그대로다" → 원인 후보: (1) `.env`에 같은 설정 이름이 두 번 있어 뒤 값이 적용됨 (2) 해당 모드의 키 줄이 주석 처리됨 (3) `.env`를 바꾼 뒤 서버를 재시작하지 않음. 확인은 `backend-contract-stub`에서 PowerShell `Select-String -Path .env -Pattern '^\s*GEMINI_KEY_MODE'`(모드 줄만 보이고 키 값은 나오지 않는다).
 
 ## 6. 테스트 데이터 정책
 
