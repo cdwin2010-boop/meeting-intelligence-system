@@ -21,6 +21,7 @@ from app.db import SessionLocal
 from app.models import Account, ActionItem, Job, Meeting, SourceDocument, Tenant, Transcript, append_event
 from app.models.common import utcnow
 from app.pipeline.errors import error_code
+from app.services.notices import create_confirm_notices
 from app.pipeline.extractor import ActionItemCandidate, Extractor, FakeExtractor, make_gemini_extractor
 from app.pipeline.stt import FakeStt, SttEngine, TranscriptResult, as_transcript_result, is_no_speech, make_gemini_stt
 
@@ -162,6 +163,11 @@ def _finish_completed(factory: sessionmaker, job_id: int, candidates: list[Actio
             meeting.status, meeting.confirm_kind = "confirmed", "registration"
             meeting.confirmed_by, meeting.confirmed_at = registrant.id, now
             _event(session, job, "meeting", meeting.id, "meeting.confirmed", confirm_kind="registration")
+            # 확정 안내: 등록자 본인은 제외하고 관리자 이상 참석자에게(같은 트랜잭션)
+            create_confirm_notices(
+                session, meeting=meeting, entity_type="meeting", entity_id=meeting.id,
+                confirm_kind="registration", title=meeting.title, actor_id=registrant.id,
+            )
         else:
             meeting.status = "awaiting_confirmation"
             _event(session, job, "meeting", meeting.id, "meeting.awaiting_confirmation")

@@ -11,8 +11,9 @@ from app.auth.access import get_visible_meeting
 from app.auth.deps import require_rank
 from app.auth.scope import scoped
 from app.db import get_session
-from app.models import Account, ActionItem, append_event
+from app.models import Account, ActionItem, Meeting, append_event
 from app.models.common import utcnow
+from app.services.notices import create_confirm_notices
 
 router = APIRouter(prefix="/api/action-items", tags=["action-items"])
 
@@ -62,6 +63,10 @@ def confirm_item(session: Session, item: ActionItem, account: Account) -> bool:
         session, tenant_id=item.tenant_id, entity_type="action_item", entity_id=item.id,
         event_type="item.confirmed", actor_account_id=account.id,
         payload={"before": {"status": "pending"}, "after": {"status": "confirmed", "confirmKind": "manager"}},
+    )
+    create_confirm_notices(
+        session, meeting=session.get(Meeting, item.meeting_id), entity_type="action_item", entity_id=item.id,
+        confirm_kind="manager", title=item.title, actor_id=account.id,
     )
     return True
 

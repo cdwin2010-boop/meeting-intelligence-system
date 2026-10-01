@@ -24,6 +24,7 @@ from app.auth.deps import RANK_ORDER, get_current_account, require_rank
 from app.db import get_session
 from app.models import Account, ActionItem, Event, Meeting, append_event
 from app.models.common import utcnow
+from app.services.notices import create_confirm_notices
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
@@ -69,6 +70,10 @@ def confirm_meeting(
             session, tenant_id=meeting.tenant_id, entity_type="meeting", entity_id=meeting.id,
             event_type="meeting.confirmed", actor_account_id=account.id,
             payload={"before": {"status": "awaiting_confirmation"}, "after": {"status": "confirmed", "confirmKind": "manager"}},
+        )
+        create_confirm_notices(
+            session, meeting=meeting, entity_type="meeting", entity_id=meeting.id,
+            confirm_kind="manager", title=meeting.title, actor_id=account.id,
         )
     # 이미 confirmed 면 회의록은 그대로(멱등). withItems 는 아래에서 그대로 처리한다
 

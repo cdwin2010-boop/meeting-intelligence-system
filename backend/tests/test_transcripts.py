@@ -22,6 +22,8 @@ from tests.test_upload_processing import (  # noqa: F401  (env 는 픽스처)
     upload,
 )
 
+_BEFORE_TRANSCRIPTS = "54850384690d"  # transcripts 마이그레이션의 down_revision
+
 SEGMENTS = [
     {"speaker": "화자1", "start_sec": 0.0, "end_sec": 2.5, "text": "안녕하세요"},
     {"speaker": "화자2", "start_sec": 2.5, "end_sec": 6.0, "text": "다음 주 금요일까지 정리하겠습니다"},
@@ -131,8 +133,9 @@ def test_migration_downgrade_refuses_when_data_exists(tmp_path):
     """데이터 삭제 없는 downgrade: 비어 있으면 왕복 성공, 전사문이나 보관 일수 값이 있으면 거부하고 데이터는 그대로."""
     url = f"sqlite:///{(tmp_path / 'm.db').as_posix()}"
     cfg = _alembic(url)
+    # 이 마이그레이션(2b93bc811d65)의 바로 아래 리비전으로 내려갔다가 다시 올린다(뒤에 리비전이 더 생겨도 같은 대상)
     command.upgrade(cfg, "head")
-    command.downgrade(cfg, "-1")
+    command.downgrade(cfg, _BEFORE_TRANSCRIPTS)
     command.upgrade(cfg, "head")
     command.check(cfg)
 
@@ -143,7 +146,7 @@ def test_migration_downgrade_refuses_when_data_exists(tmp_path):
                 "INSERT INTO tenants (id, name, auto_confirm_days, audio_retention_days, created_at) "
                 "VALUES (1, 't', 5, 30, '2026-10-01')"))
         with pytest.raises(RuntimeError, match="downgrade 거부"):
-            command.downgrade(cfg, "-1")
+            command.downgrade(cfg, _BEFORE_TRANSCRIPTS)
         with engine.connect() as conn:
             assert conn.execute(text("SELECT audio_retention_days FROM tenants WHERE id = 1")).scalar_one() == 30
             assert "transcripts" in {r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}

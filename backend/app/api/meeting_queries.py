@@ -22,6 +22,7 @@ from app.auth.scope import scoped
 from app.db import get_session
 from app.models import Account, ActionItem, Event, Job, Meeting, MeetingParticipant, SourceDocument, Transcript
 from app.models.common import MEETING_STATUSES
+from app.services.views import record_meeting_view
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
@@ -181,7 +182,7 @@ def get_meeting(
         for row in item_rows
     ]
 
-    return MeetingDetail(
+    detail = MeetingDetail(
         id=meeting.id,
         title=meeting.title,
         held_at=meeting.held_at,
@@ -199,6 +200,9 @@ def get_meeting(
         action_items=action_items,
         recent_events=_recent_events(session, meeting),
     )
+    # 상세 조회가 성공한 경우에만 열람 기록(첫 열람 유지, 마지막 열람 갱신)
+    record_meeting_view(session, account, meeting)
+    return detail
 
 
 @router.get("/{meeting_id}/transcript", response_model=TranscriptOut, response_model_by_alias=True)

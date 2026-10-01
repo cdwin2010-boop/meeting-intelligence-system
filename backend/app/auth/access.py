@@ -14,20 +14,23 @@ from app.models import Account, ActionItem, Meeting, MeetingParticipant, SourceD
 VIEW_ALL_RANKS = ("manager", "executive")
 
 
+# 아래 EXISTS 서브쿼리는 모두 별칭을 쓴다: 바깥 조회가 같은 표(업무·참석자·원천 문서)를 이미 조인해도
+# 서브쿼리가 바깥 표에 흡수(자동 상관)되지 않게 하기 위해서다.
 def is_participant(account: Account) -> ColumnElement[bool]:
-    return exists().where(MeetingParticipant.meeting_id == Meeting.id, MeetingParticipant.account_id == account.id)
+    participant = aliased(MeetingParticipant)
+    return exists().where(participant.meeting_id == Meeting.id, participant.account_id == account.id)
 
 
 def has_assigned_item(account: Account) -> ColumnElement[bool]:
+    item = aliased(ActionItem)
     return exists().where(
-        ActionItem.meeting_id == Meeting.id,
-        ActionItem.assignee_id == account.id,
-        ActionItem.status != "deleted",
+        item.meeting_id == Meeting.id,
+        item.assignee_id == account.id,
+        item.status != "deleted",
     )
 
 
 def is_registrant(account: Account) -> ColumnElement[bool]:
-    # 별칭: 목록 조회가 SourceDocument 를 이미 조인해도 서브쿼리가 바깥 표에 흡수(자동 상관)되지 않게
     document = aliased(SourceDocument)
     return exists().where(document.id == Meeting.source_document_id, document.registered_by == account.id)
 

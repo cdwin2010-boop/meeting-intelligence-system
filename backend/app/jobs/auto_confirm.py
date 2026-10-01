@@ -12,7 +12,7 @@
 - auto_confirm_at 은 회의록 생성 때 저장된 값을 쓴다(고객사 auto_confirm_days 를 지금 다시 계산하지 않음).
 - 멱등·경쟁 안전: UPDATE 에 상태 조건을 걸어 이미 확정된 것은 건드리지 않고(사건 중복 없음), 동시 실행·수동 확정과 겹쳐도 한쪽만 성공.
 - 건별 트랜잭션: 한 건이 실패해도 나머지는 처리한다. 실패 건은 종류와 id 만 돌려준다(예외 내용은 남기지 않음).
-- 메일·알림은 보내지 않는다(후속 단계).
+- 확정 안내(시스템 안)는 같은 건별 트랜잭션에서 만든다(수행자 없음 → 관리자 이상 관련자 전원). 메일은 보내지 않는다.
 """
 import argparse
 import logging
@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
 from app.models import ActionItem, Meeting, append_event
+from app.services.notices import create_confirm_notices
 
 log = logging.getLogger("app.jobs.auto_confirm")
 
@@ -64,10 +65,14 @@ def _confirm_meeting(session: Session, meeting_id: int, now: datetime) -> bool:
     ).rowcount
     if changed != 1:
         return False  # 그 사이 수동 확정 등으로 상태가 바뀜
-    tenant_id = session.scalar(select(Meeting.tenant_id).where(Meeting.id == meeting_id))
+    meeting = session.get(Meeting, meeting_id)
     append_event(
-        session, tenant_id=tenant_id, entity_type="meeting", entity_id=meeting_id,
+        session, tenant_id=meeting.tenant_id, entity_type="meeting", entity_id=meeting_id,
         event_type="meeting.auto_confirmed", payload={"confirmKind": "period_elapsed"},
+    )
+    create_confirm_notices(
+        session, meeting=meeting, entity_type="meeting", entity_id=meeting_id,
+        confirm_kind="period_elapsed", title=meeting.title, actor_id=None,
     )
     return True
 
@@ -85,10 +90,16 @@ def _confirm_item(session: Session, item_id: int, kind: str, now: datetime) -> b
     ).rowcount
     if changed != 1:
         return False
-    tenant_id = session.scalar(select(ActionItem.tenant_id).where(ActionItem.id == item_id))
+    item_tenant_id, meeting_id, title = session.execute(
+        select(ActionItem.tenant_id, ActionItem.meeting_id, ActionItem.title).where(ActionItem.id == item_id)
+    ).one()
     append_event(
-        session, tenant_id=tenant_id, entity_type="action_item", entity_id=item_id,
+        session, tenant_id=item_tenant_id, entity_type="action_item", entity_id=item_id,
         event_type="item.auto_confirmed", payload={"confirmKind": kind},
+    )
+    create_confirm_notices(
+        session, meeting=session.get(Meeting, meeting_id), entity_type="action_item", entity_id=item_id,
+        confirm_kind=kind, title=title, actor_id=None,
     )
     return True
 

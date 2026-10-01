@@ -11,6 +11,7 @@
 - v2 `backend/` 쓰기 API: `PATCH /api/action-items/{id}`(업무명·담당자·기한·미확정 보완, 같은 고객사 활성 계정만, 공백만 업무명 거부), `POST /api/action-items/{id}/confirm`(보완 필요 409+missingFields, 멱등), `POST /api/meetings/{id}/confirm`(확정 대기만, 업무 보완과 무관, `withItems=true`면 완성 업무 함께 확정·건너뛴 id 반환), 수정 요청 기록·조회·해결(`/api/meetings/{id}/change-requests`, 상태·자동 확정 시계 영향 없음, 상위 직급 우선). 쓰기와 이벤트는 한 트랜잭션. pytest 32건 추가(backend 172건).
 - v2 `backend/` 보완: 확정된 업무를 PATCH 로 빈칸(업무명·담당자·기한)이 되게 바꾸면 400 `{message, missingFields}`로 거부(데이터·이벤트 변경 없음). 다른 유효한 값으로 교체는 허용, pending 업무는 기존대로 비우기 허용. pytest 7건 추가(backend 179건).
 - v2 `backend/` 자동 확정 백스톱 `app/jobs/auto_confirm.py`(`run_auto_confirm(session, now)`, `python -m app.jobs.auto_confirm [--dry-run]`): 회의록은 auto_confirm_at 경과 시 period_elapsed, 업무는 보완 완비·소속 회의록 정상일 때 마감일(KST 날짜)과 auto_confirm_at 중 먼저 오는 쪽(같은 날은 due_reached). 상태 조건 UPDATE로 멱등·경쟁 안전, 건별 트랜잭션, 실패는 id만 반환. 메일·스케줄러 연결 없음. pytest 20건 추가(backend 199건).
+- v2 `backend/` 알림 1단계(메일 없음): `meeting_views`(상세 조회 성공 시 열람 기록, 첫 열람 유지·마지막 갱신)·`notices`(회의록·업무 확정 시 수동·등록 시·자동 모두 같은 트랜잭션에서 관리자 이상 관련자에게 확정 안내, 수행자 본인 제외) 표와 마이그레이션(데이터 있으면 downgrade 거부), `GET /api/me/notices`·`POST /api/me/notices/seen`, `GET /api/me/todos`(확정 대기·보완 필요·내 업무·자동 확정 미열람, 각 50건+total, 쿼리 수 고정). 열람 권한 EXISTS 서브쿼리 별칭화. pytest 14건 추가(backend 213건).
 
 ## v1.10.1 — 2026-10-01 (추출 결과 출처 기록, 문서 보완)
 - API 응답·계약서(`docs/API-CONTRACT.md`)·프론트 변경 없음. 스텁 내부 DB 기록만 추가.
