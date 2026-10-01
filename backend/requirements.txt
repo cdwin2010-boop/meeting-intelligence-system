@@ -4,6 +4,9 @@ pydantic-settings>=2.4
 # ORM / migrations (v2, E1: SQLAlchemy 2.0 + Alembic, start on SQLite, engine-neutral)
 sqlalchemy>=2.0
 alembic>=1.13
+# auth (v2 step 3): password hashing + access tokens
+argon2-cffi>=23.1
+PyJWT>=2.8
 # Keep this file ASCII-only: pip < 25 on Korean Windows reads it as cp949 and fails on non-ASCII comments
 # tests
 pytest>=8
