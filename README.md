@@ -80,4 +80,4 @@ git commit -m "chore: import meeting-intelligence v1.7"
 2. 운영 백엔드를 `backend/`로 가져오기(아직 없음. 현재는 스텁 `backend-contract-stub/`이 실행되며 pytest 125건 통과) → 그 테스트 통과 확인 → CORS를 `.env`(`CORS_ALLOW_ORIGINS`)로 옮기기
 3. `docs/API-CONTRACT.md`대로 운영 백엔드에 엔드포인트 추가 (Claude CLI에 계약서를 붙여 요청)
 4. 관리자 API 서버 권한 검증(RBAC) + 감사 로그
-5. 프론트 자동 테스트(Playwright) 추가 — 지금 프론트에는 저장소에 포함된 자동 테스트가 없습니다
+5. 프론트 자동 테스트(Playwright) 확대 — 지금은 `frontend/e2e/`의 E2E 5건(전사 원문 창)이 목 모드에서만 동작하며, 실제 스텁 서버와 연결한 자동 화면 검증은 없습니다(실행 방법은 `docs/TEST-GUIDE.md`)
