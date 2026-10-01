@@ -2,6 +2,7 @@
 
 ## 미배포 (v2 개발 중)
 - v2 `backend/` 뼈대 추가: 설정(pydantic-settings, `DATABASE_URL`·`APP_ENV`)·SQLAlchemy 2.0 DB 연결·Alembic 초기화(마이그레이션 없음)·`GET /api/health`·pytest 1건. 스텁·프론트 변경 없음.
+- v2 `backend/` 핵심 테이블 7개(tenants·accounts·source_documents·meetings·meeting_participants·action_items·events)와 첫 Alembic 마이그레이션, 업무 "보완 필요" 계산 속성, 추가 전용 `append_event()`, pytest 8건 추가(backend 9건).
 
 ## v1.10.1 — 2026-10-01 (추출 결과 출처 기록, 문서 보완)
 - API 응답·계약서(`docs/API-CONTRACT.md`)·프론트 변경 없음. 스텁 내부 DB 기록만 추가.

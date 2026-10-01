@@ -1,17 +1,29 @@
 from pathlib import Path
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import MetaData, create_engine, event
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import settings
 
 
+# 제약 이름 규칙: 이름이 고정돼야 Alembic이 엔진과 무관하게 같은 제약을 찾아 바꾸거나 지울 수 있다
+NAMING_CONVENTION = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+
+
 class Base(DeclarativeBase):
-    """모든 ORM 모델의 부모. 표(모델)는 2단계에서 추가한다."""
+    """모든 ORM 모델의 부모. 모델은 app/models 에 있다."""
+
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
-def _make_engine(url: str):
+def make_engine(url: str):
     parsed = make_url(url)
     is_sqlite = parsed.get_backend_name() == "sqlite"
 
@@ -32,7 +44,7 @@ def _make_engine(url: str):
     return engine
 
 
-engine = _make_engine(settings.database_url)
+engine = make_engine(settings.database_url)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
