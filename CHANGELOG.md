@@ -14,6 +14,7 @@
 - v2 `backend/` 알림 1단계(메일 없음): `meeting_views`(상세 조회 성공 시 열람 기록, 첫 열람 유지·마지막 갱신)·`notices`(회의록·업무 확정 시 수동·등록 시·자동 모두 같은 트랜잭션에서 관리자 이상 관련자에게 확정 안내, 수행자 본인 제외) 표와 마이그레이션(데이터 있으면 downgrade 거부), `GET /api/me/notices`·`POST /api/me/notices/seen`, `GET /api/me/todos`(확정 대기·보완 필요·내 업무·자동 확정 미열람, 각 50건+total, 쿼리 수 고정). 열람 권한 EXISTS 서브쿼리 별칭화. pytest 14건 추가(backend 213건).
 - v2 `backend/` 알림 2단계(실제 발송 기본 꺼짐): `mail_outbox` 표와 마이그레이션(데이터 있으면 downgrade 거부), 처리 완료로 확정 대기/확정이 된 회의록의 즉시 메일(참석자·담당자, 등록자 제외, 제목·로그인 링크만, dedupe 1회), `python -m app.jobs.daily_mail`(수신자별 KST 하루 1통, 관리자 확정 대기·보완 필요 건수, 담당자 미열람 건수), `python -m app.jobs.send_mail [--dry-run]`(MAIL_ENABLED=false면 skipped, 실패 3회 후 failed, 분류 코드만 기록, SmtpSender STARTTLS·FakeSender). 설정 `MAIL_ENABLED`·`SMTP_*`·`APP_BASE_URL`. pytest 18건 추가(backend 231건).
 - v2 `backend/` CORS: 설정 `CORS_ORIGINS`(쉼표 구분, 기본 localhost·127.0.0.1의 3000, `*` 포함 시 시작 거부), CORSMiddleware(GET·POST·PATCH·OPTIONS, Authorization·Content-Type, credentials 끔). 실행 포트 8001 안내(`.env.example`). pytest 10건 추가(backend 241건).
+- v2 `frontend/` 2단계: v1과 분리된 `lib/v2/`(errors·token(sessionStorage)·http(Bearer 자동 첨부, 30초 기한, 401 시 토큰 삭제·인증 만료 이벤트)·auth·types·next-path), `components/v2/AuthProvider.tsx`(useAuth, RequireAuth, next는 /v2 아래만), `app/v2/login`(시안 01)·`app/v2`(임시 로그인 확인 화면). 설정 `NEXT_PUBLIC_API_V2_BASE_URL`(기본 http://127.0.0.1:8001/api). E2E `e2e/v2-login.spec.ts` 13건(API는 page.route로 가로챔, 전체 18건). v1 화면·lib 변경 없음.
 
 ## v1.10.1 — 2026-10-01 (추출 결과 출처 기록, 문서 보완)
 - API 응답·계약서(`docs/API-CONTRACT.md`)·프론트 변경 없음. 스텁 내부 DB 기록만 추가.
