@@ -1,6 +1,7 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, Float, ForeignKey, String, Text, false
+from sqlalchemy import Boolean, Date, Float, ForeignKey, String, Text, and_, false, func, or_
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -42,11 +43,29 @@ class ActionItem(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 
     @property
-    def needs_supplement(self) -> bool:
-        """'보완 필요' 여부(저장하지 않고 계산): 업무명 빈칸, 담당자 없음, 기한 빈칸 중 하나라도 해당.
-        기한을 '미확정'으로 고른 경우(due_undetermined=True)는 빈칸이 아니므로 경고하지 않는다."""
+    def missing_fields(self) -> list[str]:
+        """비어 있는 필수 항목(API 필드 이름): "title"(업무명 빈칸), "assignee"(담당자 없음), "dueDate"(기한 빈칸).
+        기한을 '미확정'으로 고른 경우(due_undetermined=True)는 빈칸이 아니므로 넣지 않는다."""
+        missing = []
         if not (self.title or "").strip():
-            return True
+            missing.append("title")
         if self.assignee_id is None:
-            return True
-        return self.due_date is None and not self.due_undetermined
+            missing.append("assignee")
+        if self.due_date is None and not self.due_undetermined:
+            missing.append("dueDate")
+        return missing
+
+    @hybrid_property
+    def needs_supplement(self) -> bool:
+        """'보완 필요' 여부(저장하지 않고 계산): 위 필수 항목 중 하나라도 비어 있으면 True."""
+        return bool(self.missing_fields)
+
+    @needs_supplement.inplace.expression
+    @classmethod
+    def _needs_supplement_expression(cls):
+        # 같은 규칙의 SQL 식(목록 집계에서 한 번의 쿼리로 세기 위해). 업무명은 앞뒤 공백 제거 후 빈 문자열이면 빈칸
+        return or_(
+            func.coalesce(func.trim(cls.title), "") == "",
+            cls.assignee_id.is_(None),
+            and_(cls.due_date.is_(None), cls.due_undetermined.is_(False)),
+        )
