@@ -174,18 +174,9 @@ def get_meeting(
         .order_by(ActionItem.id)
     ).all()
     action_items = [
-        ActionItemOut(
-            id=row.ActionItem.id,
-            title=row.ActionItem.title,
-            assignee=AccountRef(id=row.assignee_id, name=row.assignee_name) if row.assignee_id is not None else None,
-            due_date=row.ActionItem.due_date,
-            due_undetermined=row.ActionItem.due_undetermined,
-            status=row.ActionItem.status,
-            confirm_kind=row.ActionItem.confirm_kind,
-            evidence_start_sec=row.ActionItem.evidence_start_sec,
-            evidence_quote=row.ActionItem.evidence_quote,
-            needs_completion=row.ActionItem.needs_supplement,
-            missing_fields=row.ActionItem.missing_fields,
+        ActionItemOut.from_item(
+            row.ActionItem,
+            AccountRef(id=row.assignee_id, name=row.assignee_name) if row.assignee_id is not None else None,
         )
         for row in item_rows
     ]

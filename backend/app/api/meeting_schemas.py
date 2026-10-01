@@ -43,6 +43,23 @@ class ActionItemOut(CamelModel):
     needs_completion: bool
     missing_fields: list[str]
 
+    @classmethod
+    def from_item(cls, item: Any, assignee: "AccountRef | None") -> "ActionItemOut":
+        """ActionItem 모델 → 응답(보완 필요 판정은 모델의 계산 속성 재사용)."""
+        return cls(
+            id=item.id,
+            title=item.title,
+            assignee=assignee,
+            due_date=item.due_date,
+            due_undetermined=item.due_undetermined,
+            status=item.status,
+            confirm_kind=item.confirm_kind,
+            evidence_start_sec=item.evidence_start_sec,
+            evidence_quote=item.evidence_quote,
+            needs_completion=item.needs_supplement,
+            missing_fields=item.missing_fields,
+        )
+
 
 class EventOut(CamelModel):
     event_type: str
