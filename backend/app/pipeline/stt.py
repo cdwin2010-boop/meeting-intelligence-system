@@ -1,10 +1,13 @@
 """
 전사(STT) 엔진. 모든 엔진은 같은 모양을 따른다(stub app/pipeline/stt.py 이식):
-    transcribe(audio_path, mime_type) -> str   # "[HH:MM:SS] 화자: 내용" 줄들, 말소리가 없으면 "[NO_SPEECH]"
+    transcribe(audio_path, mime_type) -> str | TranscriptResult   # "[HH:MM:SS] 화자: 내용" 줄들, 말소리가 없으면 "[NO_SPEECH]"
+                                                                   # 구간 정보를 줄 수 있는 엔진은 TranscriptResult 로 돌려준다
+    provider_name                              # 전사문 저장 시 기록할 엔진 이름
     release()                                  # 자원 정리 (로컬 GPU 엔진이면 모델 해제)
 """
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -32,8 +35,23 @@ def is_no_speech(transcript: str | None) -> bool:
     return not text or text.startswith(NO_SPEECH)
 
 
+@dataclass(frozen=True)
+class TranscriptResult:
+    """전사 결과. segments: [{"speaker", "start_sec", "end_sec", "text"}, ...], 엔진이 구간을 주지 않으면 None."""
+
+    text: str
+    segments: list[dict[str, Any]] | None = None
+
+
+def as_transcript_result(value: "str | TranscriptResult | None") -> TranscriptResult:
+    """엔진이 문자열만 돌려줘도 같은 모양으로 맞춘다(구간 없음 = None)."""
+    if isinstance(value, TranscriptResult):
+        return value
+    return TranscriptResult(text=value or "", segments=None)
+
+
 class SttEngine(Protocol):
-    def transcribe(self, audio_path: Path, mime_type: str) -> str: ...
+    def transcribe(self, audio_path: Path, mime_type: str) -> "str | TranscriptResult": ...
 
     def release(self) -> None: ...
 
@@ -44,6 +62,8 @@ class GeminiFileError(RuntimeError):
 
 class FakeStt:
     """가짜 전사: 테스트 가이드 A파일 대본을 그대로 돌려준다 (네트워크 없음)."""
+
+    provider_name = "fake"
 
     def transcribe(self, audio_path: Path, mime_type: str) -> str:
         return fake_transcript()
@@ -58,7 +78,10 @@ def _state_name(state: Any) -> str:
 
 
 class GeminiStt:
-    """Gemini API 전사: 파일 업로드 → ACTIVE 대기 → generate_content → (finally) 업로드 파일 삭제."""
+    """Gemini API 전사: 파일 업로드 → ACTIVE 대기 → generate_content → (finally) 업로드 파일 삭제.
+    결과는 "[HH:MM:SS] 화자: 내용" 텍스트뿐이라 구간(종료 시각 포함) 정보는 주지 않는다."""
+
+    provider_name = "gemini"
 
     def __init__(self, client: Any, model: str, poll_seconds: float = 1.0, max_wait_seconds: float | None = None):
         self._client = client

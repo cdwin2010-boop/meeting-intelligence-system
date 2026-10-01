@@ -1,8 +1,9 @@
 """
-음성 처리 작업 1건: queued → running → (STT) → no_content / (업무 추출 → 업무 생성) → completed, 예외 시 failed.
+음성 처리 작업 1건: queued → running → (STT → 전사문 저장) → no_content / (업무 추출 → 업무 생성) → completed, 예외 시 failed.
 
 - 상태가 바뀔 때마다 사건 원장(events)에 기록한다.
 - 로그에는 작업 id·상태·예외 종류만 남긴다. 전사문·키·파일 경로는 남기지 않는다.
+- 전사문은 STT 직후 transcripts 에 저장한다(말소리 없음·추출 실패여도 원문 보존). 이벤트에는 길이·구간 수만 남긴다.
 - 실패 시 jobs.error_code 에는 분류 코드만 저장한다(app/pipeline/errors.error_code).
 - STT 엔진은 추출 전에 release() 한다(로컬 GPU 엔진이면 STT·LLM 이 동시에 메모리에 올라가지 않도록).
 """
@@ -17,11 +18,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
 from app.db import SessionLocal
-from app.models import Account, ActionItem, Job, Meeting, SourceDocument, Tenant, append_event
+from app.models import Account, ActionItem, Job, Meeting, SourceDocument, Tenant, Transcript, append_event
 from app.models.common import utcnow
 from app.pipeline.errors import error_code
 from app.pipeline.extractor import ActionItemCandidate, Extractor, FakeExtractor, make_gemini_extractor
-from app.pipeline.stt import FakeStt, SttEngine, is_no_speech, make_gemini_stt
+from app.pipeline.stt import FakeStt, SttEngine, TranscriptResult, as_transcript_result, is_no_speech, make_gemini_stt
 
 log = logging.getLogger("app.processing")
 
@@ -95,6 +96,28 @@ def _start(factory: sessionmaker, job_id: int) -> dict | None:
         _event(session, job, "job", job.id, "job.started", attempt=job.attempts)
         session.commit()
         return {"file_path": document.file_path or "", "held_at": meeting.held_at}
+
+
+def _save_transcript(factory: sessionmaker, job_id: int, result: TranscriptResult, provider: str) -> None:
+    """전사 원문을 저장한다(회의록당 1건). 같은 회의록에 이미 있으면 새 결과로 바꾼다(재처리 대비)."""
+    with factory() as session:
+        job = session.get(Job, job_id)
+        transcript = session.scalar(select(Transcript).where(Transcript.meeting_id == job.meeting_id))
+        if transcript is None:
+            transcript = Transcript(tenant_id=job.tenant_id, meeting_id=job.meeting_id)
+            session.add(transcript)
+        transcript.full_text = result.text
+        transcript.segments = result.segments
+        transcript.stt_provider = provider
+        session.flush()
+        # 전사문 전문은 넣지 않는다(길이·구간 수만)
+        _event(
+            session, job, "transcript", transcript.id, "transcript.saved",
+            length=len(result.text),
+            segments=len(result.segments) if result.segments is not None else None,
+            stt_provider=provider,
+        )
+        session.commit()
 
 
 def _finish_no_content(factory: sessionmaker, job_id: int) -> None:
@@ -183,9 +206,14 @@ def process_meeting(
 
         stt = (stt_factory or default_stt)()
         try:
-            transcript = stt.transcribe(audio_path, mime_type)
+            stt_result = as_transcript_result(stt.transcribe(audio_path, mime_type))
         finally:
             stt.release()
+        provider = getattr(stt, "provider_name", None) or settings.stt_provider
+
+        # 말소리 없음 판정·업무 추출보다 먼저 원문을 보존한다
+        _save_transcript(factory, job_id, stt_result, provider)
+        transcript = stt_result.text
 
         if is_no_speech(transcript):
             _finish_no_content(factory, job_id)

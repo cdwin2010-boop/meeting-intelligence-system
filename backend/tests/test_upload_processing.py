@@ -388,6 +388,7 @@ def test_events_are_recorded_in_order(env):
         "meeting.created",
         "job.queued",
         "job.started",
+        "transcript.saved",
         "item.created",
         "item.created",
         "meeting.confirmed",
