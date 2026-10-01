@@ -15,6 +15,8 @@ os.environ["SECRET_KEY"] = secrets.token_urlsafe(48)
 os.environ["GEMINI_KEY_MODE"] = "free"
 os.environ["GEMINI_API_KEY"] = ""
 os.environ["GEMINI_PAID_API_KEY"] = ""
+# CORS 테스트가 .env 값에 흔들리지 않게 기본 허용 출처로 고정
+os.environ["CORS_ORIGINS"] = "http://localhost:3000,http://127.0.0.1:3000"
 
 
 def pytest_sessionfinish(session, exitstatus):

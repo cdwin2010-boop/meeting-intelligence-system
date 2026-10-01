@@ -59,6 +59,20 @@ class Settings(BaseSettings):
     # 메일 본문의 로그인 링크
     app_base_url: str = "http://localhost:3000"
 
+    # ---- CORS ----
+    # 브라우저에서 이 API 를 부를 수 있는 프론트 주소(쉼표 구분). '*'(모든 출처 허용)는 시작 거부
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
+
+    @model_validator(mode="after")
+    def _refuse_wildcard_cors(self):
+        if "*" in self.cors_origins:
+            raise ValueError("CORS_ORIGINS 에 '*' 는 쓸 수 없습니다. 허용할 프론트 주소를 쉼표로 나열하세요.")
+        return self
+
     @property
     def allowed_audio_extensions(self) -> set[str]:
         return {e.strip().lower().lstrip(".") for e in self.allowed_audio_ext.split(",") if e.strip()}

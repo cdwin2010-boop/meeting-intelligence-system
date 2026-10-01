@@ -1,8 +1,18 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import action_items, auth, me, meeting_actions, meeting_queries, meetings, probe
+from app.config import settings
 
 app = FastAPI(title="Meeting Intelligence Backend (v2)")
+# 허용 출처만 브라우저 호출 허용. 인증은 Authorization 헤더(쿠키 아님)라 credentials 는 끈다
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    allow_credentials=False,
+)
 app.include_router(auth.router)
 app.include_router(meetings.router)
 app.include_router(meeting_queries.router)
