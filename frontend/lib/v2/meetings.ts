@@ -140,6 +140,53 @@ export function saveSpeakers(id: number, speakers: SpeakerInput[], signal?: Abor
   });
 }
 
+/** POST /api/meetings/{id}/confirm 응답(회의록만 확정. 업무는 따로 확정한다) */
+export interface MeetingConfirmResult {
+  id: number;
+  status: MeetingStatus;
+  confirmKind: ConfirmKind | null;
+  confirmedBy: AccountRef | null;
+  confirmedAt: string | null;
+  confirmedItemIds: number[];
+  skippedItemIds: number[];
+}
+
+/** 회의록 확정(총괄 관리자·지시자만 — 판정은 서버, 아니면 403. 확정할 수 없는 상태는 409). 이미 확정이면 그대로 200 */
+export function confirmMeeting(id: number, signal?: AbortSignal): Promise<MeetingConfirmResult> {
+  return request<MeetingConfirmResult>(`/meetings/${encodeURIComponent(String(id))}/confirm`, { method: "POST", signal });
+}
+
+/** 수정 요청 1건(사건 원장 기록. 상태·자동 확정 시계에 영향 없음). itemId 가 없으면 회의록 전체 대상 */
+export interface ChangeRequest {
+  requestId: number;
+  requester: AccountRef | null;
+  comment: string;
+  itemId: number | null;
+  createdAt: string;
+  resolution: { decision: "accepted" | "rejected"; reason: string | null; resolvedBy: AccountRef | null; resolvedAt: string } | null;
+}
+
+/** 수정 요청 코멘트 최대 글자 수(서버 검사와 같음) */
+export const CHANGE_REQUEST_MAX = 2000;
+
+/** GET /api/meetings/{id}/change-requests (작성 순) */
+export function listChangeRequests(id: number, signal?: AbortSignal): Promise<ChangeRequest[]> {
+  return request<ChangeRequest[]>(`/meetings/${encodeURIComponent(String(id))}/change-requests`, { signal });
+}
+
+/** POST /api/meetings/{id}/change-requests (201 {requestId}). 회의록을 볼 수 있으면 누구나. 다른 회의록 업무는 400 */
+export function createChangeRequest(
+  id: number,
+  input: { comment: string; itemId: number | null },
+  signal?: AbortSignal,
+): Promise<{ requestId: number }> {
+  return request<{ requestId: number }>(`/meetings/${encodeURIComponent(String(id))}/change-requests`, {
+    method: "POST",
+    body: input,
+    signal,
+  });
+}
+
 /** POST /api/meetings/upload 응답(202 접수, 처리는 서버 백그라운드) */
 export interface UploadAccepted {
   meetingId: number;

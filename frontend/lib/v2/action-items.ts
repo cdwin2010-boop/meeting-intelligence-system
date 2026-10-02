@@ -13,3 +13,8 @@ export function updateAssignee(itemId: number, assigneeId: number, signal?: Abor
     signal,
   });
 }
+
+/** 업무 확정: POST /api/action-items/{id}/confirm. 이미 확정이면 그대로 200. 보완 필요는 409 {message, missingFields}, 권한 없음 403 */
+export function confirmActionItem(itemId: number, signal?: AbortSignal): Promise<ActionItem> {
+  return request<ActionItem>(`/action-items/${encodeURIComponent(String(itemId))}/confirm`, { method: "POST", signal });
+}

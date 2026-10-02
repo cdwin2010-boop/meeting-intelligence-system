@@ -59,6 +59,7 @@ async function openDetail(page: Page, mocks: Mocks) {
   await page.route(/\/api\/meetings\/41\/transcript$/, (route) => json(route, 404, { detail: "전사문이 없습니다" }));
   await page.route(/\/api\/meetings\/41\/speakers$/, (route) => json(route, 200, { labels: [], speakers: [], autoAssignedItemIds: [] }));
   await page.route("**/api/accounts", (route) => (mocks.accounts ?? ((r: Route) => json(r, 200, ACCOUNTS)))(route) as Promise<void>);
+  await page.route(/\/api\/meetings\/41\/change-requests$/, (route) => json(route, 200, []));
   await page.route(/\/api\/action-items\/103$/, (route) => mocks.patch(route) as Promise<void>);
   await page.goto("/v2/login");
   await page.evaluate(([key, token]) => window.sessionStorage.setItem(key, token), [TOKEN_KEY, FAKE_TOKEN]);

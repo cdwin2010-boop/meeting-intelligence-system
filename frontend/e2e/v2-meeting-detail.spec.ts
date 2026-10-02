@@ -86,6 +86,7 @@ async function openDetail(
   );
   // 화자 확정 패널이 부르는 API(이 스펙의 검증 대상 아님): 화자 없음·계정 없음으로 응답
   await page.route(/\/api\/meetings\/\d+\/speakers$/, (route) => json(route, 200, { labels: [], speakers: [], autoAssignedItemIds: [] }));
+  await page.route(/\/api\/meetings\/\d+\/change-requests$/, (route) => json(route, 200, []));
   await page.route("**/api/accounts", (route) => json(route, 200, []));
   await page.goto("/v2/login");
   await page.evaluate(([key, token]) => window.sessionStorage.setItem(key, token), [TOKEN_KEY, FAKE_TOKEN]);
@@ -123,8 +124,8 @@ test.describe("v2 회의록 상세", () => {
     await expect(rows.nth(2)).toContainText("담당자 필요");
     await expect(rows.nth(2)).toContainText("기한 필요");
 
-    // 조회 전용: 쓰기 버튼·재생 버튼 없음
-    await expect(page.getByRole("button", { name: /확정|수정|재생/ })).toHaveCount(0);
+    // 재생 버튼 없음(오디오 재생 API 가 아직 없음). 확정·수정 요청 버튼은 e2e/v2-confirm.spec.ts 에서 확인
+    await expect(page.getByRole("button", { name: /재생/ })).toHaveCount(0);
 
     // 전사문: 처음엔 접혀 있고 요청도 없음 → 펼치면 1회 조회 → 접었다 다시 펼쳐도 재조회 없음
     const toggle = page.getByRole("button", { name: /전사문/ });

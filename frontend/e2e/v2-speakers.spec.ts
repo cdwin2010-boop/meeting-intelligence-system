@@ -71,6 +71,7 @@ async function openDetail(page: Page, mocks: Mocks) {
     if (route.request().method() === "PUT") return (mocks.speakersPut ?? ((r: Route) => json(r, 500, { detail: "없음" })))(route) as Promise<void>;
     return (mocks.speakersGet ?? ((r: Route) => json(r, 200, { labels: LABELS, speakers: [], autoAssignedItemIds: [] })))(route) as Promise<void>;
   });
+  await page.route(/\/api\/meetings\/41\/change-requests$/, (route) => json(route, 200, []));
   await page.route("**/api/accounts", (route) => (mocks.accounts ?? ((r: Route) => json(r, 200, ACCOUNTS)))(route) as Promise<void>);
   await page.goto("/v2/login");
   await page.evaluate(([key, token]) => window.sessionStorage.setItem(key, token), [TOKEN_KEY, FAKE_TOKEN]);

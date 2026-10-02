@@ -108,6 +108,7 @@ test.describe("v2 회의록 목록", () => {
       }),
     );
     await page.route("**/api/meetings/42/speakers", (route) => json(route, 200, { labels: [], speakers: [], autoAssignedItemIds: [] }));
+    await page.route("**/api/meetings/42/change-requests", (route) => json(route, 200, []));
     await page.route("**/api/accounts", (route) => json(route, 200, []));
     const row = page.getByRole("table", { name: "회의록 목록" }).locator("tbody tr").nth(1);
     await row.locator("td").first().click(); // 링크가 아닌 칸을 눌러도 이동

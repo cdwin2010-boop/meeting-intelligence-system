@@ -1,10 +1,13 @@
 "use client";
 
 /*
- * v2 회의록 상세 (시안 docs/ui-v2-mockups/05-meeting-detail.html) — 조회 전용
+ * v2 회의록 상세 (시안 docs/ui-v2-mockups/05-meeting-detail.html)
  * - GET /api/meetings/{id}: 개요·요약·결정사항·업무 원장. 404(없음·권한 없음)는 "찾을 수 없음"으로 따로 보여 준다
  * - 전사문은 펼칠 때 처음 한 번 GET /api/meetings/{id}/transcript 로 불러온다(전사문 없음 404 도 안내)
- * - 근거 인용·타임스탬프는 글자로만 표시(오디오 재생 API 가 아직 없음). 확정·업무명·기한 수정 버튼은 다음 단계
+ * - 근거 인용·타임스탬프는 글자로만 표시(오디오 재생 API 가 아직 없음). 업무명·기한 수정 버튼은 다음 단계
+ * - 확정 대기 회의록은 머리에 "회의록 확정"(MeetingConfirmButton, 회의록만 확정). 업무는 원장 행마다 "확정"(확정 전 업무만)
+ * - 상세 응답에 권한 값이 없어 확정 버튼은 모두에게 보이고, 거부(403·409 보완 필요 등)는 서버 문구를 그대로 보여 준다
+ * - 수정 요청(ChangeRequestPanel)은 회의록 전체 또는 업무 하나에 코멘트를 남긴다(상태·확정 시계 변화 없음)
  * - 업무 원장 담당자 칸의 지정/변경(AssigneeDialog): 저장 성공 시 서버가 준 업무로 그 행만 바꾼다(권한 판정은 서버)
  * - 화자 확정 패널(SpeakerPanel)에서 저장하면 업무 원장(상세 재조회)과 전사문(displayText)을 새로 받아 바꾼다
  * - 다른 회의록으로 바뀌거나 화면을 떠나면 이전 요청은 AbortController 로 취소한다
@@ -23,9 +26,19 @@ import {
   V2_MEETINGS_PATH,
 } from "@/components/v2/meeting-display";
 import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
+import { ChangeRequestPanel } from "@/components/v2/ChangeRequestPanel";
+import { MeetingConfirmButton } from "@/components/v2/MeetingConfirmButton";
 import { SpeakerPanel } from "@/components/v2/SpeakerPanel";
 import { ApiError, isAbortError, type MissingField } from "@/lib/v2/errors";
-import { getMeeting, getTranscript, type ActionItem, type MeetingDetail, type Transcript } from "@/lib/v2/meetings";
+import { confirmActionItem } from "@/lib/v2/action-items";
+import {
+  getMeeting,
+  getTranscript,
+  type ActionItem,
+  type MeetingConfirmResult,
+  type MeetingDetail,
+  type Transcript,
+} from "@/lib/v2/meetings";
 
 type LoadState =
   | { kind: "loading" }
@@ -143,8 +156,40 @@ function DueCell({ item }: { item: ActionItem }) {
   return <Mono>{item.dueDate}</Mono>;
 }
 
-function LedgerTable({ items, onEditAssignee }: { items: ActionItem[]; onEditAssignee: (item: ActionItem) => void }) {
+interface LedgerTableProps {
+  items: ActionItem[];
+  onEditAssignee: (item: ActionItem) => void;
+  onItemConfirmed: (item: ActionItem) => void;
+  onRequestChange: (item: ActionItem) => void;
+}
+
+function LedgerTable({ items, onEditAssignee, onItemConfirmed, onRequestChange }: LedgerTableProps) {
   const needsCount = items.filter((item) => item.needsCompletion).length;
+  // 업무 확정: 한 번에 한 건. 거부되면 서버 문구(보완 필요 409·권한 403 등)를 원장 위에 보여 준다
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
+  const [notice, setNotice] = useState<{ tone: "ready" | "error"; text: string } | null>(null);
+  const confirmRef = useRef<AbortController | null>(null);
+  useEffect(() => () => confirmRef.current?.abort(), []);
+
+  async function confirmItem(item: ActionItem) {
+    if (confirmingId !== null) return;
+    const controller = new AbortController();
+    confirmRef.current = controller;
+    setConfirmingId(item.id);
+    setNotice(null);
+    const name = item.title || "(업무명 없음)";
+    try {
+      const saved = await confirmActionItem(item.id, controller.signal);
+      onItemConfirmed(saved);
+      setNotice({ tone: "ready", text: `${name}: 확정했습니다` });
+    } catch (error) {
+      if (isAbortError(error)) return;
+      setNotice({ tone: "error", text: `${name}: 확정하지 못했습니다 · ${errorMessage(error, "서버 오류")}` });
+    } finally {
+      setConfirmingId(null);
+    }
+  }
+
   return (
     <section aria-label="업무 원장" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -156,8 +201,19 @@ function LedgerTable({ items, onEditAssignee }: { items: ActionItem[]; onEditAss
           {needsCount > 0 ? <StatusDot tone="error" label={`보완 필요 ${needsCount}건`} /> : null}
         </span>
       </div>
+      <div aria-live="polite" className="text-sm empty:hidden">
+        {notice ? (
+          notice.tone === "error" ? (
+            <span role="alert">
+              <StatusDot tone="error" label={notice.text} />
+            </span>
+          ) : (
+            <StatusDot tone="ready" label={notice.text} />
+          )
+        ) : null}
+      </div>
       <div className="overflow-x-auto rounded-mn-card border border-mn-border bg-mn-surface">
-        <table aria-label="업무 원장" className="w-full min-w-[940px] table-fixed border-collapse text-sm">
+        <table aria-label="업무 원장" className="w-full min-w-[1140px] table-fixed border-collapse text-sm">
           <colgroup>
             <col className="w-[120px]" />
             <col />
@@ -165,6 +221,7 @@ function LedgerTable({ items, onEditAssignee }: { items: ActionItem[]; onEditAss
             <col className="w-[128px]" />
             <col className="w-[160px]" />
             <col className="w-[240px]" />
+            <col className="w-[200px]" />
           </colgroup>
           <thead>
             <tr className="h-10 border-b border-mn-border text-left text-xs text-mn-muted">
@@ -174,12 +231,13 @@ function LedgerTable({ items, onEditAssignee }: { items: ActionItem[]; onEditAss
               <th scope="col" className="px-4 font-medium">완료 기한</th>
               <th scope="col" className="px-4 font-medium">보완 필요</th>
               <th scope="col" className="px-4 font-medium">근거</th>
+              <th scope="col" className="px-4 font-medium">동작</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
               <tr className="h-12">
-                <td colSpan={6} className="px-4 text-center text-mn-muted">
+                <td colSpan={7} className="px-4 text-center text-mn-muted">
                   추출된 업무가 없습니다.
                 </td>
               </tr>
@@ -227,6 +285,27 @@ function LedgerTable({ items, onEditAssignee }: { items: ActionItem[]; onEditAss
                       ) : (
                         <span className="text-mn-muted">—</span>
                       )}
+                    </td>
+                    <td className="px-4">
+                      <span className="flex items-center gap-2">
+                        {item.status === "pending" ? (
+                          <Button
+                            size="sm"
+                            disabled={confirmingId !== null}
+                            aria-label={`${item.title || "업무명 없음"} 업무 확정`}
+                            onClick={() => void confirmItem(item)}
+                          >
+                            {confirmingId === item.id ? "확정 중…" : "확정"}
+                          </Button>
+                        ) : null}
+                        <Button
+                          size="sm"
+                          aria-label={`${item.title || "업무명 없음"} 수정 요청`}
+                          onClick={() => onRequestChange(item)}
+                        >
+                          수정 요청
+                        </Button>
+                      </span>
                     </td>
                   </tr>
                 );
@@ -367,6 +446,7 @@ export default function V2MeetingDetailPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [transcriptVersion, setTranscriptVersion] = useState(0);
   const [assigneeTarget, setAssigneeTarget] = useState<ActionItem | null>(null);
+  const [changeTarget, setChangeTarget] = useState<{ itemId: number; nonce: number } | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
@@ -409,13 +489,42 @@ export default function V2MeetingDetailPage() {
   }, [meetingId]);
 
   /** 담당자 저장 뒤: 서버가 준 업무로 그 행만 바꾼다(보완 필요 표시도 서버 값 그대로) */
-  const onAssigneeSaved = useCallback((saved: ActionItem) => {
-    setAssigneeTarget(null);
+  const replaceItem = useCallback((saved: ActionItem) => {
     setState((prev) =>
       prev.kind === "ready"
         ? { ...prev, meeting: { ...prev.meeting, actionItems: prev.meeting.actionItems.map((it) => (it.id === saved.id ? saved : it)) } }
         : prev,
     );
+  }, []);
+
+  const onAssigneeSaved = useCallback(
+    (saved: ActionItem) => {
+      setAssigneeTarget(null);
+      replaceItem(saved);
+    },
+    [replaceItem],
+  );
+
+  /** 회의록 확정 뒤: 응답의 상태·확정 정보만 바꾼다(업무는 그대로) */
+  const onMeetingConfirmed = useCallback((result: MeetingConfirmResult) => {
+    setState((prev) =>
+      prev.kind === "ready"
+        ? {
+            ...prev,
+            meeting: {
+              ...prev.meeting,
+              status: result.status,
+              confirmKind: result.confirmKind,
+              confirmedBy: result.confirmedBy,
+              confirmedAt: result.confirmedAt,
+            },
+          }
+        : prev,
+    );
+  }, []);
+
+  const onRequestChange = useCallback((item: ActionItem) => {
+    setChangeTarget((prev) => ({ itemId: item.id, nonce: (prev?.nonce ?? 0) + 1 }));
   }, []);
 
   if (state.kind === "loading") {
@@ -458,17 +567,28 @@ export default function V2MeetingDetailPage() {
   return (
     <>
       <BackLink />
-      <header className="flex flex-col gap-2">
-        <h1 className="text-[28px] font-semibold leading-9 tracking-tight text-mn-text">{meeting.title || "(제목 없음)"}</h1>
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <StatusDot tone={status.tone} label={status.label} />
-          <Mono muted>{formatDateTime(meeting.heldAt)}</Mono>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-[28px] font-semibold leading-9 tracking-tight text-mn-text">{meeting.title || "(제목 없음)"}</h1>
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <StatusDot tone={status.tone} label={status.label} />
+            <Mono muted>{formatDateTime(meeting.heldAt)}</Mono>
+          </div>
         </div>
+        {meeting.status === "awaiting_confirmation" ? (
+          <MeetingConfirmButton meetingId={meeting.id} title={meeting.title} onConfirmed={onMeetingConfirmed} />
+        ) : null}
       </header>
       <Overview meeting={meeting} />
-      <LedgerTable items={meeting.actionItems} onEditAssignee={setAssigneeTarget} />
+      <LedgerTable
+        items={meeting.actionItems}
+        onEditAssignee={setAssigneeTarget}
+        onItemConfirmed={replaceItem}
+        onRequestChange={onRequestChange}
+      />
       <AssigneeDialog item={assigneeTarget} onClose={() => setAssigneeTarget(null)} onSaved={onAssigneeSaved} />
       <SpeakerPanel key={`speakers-${meeting.id}`} meetingId={meeting.id} onSaved={onSpeakersSaved} />
+      <ChangeRequestPanel key={`requests-${meeting.id}`} meetingId={meeting.id} items={meeting.actionItems} target={changeTarget} />
       <TranscriptPanel key={meeting.id} meetingId={meeting.id} version={transcriptVersion} />
     </>
   );
