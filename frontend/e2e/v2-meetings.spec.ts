@@ -100,9 +100,16 @@ test.describe("v2 회의록 목록", () => {
 
   test("행 클릭 → /v2/meetings/{id} 로 이동", async ({ page }) => {
     await openMeetings(page, (route) => json(route, 200, PAGE));
+    // 상세 화면이 부르는 API 는 최소 응답으로
+    await page.route("**/api/meetings/42", (route) =>
+      json(route, 200, {
+        ...PAGE.items[1], summary: "", decisions: [], confirmedBy: null, confirmedAt: null,
+        firstCreatedAt: "2026-09-30T00:30:00Z", participants: [], actionItems: [], recentEvents: [],
+      }),
+    );
     const row = page.getByRole("table", { name: "회의록 목록" }).locator("tbody tr").nth(1);
     await row.locator("td").first().click(); // 링크가 아닌 칸을 눌러도 이동
     await expect(page).toHaveURL(/\/v2\/meetings\/42$/);
-    await expect(page.getByRole("heading", { level: 1, name: "회의록 상세" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "3호기 납기 조정 회의" })).toBeVisible();
   });
 });

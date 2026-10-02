@@ -10,7 +10,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Button, StatusDot, type StatusDotTone } from "@/components/mono";
+import { Button, StatusDot } from "@/components/mono";
+import { detailPath, formatDateTime, meetingStatus } from "@/components/v2/meeting-display";
 import { isAbortError } from "@/lib/v2/errors";
 import { listMeetings, type MeetingListItem, type MeetingListPage } from "@/lib/v2/meetings";
 
@@ -19,37 +20,8 @@ type LoadState =
   | { kind: "error"; message: string }
   | { kind: "ready"; data: MeetingListPage };
 
-const AUTO_CONFIRM_KINDS = new Set(["period_elapsed", "due_reached"]);
-
-/** 회의록 상태 → 점 색 + 글자 라벨 (확정은 자동/그 외를 구분) */
-function meetingStatus(meeting: MeetingListItem): { tone: StatusDotTone; label: string } {
-  switch (meeting.status) {
-    case "processing":
-      return { tone: "building", label: "전사·추출 중" };
-    case "awaiting_confirmation":
-      return { tone: "queued", label: "확정 대기" };
-    case "confirmed":
-      return { tone: "ready", label: meeting.confirmKind && AUTO_CONFIRM_KINDS.has(meeting.confirmKind) ? "자동 확정됨" : "확정 완료" };
-    case "failed":
-      return { tone: "error", label: "처리 실패" };
-    case "no_content":
-      return { tone: "queued", label: "내용 없음" };
-    default:
-      return { tone: "queued", label: String(meeting.status) };
-  }
-}
-
 // 처리 중·실패·내용 없음은 업무가 아직(또는 끝내) 없으므로 건수 대신 "—"
 const HAS_ITEMS = new Set(["awaiting_confirmation", "confirmed"]);
-
-/** ISO 시각 → 브라우저 현지 시각 YYYY-MM-DD HH:mm (sv-SE 형식이 ISO 와 같다) */
-function formatDateTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString("sv-SE", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
-const detailPath = (id: number) => `/v2/meetings/${id}`;
 
 function MeetingsTable({ items }: { items: MeetingListItem[] }) {
   const router = useRouter();
