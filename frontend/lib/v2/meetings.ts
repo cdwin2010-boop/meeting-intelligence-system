@@ -259,3 +259,32 @@ export function uploadMeeting(
   for (const id of input.participantIds ?? []) form.append("participantIds", String(id));
   return request<UploadAccepted>("/meetings/upload", { method: "POST", body: form, signal, timeoutMs: UPLOAD_TIMEOUT_MS });
 }
+
+/** 처리 사유 최대 글자 수(서버 검사와 같음) */
+export const REASON_MAX = 2000;
+
+const meetingPath = (id: number, action: string) => `/meetings/${encodeURIComponent(String(id))}/${action}`;
+
+/**
+ * 회의록 보류·재개·직권 종료·삭제. 권한은 서버 판정(지시자·총괄, 아니면 403). 응답은 쓰지 않고 화면이 상세를 다시 받는다.
+ * - 보류 POST /hold {reason}: 확정 대기·확정만, 종료·삭제됨 409
+ * - 재개 POST /resume (사유 없음): 업무 기한을 모두 비운다
+ * - 직권 종료 POST /end {reason}: 확정 전 업무도 함께 종결, 보류·삭제됨 409
+ * - 삭제 POST /delete {reason}: 처리 중 409
+ * 사유 없음·공백·2000자 초과는 422
+ */
+export async function holdMeeting(id: number, reason: string, signal?: AbortSignal): Promise<void> {
+  await request<unknown>(meetingPath(id, "hold"), { method: "POST", body: { reason }, signal });
+}
+
+export async function resumeMeeting(id: number, signal?: AbortSignal): Promise<void> {
+  await request<unknown>(meetingPath(id, "resume"), { method: "POST", signal });
+}
+
+export async function endMeeting(id: number, reason: string, signal?: AbortSignal): Promise<void> {
+  await request<unknown>(meetingPath(id, "end"), { method: "POST", body: { reason }, signal });
+}
+
+export async function deleteMeeting(id: number, reason: string, signal?: AbortSignal): Promise<void> {
+  await request<unknown>(meetingPath(id, "delete"), { method: "POST", body: { reason }, signal });
+}

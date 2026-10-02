@@ -19,6 +19,9 @@
  * - 단계(진행중·종료·보류·삭제)는 제목 줄에 글자 라벨(종료는 자동 종료/관리자 직권 종료 구분까지). 보류·종료·삭제 기록이 있으면
  *   "처리 기록"에 처리자·시각·사유를 읽기 전용으로 보여 준다(서버 응답 그대로, 없으면 칸 생략)
  * - 보류·종료·삭제된 회의록의 쓰기 버튼은 그대로 두고, 서버가 409 로 거부하면 각 버튼이 서버 문구를 그대로 보여 준다
+ * - 관리자 이상(로그인 계정 직급)에게만: 제목 줄 MeetingActions(보류·직권 종료·삭제 메뉴, 보류 중 재개)와 업무 행 "종결"(확정된 업무만)·"삭제".
+ *   모두 사유 입력 확인 팝업(ReasonDialog, 재개는 사유 없음)을 거치고, 성공하면 상세·수정 요청을 다시 받아 새 상태로 바꾼다.
+ *   실제 권한(지시자·총괄 등)은 서버 판정, 거부(403·409·422)는 팝업 안에 서버 문구
  * - 다른 회의록으로 바뀌거나 화면을 떠나면 이전 요청은 AbortController 로 취소한다
  */
 import Link from "next/link";
@@ -37,15 +40,23 @@ import {
   V2_MEETINGS_PATH,
 } from "@/components/v2/meeting-display";
 import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
+import { useAuth } from "@/components/v2/AuthProvider";
 import { ChangeRequestDialog, type ChangeRequestTarget } from "@/components/v2/ChangeRequestDialog";
 import { useChangeRequests } from "@/components/v2/ChangeRequestHistory";
+import { MeetingActions, type MeetingActionKind } from "@/components/v2/MeetingActions";
 import { MeetingConfirmButton } from "@/components/v2/MeetingConfirmButton";
+import { ReasonDialog, type ReasonAction } from "@/components/v2/ReasonDialog";
 import { SpeakerDialog } from "@/components/v2/SpeakerDialog";
 import { ApiError, isAbortError, type MissingField } from "@/lib/v2/errors";
-import { confirmActionItem } from "@/lib/v2/action-items";
+import { closeActionItem, confirmActionItem, deleteActionItem } from "@/lib/v2/action-items";
+import { isManager } from "@/lib/v2/types";
 import {
+  deleteMeeting,
+  endMeeting,
   getMeeting,
   getSpeakers,
+  holdMeeting,
+  resumeMeeting,
   getTranscript,
   type ActionItem,
   type MeetingConfirmResult,
@@ -80,7 +91,7 @@ const ORIGIN_LABEL: Record<string, string> = { audio_minutes: "음성", audio: "
 function itemStatus(item: ActionItem): { tone: StatusDotTone; label: string } {
   if (item.status === "pending") return item.needsCompletion ? { tone: "error", label: "보완 필요" } : { tone: "queued", label: "확정 대기" };
   if (item.status === "confirmed") return { tone: "ready", label: "확정됨" };
-  if (item.status === "closed") return { tone: "ready", label: "완료" };
+  if (item.status === "closed") return { tone: "ready", label: "종결" };
   return { tone: "queued", label: String(item.status) };
 }
 
@@ -264,9 +275,13 @@ interface LedgerTableProps {
   onEditAssignee: (item: ActionItem) => void;
   onItemConfirmed: (item: ActionItem) => void;
   onRequestChange: (item: ActionItem) => void;
+  /** 관리자 이상이면 종결(확정된 업무만)·삭제 버튼을 그린다(권한 판정은 서버) */
+  manager: boolean;
+  onCloseItem: (item: ActionItem) => void;
+  onDeleteItem: (item: ActionItem) => void;
 }
 
-function LedgerTable({ items, onEditAssignee, onItemConfirmed, onRequestChange }: LedgerTableProps) {
+function LedgerTable({ items, onEditAssignee, onItemConfirmed, onRequestChange, manager, onCloseItem, onDeleteItem }: LedgerTableProps) {
   const needsCount = items.filter((item) => item.needsCompletion).length;
   // 업무 확정: 한 번에 한 건. 거부되면 서버 문구(보완 필요 409·권한 403 등)를 원장 위에 보여 준다
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
@@ -324,7 +339,7 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onRequestChange }
             <col className="w-[128px]" />
             <col className="w-[160px]" />
             <col className="w-[240px]" />
-            <col className="w-[200px]" />
+            <col className={manager ? "w-[320px]" : "w-[200px]"} />
           </colgroup>
           <thead>
             <tr className="h-10 border-b border-mn-border text-left text-xs text-mn-muted">
@@ -408,6 +423,16 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onRequestChange }
                         >
                           수정 요청
                         </Button>
+                        {manager && item.status === "confirmed" ? (
+                          <Button size="sm" aria-label={`${item.title || "업무명 없음"} 업무 종결`} onClick={() => onCloseItem(item)}>
+                            종결
+                          </Button>
+                        ) : null}
+                        {manager ? (
+                          <Button size="sm" aria-label={`${item.title || "업무명 없음"} 업무 삭제`} onClick={() => onDeleteItem(item)}>
+                            삭제
+                          </Button>
+                        ) : null}
                       </span>
                     </td>
                   </tr>
@@ -573,6 +598,10 @@ export default function V2MeetingDetailPage() {
   const meetingId = /^\d+$/.test(rawId) ? Number(rawId) : null;
 
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const { account } = useAuth();
+  const manager = isManager(account?.rank);
+  // 사유 입력 확인 팝업(종결·삭제·보류·재개·직권 종료 공용)
+  const [reasonAction, setReasonAction] = useState<ReasonAction | null>(null);
   const [transcriptVersion, setTranscriptVersion] = useState(0);
   const [speakerOpen, setSpeakerOpen] = useState(false);
   const [speakers, setSpeakers] = useState<SpeakerMapping[] | null>(null);
@@ -634,6 +663,21 @@ export default function V2MeetingDetailPage() {
       throw error;
     }
   }, [meetingId]);
+
+  /** 종결·삭제·보류·재개·직권 종료 뒤: 화면을 비우지 않고 상세와 수정 요청 목록을 다시 받는다(실패해도 보이는 내용은 그대로) */
+  const refreshAfterAction = useCallback(async () => {
+    if (meetingId === null) return;
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    void changeRequests.reload();
+    try {
+      setState({ kind: "ready", meeting: await getMeeting(meetingId, controller.signal) });
+    } catch (error) {
+      if (isAbortError(error)) return;
+      throw error;
+    }
+  }, [meetingId, changeRequests]);
 
   /** 화자 팝업 저장 성공: 요약·안내를 저장 응답으로 바꾸고 상세·전사문을 새로 받는다(실패하면 팝업이 안내) */
   const onSpeakerDialogSaved = useCallback(
@@ -723,6 +767,53 @@ export default function V2MeetingDetailPage() {
 
   const { meeting } = state;
   const status = meetingStatus(meeting);
+  const meetingName = meeting.title || "(제목 없음)";
+
+  /** 제목 줄 동작 → 팝업 내용 */
+  const openMeetingAction = (kind: MeetingActionKind) => {
+    const id = meeting.id;
+    const actions: Record<MeetingActionKind, ReasonAction> = {
+      hold: {
+        title: "회의록 보류", target: meetingName, confirmLabel: "보류하기", requireReason: true,
+        notice: "보류하면 딸린 업무도 모두 보류되어 할 일·자동 확정에서 빠집니다.",
+        run: (reason, signal) => holdMeeting(id, reason, signal),
+      },
+      end: {
+        title: "회의록 직권 종료", target: meetingName, confirmLabel: "직권 종료하기", requireReason: true,
+        notice: "확정 전 업무도 함께 종결됩니다.",
+        run: (reason, signal) => endMeeting(id, reason, signal),
+      },
+      delete: {
+        title: "회의록 삭제", target: meetingName, confirmLabel: "삭제하기", requireReason: true,
+        notice: "기록은 남기고 목록·할 일에서 숨깁니다.",
+        run: (reason, signal) => deleteMeeting(id, reason, signal),
+      },
+      resume: {
+        title: "회의록 재개", target: meetingName, confirmLabel: "재개하기", requireReason: false,
+        notice: "업무 기한이 모두 비워집니다. 날짜를 다시 설정해야 합니다.",
+        run: (_reason, signal) => resumeMeeting(id, signal),
+      },
+    };
+    setReasonAction(actions[kind]);
+  };
+
+  const openItemClose = (item: ActionItem) =>
+    setReasonAction({
+      title: "업무 종결", target: item.title || "(업무명 없음)", confirmLabel: "업무 종결하기", requireReason: true,
+      run: async (reason, signal) => {
+        await closeActionItem(item.id, reason, signal);
+      },
+    });
+
+  const openItemDelete = (item: ActionItem) =>
+    setReasonAction({
+      title: "업무 삭제", target: item.title || "(업무명 없음)", confirmLabel: "삭제하기", requireReason: true,
+      notice: "기록은 남기고 업무 원장에서 숨깁니다.",
+      run: async (reason, signal) => {
+        await deleteActionItem(item.id, reason, signal);
+      },
+    });
+
   return (
     <>
       <BackLink />
@@ -741,6 +832,9 @@ export default function V2MeetingDetailPage() {
           <Button onClick={() => setChangeTarget({ itemId: null, label: "회의록 전체" })}>회의록 전체 수정 요청</Button>
           {meeting.status === "awaiting_confirmation" ? (
             <MeetingConfirmButton meetingId={meeting.id} title={meeting.title} onConfirmed={onMeetingConfirmed} />
+          ) : null}
+          {manager ? (
+            <MeetingActions phase={meeting.phase ?? "active"} status={meeting.status} onSelect={openMeetingAction} />
           ) : null}
         </div>
       </header>
@@ -763,7 +857,11 @@ export default function V2MeetingDetailPage() {
         onEditAssignee={setAssigneeTarget}
         onItemConfirmed={replaceItem}
         onRequestChange={onRequestChange}
+        manager={manager}
+        onCloseItem={openItemClose}
+        onDeleteItem={openItemDelete}
       />
+      <ReasonDialog action={reasonAction} onClose={() => setReasonAction(null)} onDone={refreshAfterAction} />
       <AssigneeDialog item={assigneeTarget} onClose={() => setAssigneeTarget(null)} onSaved={onAssigneeSaved} />
       <SpeakerDialog
         meetingId={meeting.id}
