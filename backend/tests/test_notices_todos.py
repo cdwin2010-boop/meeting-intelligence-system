@@ -374,7 +374,9 @@ def test_pending_change_requests_isolated_by_tenant(env, team):
     mine = create_request(env, team["staff"], ours, "우리 요청")
     create_request(env, team["outsider"], theirs, "다른 고객사 요청")
     assert [i["requestId"] for i in pending_requests(env, team["exe"])["items"]] == [mine]
-    outsider = pending_requests(env, team["outsider"])
+    # 다른 고객사 쪽은 그 고객사의 다른 관리자에게만(요청자 본인 요청은 본인 목록에서 제외되므로 다른 계정으로 확인)
+    their_mgr = add_account(env["factory"], "고객사B", "out-mgr", "manager", name="외부관리")
+    outsider = pending_requests(env, their_mgr)
     assert outsider["total"] == 1 and outsider["items"][0]["meetingId"] == theirs
 
 
@@ -387,3 +389,20 @@ def test_pending_change_requests_comment_preview_and_limit(env, team):
     body = pending_requests(env, team["exe"])
     assert body["total"] == 55 and len(body["items"]) == 50
     assert body["items"][0]["commentPreview"] == "가" * 80 + "…"
+
+
+def test_pending_change_requests_exclude_own_requests(env, team):
+    meeting_id = make_meeting(env["factory"], team["mgr"], participants=[team["staff"]])
+    by_mgr = create_request(env, team["mgr"], meeting_id, "관리자가 남긴 요청")
+    by_exe = create_request(env, team["exe"], meeting_id, "지시자가 남긴 요청")
+    by_staff = create_request(env, team["staff"], meeting_id, "담당자가 남긴 요청")
+
+    def ids(who):
+        body = pending_requests(env, team[who])
+        assert body["total"] == len(body["items"])  # 건수도 같은 기준
+        return [i["requestId"] for i in body["items"]]
+
+    assert ids("mgr") == [by_exe, by_staff]  # 본인 요청 제외
+    assert ids("exe") == [by_mgr, by_staff]
+    assert ids("mgr2") == [by_mgr, by_exe, by_staff]  # 다른 관리자에게는 모두
+    assert pending_requests(env, team["staff"]) == {"total": 0, "items": []}
