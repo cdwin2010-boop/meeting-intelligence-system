@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.auth.access import VIEW_ALL_RANKS
 from app.config import settings
 from app.models import Account, ActionItem, Meeting, MeetingView
+from app.models.closure import active_meeting_condition
 from app.services.mail import SUBJECT_PREFIX, login_link, queue_mail
 
 # 이 상태의 회의록에 속한 업무는 세지 않는다
@@ -32,7 +33,7 @@ def _counts(session: Session) -> tuple[dict[int, int], dict[int, int], dict[int,
     awaiting = dict(
         session.execute(
             select(Meeting.tenant_id, func.count(Meeting.id))
-            .where(Meeting.status == "awaiting_confirmation", Meeting.on_hold.is_(False))
+            .where(Meeting.status == "awaiting_confirmation", active_meeting_condition())
             .group_by(Meeting.tenant_id)
         ).all()
     )
@@ -44,7 +45,7 @@ def _counts(session: Session) -> tuple[dict[int, int], dict[int, int], dict[int,
                 ActionItem.status == "pending",
                 ActionItem.needs_supplement,
                 Meeting.status.not_in(EXCLUDED_MEETING_STATUSES),
-                Meeting.on_hold.is_(False),
+                active_meeting_condition(),
             )
             .group_by(ActionItem.tenant_id)
         ).all()
@@ -58,7 +59,7 @@ def _counts(session: Session) -> tuple[dict[int, int], dict[int, int], dict[int,
                 ActionItem.status == "pending",
                 Meeting.tenant_id == ActionItem.tenant_id,
                 Meeting.status.not_in(EXCLUDED_MEETING_STATUSES),
-                Meeting.on_hold.is_(False),
+                active_meeting_condition(),
                 ~exists().where(
                     MeetingView.meeting_id == ActionItem.meeting_id,
                     MeetingView.account_id == ActionItem.assignee_id,

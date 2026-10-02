@@ -21,6 +21,8 @@ class MeetingListItem(CamelModel):
     item_count: int
     needs_completion_count: int
     auto_confirm_at: datetime | None
+    # 회의록 단계(추가 필드): active(진행중) | ended(종료) | on_hold(보류) | deleted(삭제)
+    phase: str = "active"
 
 
 class MeetingListPage(CamelModel):
@@ -90,6 +92,13 @@ class MeetingDetail(CamelModel):
     on_hold_at: datetime | None = None
     resumed_by: AccountRef | None = None
     resumed_at: datetime | None = None
+    # 회의록 단계와 종료(구분 auto|manager·처리자·시각)·삭제(처리자·시각) 기록(추가 필드)
+    phase: str = "active"
+    end_kind: str | None = None
+    ended_by: AccountRef | None = None
+    ended_at: datetime | None = None
+    deleted_by: AccountRef | None = None
+    deleted_at: datetime | None = None
 
 
 class SpeakerOut(CamelModel):

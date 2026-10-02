@@ -131,10 +131,14 @@ def test_hold_state_rules(env, team, meeting):
 def test_detail_shows_hold_and_items_kept(env, team, meeting):
     meeting_id, ids = meeting
     hold(env, team["lead"], meeting_id)
-    body = call(env, "GET", team["staff"], f"/api/meetings/{meeting_id}").json()  # 목록·상세에서 숨기지 않는다
-    assert body["onHold"] is True and body["onHoldBy"]["id"] == team["lead"].id
+    # 관리자 이상은 상세·보류 목록에서 볼 수 있다(㊺: 기본 목록은 진행중, 담당자는 보류 회의록 상세도 404)
+    body = call(env, "GET", team["exe"], f"/api/meetings/{meeting_id}").json()
+    assert body["onHold"] is True and body["onHoldBy"]["id"] == team["lead"].id and body["phase"] == "on_hold"
     assert [i["id"] for i in body["actionItems"]] == ids  # 업무 상태는 그대로(보류는 회의록 표시로 판단)
-    assert meeting_id in [m["id"] for m in call(env, "GET", team["lead"], "/api/meetings").json()["items"]]
+    held = call(env, "GET", team["lead"], "/api/meetings", params={"phase": "on_hold"}).json()["items"]
+    assert [m["id"] for m in held] == [meeting_id] and held[0]["phase"] == "on_hold"
+    assert meeting_id not in [m["id"] for m in call(env, "GET", team["lead"], "/api/meetings").json()["items"]]
+    assert call(env, "GET", team["staff"], f"/api/meetings/{meeting_id}").status_code == 404
 
 
 def test_writes_rejected_while_on_hold(env, team, meeting):

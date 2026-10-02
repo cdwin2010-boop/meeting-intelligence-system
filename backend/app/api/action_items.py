@@ -1,4 +1,4 @@
-"""업무 쓰기 API: 보완(수정)·확정·종결·삭제. staff 는 403, manager 는 본인이 등록한 회의록의 업무 또는 본인이 담당자인 업무만(아니면 403),
+"""업무 쓰기 API: 보완(수정)·확정·종결·삭제. 종결로 삭제되지 않은 업무가 모두 종결되면 회의록을 자동 종료한다. staff 는 403, manager 는 본인이 등록한 회의록의 업무 또는 본인이 담당자인 업무만(아니면 403),
 executive 는 모든 업무(판정은 app/auth/access.py 의 can_write_item). 종결도 같은 판정을 쓴다.
 삭제는 회의록 확정 권한(can_confirm_meeting: 지시자·총괄)만. 보류 중인 회의록의 업무는 수정·확정·종결·삭제 모두 409. 삭제는 행을 지우지 않고 status=deleted 로 표시한다.
 종결·삭제한 사람·시각은 closed_by/at·deleted_by/at 칸과 사건(item.closed·item.deleted)에 남긴다.
@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.action_schemas import ActionItemPatch
-from app.api.meeting_hold import reject_if_on_hold
+from app.api.meeting_hold import reject_if_locked
 from app.api.meeting_schemas import AccountRef, ActionItemOut
 from app.auth.access import can_confirm_meeting, can_write_item, get_visible_meeting
 from app.auth.deps import require_rank
@@ -17,6 +17,7 @@ from app.auth.scope import scoped
 from app.db import get_session
 from app.models import Account, ActionItem, Meeting, append_event
 from app.models.common import utcnow
+from app.services.lifecycle import auto_end_if_all_closed
 from app.services.notices import create_confirm_notices
 
 router = APIRouter(prefix="/api/action-items", tags=["action-items"])
@@ -48,7 +49,7 @@ def get_writable_item(session: Session, account: Account, item_id: int) -> Actio
     meeting = session.get(Meeting, item.meeting_id)
     if not can_write_item(session, account, item, meeting):
         raise _http(status.HTTP_403_FORBIDDEN, "이 업무를 수정·확정할 권한이 없습니다")
-    reject_if_on_hold(meeting)
+    reject_if_locked(meeting)
     return item
 
 
@@ -200,6 +201,8 @@ def close_action_item(
         event_type="item.closed", actor_account_id=account.id,
         payload={"before": {"status": "confirmed"}, "after": {"status": "closed"}},
     )
+    # 삭제되지 않은 업무가 모두 종결이면 회의록 자동 종료(같은 트랜잭션)
+    auto_end_if_all_closed(session, session.get(Meeting, item.meeting_id))
     session.commit()
     return item_out(session, item)
 
@@ -215,7 +218,7 @@ def delete_action_item(
     meeting = session.get(Meeting, item.meeting_id)
     if not can_confirm_meeting(session, account, meeting):
         raise _http(status.HTTP_403_FORBIDDEN, "이 업무를 삭제할 권한이 없습니다")
-    reject_if_on_hold(meeting)
+    reject_if_locked(meeting)
     if item.status == "deleted":
         return item_out(session, item)
     before = item.status

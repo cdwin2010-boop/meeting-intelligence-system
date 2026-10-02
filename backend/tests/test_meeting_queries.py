@@ -69,7 +69,8 @@ def test_list_fields_and_sort_by_held_at_desc(env):
     assert body["total"] == 3 and body["page"] == 1 and body["size"] == 20
     item = body["items"][0]
     assert set(item) == {"id", "title", "heldAt", "registeredBy", "origin", "status", "confirmKind", "itemCount",
-                         "needsCompletionCount", "autoConfirmAt"}
+                         "needsCompletionCount", "autoConfirmAt", "phase"}
+    assert item["phase"] == "active"
     assert item["registeredBy"] == {"id": mgr.id, "name": "박관리"}
     assert item["origin"] == "audio_minutes" and item["status"] == "confirmed"
     assert datetime.fromisoformat(item["heldAt"]) == BASE + timedelta(days=3)  # 오프셋 포함 ISO

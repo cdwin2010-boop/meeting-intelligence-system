@@ -17,6 +17,7 @@ from app.auth.access import VIEW_ALL_RANKS, can_confirm_condition, meeting_visib
 from app.auth.deps import get_current_account, has_rank
 from app.db import get_session
 from app.models import Account, ActionItem, Event, Meeting, MeetingView, Notice
+from app.models.closure import active_meeting_condition
 from app.models.common import INACTIVE_ITEM_STATUSES
 from app.models.common import utcnow
 
@@ -105,11 +106,11 @@ class Todos(CamelModel):
 # ---------------- 안내 ----------------
 @router.get("/notices", response_model=list[NoticeOut], response_model_by_alias=True)
 def my_notices(account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> list[NoticeOut]:
-    """내 미확인 안내(최신순). 종결·삭제된 업무, 보류 중인 회의록에 대한 안내는 빼고 보여 준다(행은 그대로 둠)."""
+    """내 미확인 안내(최신순). 종결·삭제된 업무, 보류 중·삭제된 회의록에 대한 안내는 빼고 보여 준다(행은 그대로 둠)."""
     inactive_item = exists().where(
         ActionItem.id == Notice.entity_id, ActionItem.status.in_(INACTIVE_ITEM_STATUSES)
     )
-    held_meeting = exists().where(Meeting.id == Notice.meeting_id, Meeting.on_hold.is_(True))
+    held_meeting = exists().where(Meeting.id == Notice.meeting_id, Meeting.on_hold | Meeting.deleted)
     rows = session.scalars(
         select(Notice)
         .where(
@@ -166,8 +167,8 @@ def _not_viewed_since(account: Account, meeting_id_col, confirmed_at_col):
 
 @router.get("/todos", response_model=Todos, response_model_by_alias=True)
 def my_todos(account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> Todos:
-    # 보류 중인 회의록(과 딸린 업무)은 모든 할 일 묶음에서 뺀다
-    visible = and_(meeting_visibility(account), Meeting.on_hold.is_(False))
+    # 진행중 회의록만: 보류·종료·삭제된 회의록(과 딸린 업무·수정 요청)은 모든 할 일 묶음에서 뺀다
+    visible = and_(meeting_visibility(account), active_meeting_condition())
     is_manager = account.rank in VIEW_ALL_RANKS
 
     # 1) 확정 대기 회의록: 그 회의록을 확정할 수 있는 사람(지시자·총괄)에게만

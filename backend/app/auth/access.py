@@ -41,7 +41,13 @@ def meeting_visibility(account: Account) -> ColumnElement[bool]:
     same_tenant = Meeting.tenant_id == account.tenant_id
     if account.rank in VIEW_ALL_RANKS:
         return and_(same_tenant, true())
-    return and_(same_tenant, or_(is_participant(account), has_assigned_item(account), is_registrant(account)))
+    # 담당자는 보류·삭제된 회의록을 볼 수 없다(관리자 이상만)
+    return and_(
+        same_tenant,
+        or_(is_participant(account), has_assigned_item(account), is_registrant(account)),
+        ~Meeting.on_hold,
+        ~Meeting.deleted,
+    )
 
 
 def get_visible_meeting(session: Session, account: Account, meeting_id: int) -> Meeting | None:

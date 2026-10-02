@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
-    accounts, action_items, auth, me, meeting_actions, meeting_hold, meeting_queries, meeting_speakers, meetings, probe,
+    accounts, action_items, auth, me, meeting_actions, meeting_hold, meeting_lifecycle, meeting_queries, meeting_speakers,
+    meetings, probe,
 )
 from app.config import settings
 
@@ -20,6 +21,7 @@ app.include_router(meetings.router)
 app.include_router(meeting_queries.router)
 app.include_router(meeting_actions.router)
 app.include_router(meeting_hold.router)
+app.include_router(meeting_lifecycle.router)
 app.include_router(action_items.router)
 app.include_router(me.router)
 app.include_router(accounts.router)

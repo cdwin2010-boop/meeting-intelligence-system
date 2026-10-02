@@ -17,11 +17,14 @@ from app.api.meeting_schemas import (
     SpeakerOut,
     TranscriptOut,
 )
-from app.auth.access import get_visible_meeting, has_assigned_item, meeting_visibility
+from app.auth.access import VIEW_ALL_RANKS, get_visible_meeting, has_assigned_item, meeting_visibility
 from app.auth.deps import get_current_account
 from app.auth.scope import scoped
 from app.db import get_session
-from app.models import Account, ActionItem, Event, Job, Meeting, MeetingHold, MeetingParticipant, SourceDocument, Transcript
+from app.models import (
+    Account, ActionItem, Event, Job, Meeting, MeetingClosure, MeetingHold, MeetingParticipant, SourceDocument, Transcript,
+)
+from app.models.closure import meeting_phase, phase_condition
 from app.models.common import MEETING_STATUSES
 from app.services.speakers import SpeakerView, display_text, load_speakers
 from app.services.views import record_meeting_view
@@ -53,6 +56,8 @@ def _item_counts():
 @router.get("", response_model=MeetingListPage, response_model_by_alias=True)
 def list_meetings(
     status_filter: MeetingStatus | None = Query(None, alias="status"),
+    # 회의록 단계(기본 진행중). 담당자는 진행중·종료만(보류·삭제는 403)
+    phase: Literal["active", "ended", "on_hold", "deleted"] = Query("active"),
     mine: Literal["registered", "assigned"] | None = Query(None),
     needs_completion: bool | None = Query(None, alias="needsCompletion"),
     page: int = Query(1, ge=1),
@@ -60,6 +65,8 @@ def list_meetings(
     account: Account = Depends(get_current_account),
     session: Session = Depends(get_session),
 ) -> MeetingListPage:
+    if phase in ("on_hold", "deleted") and account.rank not in VIEW_ALL_RANKS:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="보류·삭제된 회의록은 관리자 이상만 볼 수 있습니다")
     counts = _item_counts()
     registrant = aliased(Account)
     item_count = func.coalesce(counts.c.item_count, 0)
@@ -77,7 +84,7 @@ def list_meetings(
         .join(SourceDocument, SourceDocument.id == Meeting.source_document_id)
         .join(registrant, registrant.id == SourceDocument.registered_by)
         .outerjoin(counts, counts.c.meeting_id == Meeting.id)
-        .where(meeting_visibility(account))
+        .where(meeting_visibility(account), phase_condition(phase))
     )
     if status_filter is not None:
         stmt = stmt.where(Meeting.status == status_filter)
@@ -107,6 +114,7 @@ def list_meetings(
             item_count=row.item_count,
             needs_completion_count=row.needs_count,
             auto_confirm_at=row.Meeting.auto_confirm_at,
+            phase=meeting_phase(row.Meeting),
         )
         for row in rows
     ]
@@ -185,6 +193,7 @@ def get_meeting(
     ]
 
     hold = session.get(MeetingHold, meeting.id)
+    closure = session.get(MeetingClosure, meeting.id)
     detail = MeetingDetail(
         id=meeting.id,
         title=meeting.title,
@@ -207,6 +216,12 @@ def get_meeting(
         on_hold_at=hold.on_hold_at if hold else None,
         resumed_by=_account_ref(session, hold.resumed_by) if hold else None,
         resumed_at=hold.resumed_at if hold else None,
+        phase=meeting_phase(meeting),
+        end_kind=closure.end_kind if closure else None,
+        ended_by=_account_ref(session, closure.ended_by) if closure else None,
+        ended_at=closure.ended_at if closure else None,
+        deleted_by=_account_ref(session, closure.deleted_by) if closure else None,
+        deleted_at=closure.deleted_at if closure else None,
     )
     # 상세 조회가 성공한 경우에만 열람 기록(첫 열람 유지, 마지막 열람 갱신)
     record_meeting_view(session, account, meeting)

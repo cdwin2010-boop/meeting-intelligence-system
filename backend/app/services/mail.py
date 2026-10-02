@@ -51,7 +51,7 @@ def queue_mail(session: Session, *, account: Account, kind: str, subject: str, b
 def queue_immediate_new_minutes(session: Session, meeting: Meeting) -> int:
     """처리 완료로 회의록이 확정 대기/확정이 된 순간의 즉시 메일(같은 트랜잭션에서 호출).
     수신자 = 참석자 + 업무 담당자 + 등록자 중 메일 가능한 계정, 등록자 본인 제외, 중복 제거."""
-    if meeting.status not in ("awaiting_confirmation", "confirmed") or meeting.on_hold:
+    if meeting.status not in ("awaiting_confirmation", "confirmed") or meeting.on_hold or meeting.ended or meeting.deleted:
         return 0
     registrant_id = session.scalar(
         select(SourceDocument.registered_by).where(SourceDocument.id == meeting.source_document_id)
