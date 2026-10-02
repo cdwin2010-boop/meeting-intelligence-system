@@ -44,12 +44,28 @@ export interface UnreadAutoConfirmed {
   confirmedAt: string;
 }
 
+/** 수정 요청 대기: 내가 해결(수락·반려)할 수 있는 미해결 요청(판정은 서버, 오래된 요청 먼저) */
+export interface PendingChangeRequest {
+  requestId: number;
+  meetingId: number;
+  meetingTitle: string;
+  /** null 이면 회의록 전체 */
+  itemId: number | null;
+  itemTitle: string | null;
+  requester: { id: number; name: string } | null;
+  createdAt: string;
+  /** 코멘트 앞부분(서버가 자름) */
+  commentPreview: string;
+}
+
 /** GET /api/me/todos */
 export interface Todos {
   awaitingConfirmMeetings: TodoList<AwaitingMeeting>;
   needsCompletionItems: TodoList<NeedsCompletionItem>;
   myItems: TodoList<MyItem>;
   unreadAutoConfirmed: TodoList<UnreadAutoConfirmed>;
+  /** 추가 필드: 이 필드가 없는 서버 응답이면 빈 목록으로 본다 */
+  pendingChangeRequests?: TodoList<PendingChangeRequest>;
 }
 
 /** GET /api/me/notices 항목(미확인 안내, 최신순). 확정 안내는 kind="confirmed_notice" */

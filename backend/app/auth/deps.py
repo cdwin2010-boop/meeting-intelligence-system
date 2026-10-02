@@ -40,13 +40,18 @@ def get_current_account(
     return account
 
 
+def has_rank(account: Account, min_rank: str) -> bool:
+    """account 가 min_rank 이상 직급인가(require_rank 와 같은 판정, 목록 조회처럼 403 대신 걸러 낼 때 쓴다)."""
+    return RANK_ORDER.get(account.rank, -1) >= RANK_ORDER[min_rank]
+
+
 def require_rank(min_rank: str) -> Callable[..., Account]:
     """min_rank 이상 직급만 통과시키는 의존성을 만든다. 모자라면 403."""
     if min_rank not in RANK_ORDER:
         raise ValueError(f"알 수 없는 직급: {min_rank}")
 
     def _dependency(account: Account = Depends(get_current_account)) -> Account:
-        if RANK_ORDER.get(account.rank, -1) < RANK_ORDER[min_rank]:
+        if not has_rank(account, min_rank):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="권한이 없습니다")
         return account
 

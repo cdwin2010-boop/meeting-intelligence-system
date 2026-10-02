@@ -158,4 +158,53 @@ test.describe("v2 앱 틀 + 할 일", () => {
     await page.goto("/v2/meetings");
     await expect(page).toHaveURL(/\/v2\/login\?next=%2Fv2%2Fmeetings$/);
   });
+
+  test("수정 요청 대기 묶음 표시 → 항목 누르면 회의록 상세로 이동", async ({ page }) => {
+    const todos = {
+      ...EMPTY_TODOS,
+      pendingChangeRequests: {
+        total: 2,
+        items: [
+          { requestId: 501, meetingId: 11, meetingTitle: "주간 생산 현안 회의", itemId: 21, itemTitle: "설비 점검 일정 수립",
+            requester: { id: 9, name: "이서연" }, createdAt: "2026-10-02T03:00:00Z", commentPreview: "기한을 다음 주로 바꿔 주세요" },
+          { requestId: 502, meetingId: 12, meetingTitle: "월간 생산 계획", itemId: null, itemTitle: null,
+            requester: { id: 9, name: "이서연" }, createdAt: "2026-10-02T04:00:00Z", commentPreview: "요약을 보완해 주세요" },
+        ],
+      },
+    };
+    await mockApi(page, { todos });
+    // 상세 화면 API 는 이 테스트 범위 밖이라 404 로만 응답(이동 확인용)
+    await page.route(/\/api\/meetings\/\d+(\/.*)?$/, (route) => json(route, 404, { detail: "회의록을 찾을 수 없습니다" }));
+    await loginAndOpenHome(page);
+
+    const section = page.getByRole("region", { name: "수정 요청 대기" });
+    await expect(section).toBeVisible();
+    await expect(section.getByText("2", { exact: true })).toBeVisible();
+    const rows = section.getByRole("link");
+    await expect(rows).toHaveCount(2);
+    await expect(rows.first()).toContainText("주간 생산 현안 회의");
+    await expect(rows.first()).toContainText("기한을 다음 주로 바꿔 주세요");
+    await expect(rows.first()).toContainText("설비 점검 일정 수립");
+    await expect(rows.first()).toContainText("이서연");
+    await expect(rows.first()).toContainText("해결 대기");
+    await expect(rows.nth(1)).toContainText("회의록 전체");
+    await expect(page.getByText("지금 처리할 일이 없습니다.")).toHaveCount(0);
+
+    await rows.nth(1).click();
+    await expect(page).toHaveURL(/\/v2\/meetings\/12$/);
+  });
+
+  test("수정 요청 대기 0건(또는 필드 없음) → 묶음 숨김", async ({ page }) => {
+    await mockApi(page, { todos: { ...FULL_TODOS, pendingChangeRequests: EMPTY_LIST } });
+    await loginAndOpenHome(page);
+    await expect(page.getByRole("region", { name: "보완 필요 업무" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "수정 요청 대기" })).toHaveCount(0);
+
+    // 필드가 없는 응답(이전 서버)도 같은 결과
+    await page.unroute("**/api/me/todos");
+    await page.route("**/api/me/todos", (route) => json(route, 200, FULL_TODOS));
+    await page.reload();
+    await expect(page.getByRole("region", { name: "보완 필요 업무" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "수정 요청 대기" })).toHaveCount(0);
+  });
 });

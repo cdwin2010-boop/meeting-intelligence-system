@@ -5,13 +5,26 @@
  * - GET /api/me/todos(확정 대기·보완 필요·내 업무·자동 확정 미열람) + GET /api/me/notices(확정 안내)를 함께 조회
  * - 화면을 떠나거나 다시 시도하면 이전 요청은 AbortController 로 취소한다
  * - 상태는 색 점과 글자 라벨을 함께 보여 준다. 읽기 전용(확인 처리·확정 버튼은 다음 단계)
+ * - 수정 요청 대기(pendingChangeRequests): 서버가 내가 해결할 수 있는 미해결 요청만 준다. 건수가 0이면 묶음을 숨기고,
+ *   항목을 누르면 그 회의록 상세(/v2/meetings/{id})로 이동한다
  */
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Badge, Button, MetricCard, StatusDot, type StatusDotTone } from "@/components/mono";
 import { useAuth } from "@/components/v2/AuthProvider";
+import { formatDateTime, V2_MEETINGS_PATH } from "@/components/v2/meeting-display";
 import { isAbortError, type MissingField } from "@/lib/v2/errors";
-import { getNotices, getTodos, type ConfirmKind, type MyItem, type Notice, type TodoList, type Todos } from "@/lib/v2/todos";
+import {
+  getNotices,
+  getTodos,
+  type ConfirmKind,
+  type MyItem,
+  type Notice,
+  type PendingChangeRequest,
+  type TodoList,
+  type Todos,
+} from "@/lib/v2/todos";
 import { isManager } from "@/lib/v2/types";
 
 type LoadState =
@@ -84,6 +97,32 @@ function Row({ title, meta, aside }: { title: string; meta?: ReactNode; aside?: 
   );
 }
 
+const EMPTY_LIST: TodoList<PendingChangeRequest> = { total: 0, items: [] };
+
+/** 수정 요청 대기 한 줄: 누르면 회의록 상세로 이동 */
+function ChangeRequestRow({ request }: { request: PendingChangeRequest }) {
+  const target = request.itemId === null ? "회의록 전체" : request.itemTitle || "(업무명 없음)";
+  return (
+    <li>
+      <Link
+        href={`${V2_MEETINGS_PATH}/${request.meetingId}`}
+        className="mn-focus flex items-center justify-between gap-4 px-5 py-4 hover:bg-mn-elevated"
+      >
+        <div className="min-w-0">
+          <p className="truncate font-medium">{request.meetingTitle || "(제목 없음)"}</p>
+          <p className="mt-1 truncate text-sm">{request.commentPreview}</p>
+          <p className="mt-1 text-xs text-mn-muted">
+            {target} · {request.requester?.name ?? "알 수 없음"} · <Mono>{formatDateTime(request.createdAt)}</Mono>
+          </p>
+        </div>
+        <span className="shrink-0">
+          <StatusDot tone="queued" label="해결 대기" />
+        </span>
+      </Link>
+    </li>
+  );
+}
+
 function DueCell({ item }: { item: MyItem }) {
   if (item.dueUndetermined) return <Badge>미확정</Badge>;
   if (!item.dueDate) return <span className="text-mn-muted">—</span>;
@@ -149,9 +188,10 @@ function MyItemsTable({ list }: { list: TodoList<MyItem> }) {
 
 function TodoContent({ todos, notices, manager }: { todos: Todos; notices: Notice[]; manager: boolean }) {
   const { awaitingConfirmMeetings: awaiting, needsCompletionItems: needs, myItems, unreadAutoConfirmed: unread } = todos;
+  const changeRequests = todos.pendingChangeRequests ?? EMPTY_LIST;
   const confirmNotices = notices.filter((n) => n.kind === "confirmed_notice");
   const empty =
-    awaiting.total + needs.total + myItems.total + unread.total === 0 && confirmNotices.length === 0;
+    awaiting.total + needs.total + myItems.total + unread.total + changeRequests.total === 0 && confirmNotices.length === 0;
 
   if (empty) {
     return (
@@ -225,6 +265,14 @@ function TodoContent({ todos, notices, manager }: { todos: Todos; notices: Notic
             </Section>
           ) : null}
         </div>
+      ) : null}
+
+      {changeRequests.total > 0 ? (
+        <Section title="수정 요청 대기" list={changeRequests}>
+          {changeRequests.items.map((request) => (
+            <ChangeRequestRow key={request.requestId} request={request} />
+          ))}
+        </Section>
       ) : null}
 
       {unread.total > 0 ? (

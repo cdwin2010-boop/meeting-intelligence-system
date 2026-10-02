@@ -30,6 +30,9 @@ router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
 CR_CREATED = "change_request.created"
 CR_RESOLVED = "change_request.resolved"
+# 수정 요청 해결(수락·반려) 최소 직급. 해결 API 와 할 일 "수정 요청 대기"(app/api/me.py)가 같은 판정을 쓴다:
+# 이 직급 이상 + 회의록 열람 가능(meeting_visibility). 직급 우선(409)은 이미 해결된 요청을 다시 결정할 때만 해당
+RESOLVE_MIN_RANK = "manager"
 
 
 def _http(code: int, detail) -> HTTPException:
@@ -221,7 +224,7 @@ def resolve_change_request(
     meeting_id: int,
     request_id: int,
     body: ChangeRequestResolve,
-    account: Account = Depends(require_rank("manager")),
+    account: Account = Depends(require_rank(RESOLVE_MIN_RANK)),
     session: Session = Depends(get_session),
 ) -> ChangeRequestOut:
     meeting = _visible_meeting_or_404(session, account, meeting_id)

@@ -1,25 +1,30 @@
 """내 안내·할 일 API(로그인 직후 화면용). 메일은 보내지 않는다.
 모든 목록은 고객사 범위와 회의록 열람 권한(app/auth/access.py)을 따른다. 삭제된 업무는 제외한다.
-할 일 목록은 각각 최대 50건 + 전체 건수, 쿼리 수는 데이터 양과 무관하게 고정."""
+할 일 목록은 각각 최대 50건 + 전체 건수, 쿼리 수는 데이터 양과 무관하게 고정.
+수정 요청 대기는 해결 API 와 같은 판정(RESOLVE_MIN_RANK 이상 + 회의록 열람 가능)으로 처리할 수 있는 미해결 요청만."""
 from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import Field
 from sqlalchemy import exists, func, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
+from app.api.meeting_actions import CR_CREATED, CR_RESOLVED, RESOLVE_MIN_RANK
+from app.api.meeting_schemas import AccountRef
 from app.api.schemas import CamelModel
 from app.auth.access import VIEW_ALL_RANKS, can_confirm_condition, meeting_visibility
-from app.auth.deps import get_current_account
+from app.auth.deps import get_current_account, has_rank
 from app.db import get_session
-from app.models import Account, ActionItem, Meeting, MeetingView, Notice
+from app.models import Account, ActionItem, Event, Meeting, MeetingView, Notice
 from app.models.common import utcnow
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
 TODO_LIMIT = 50
 AUTO_CONFIRM_KINDS = ("period_elapsed", "due_reached")
+# 수정 요청 대기 항목의 코멘트 미리보기 글자 수
+COMMENT_PREVIEW_CHARS = 80
 
 
 # ---------------- 스키마 ----------------
@@ -72,6 +77,17 @@ class UnreadAutoConfirmed(CamelModel):
     confirmed_at: datetime
 
 
+class PendingChangeRequest(CamelModel):
+    request_id: int
+    meeting_id: int
+    meeting_title: str
+    item_id: int | None  # None 이면 회의록 전체
+    item_title: str | None
+    requester: AccountRef | None
+    created_at: datetime
+    comment_preview: str
+
+
 class TodoList(CamelModel):
     total: int
     items: list[Any]
@@ -82,6 +98,7 @@ class Todos(CamelModel):
     needs_completion_items: TodoList
     my_items: TodoList
     unread_auto_confirmed: TodoList
+    pending_change_requests: TodoList
 
 
 # ---------------- 안내 ----------------
@@ -229,4 +246,59 @@ def my_todos(account: Account = Depends(get_current_account), session: Session =
         needs_completion_items=needs,
         my_items=my_items,
         unread_auto_confirmed=unread,
+        pending_change_requests=_pending_change_requests(session, account, visible),
     )
+
+
+def _preview(comment: str) -> str:
+    text = " ".join((comment or "").split())
+    return text if len(text) <= COMMENT_PREVIEW_CHARS else text[:COMMENT_PREVIEW_CHARS] + "…"
+
+
+def _pending_change_requests(session: Session, account: Account, visible) -> TodoList:
+    """5) 수정 요청 대기: 내가 해결할 수 있는(해결 API 와 같은 판정) 아직 해결되지 않은 요청. 오래된 요청 먼저.
+    요청자·대상 업무 이름은 id 모아 한 번씩 조회(쿼리 수 고정)."""
+    if not has_rank(account, RESOLVE_MIN_RANK):
+        return TodoList(total=0, items=[])
+    created, resolved = aliased(Event), aliased(Event)
+    stmt = (
+        select(created.id, created.payload, created.created_at, created.actor_account_id,
+               Meeting.id.label("meeting_id"), Meeting.title.label("meeting_title"))
+        .join(Meeting, Meeting.id == created.entity_id)
+        .where(
+            created.tenant_id == account.tenant_id,
+            created.entity_type == "meeting",
+            created.event_type == CR_CREATED,
+            visible,
+            ~exists().where(
+                resolved.tenant_id == created.tenant_id,
+                resolved.entity_type == "change_request",
+                resolved.entity_id == created.id,
+                resolved.event_type == CR_RESOLVED,
+            ),
+        )
+    )
+    total = _count(session, stmt)
+    rows = session.execute(stmt.order_by(created.id).limit(TODO_LIMIT)).all()
+
+    requester_ids = {r.actor_account_id for r in rows if r.actor_account_id is not None}
+    item_ids = {r.payload.get("itemId") for r in rows if isinstance((r.payload or {}).get("itemId"), int)}
+    names = dict(session.execute(select(Account.id, Account.name).where(Account.id.in_(requester_ids))).all()) if requester_ids else {}
+    titles = (
+        dict(session.execute(
+            select(ActionItem.id, ActionItem.title).where(ActionItem.id.in_(item_ids), ActionItem.tenant_id == account.tenant_id)
+        ).all())
+        if item_ids else {}
+    )
+
+    items = []
+    for r in rows:
+        payload = r.payload or {}
+        item_id = payload.get("itemId") if isinstance(payload.get("itemId"), int) else None
+        requester = AccountRef(id=r.actor_account_id, name=names[r.actor_account_id]) if r.actor_account_id in names else None
+        items.append(PendingChangeRequest(
+            request_id=r.id, meeting_id=r.meeting_id, meeting_title=r.meeting_title,
+            item_id=item_id, item_title=titles.get(item_id) if item_id is not None else None,
+            requester=requester, created_at=r.created_at, comment_preview=_preview(payload.get("comment", "")),
+        ))
+    return TodoList(total=total, items=items)

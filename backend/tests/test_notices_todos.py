@@ -315,3 +315,75 @@ def test_todos_query_count_is_constant(env, team):
     few = queries()
     add_data(10)
     assert queries() == few
+
+
+# ---------------- 수정 요청 대기 ----------------
+def pending_requests(env, account) -> dict:
+    return call(env, "GET", account, "/api/me/todos").json()["pendingChangeRequests"]
+
+
+def create_request(env, account, meeting_id, comment, item_id=None) -> int:
+    res = call(env, "POST", account, f"/api/meetings/{meeting_id}/change-requests", json={"comment": comment, "itemId": item_id})
+    assert res.status_code == 201
+    return res.json()["requestId"]
+
+
+def test_pending_change_requests_shown_to_resolvers_not_staff(env, team):
+    meeting_id = make_meeting(env["factory"], team["mgr"], participants=[team["staff"]], title="주간 회의",
+                              items=[{"title": "자료 정리", "assignee_id": team["staff"].id}])
+    [item_id] = item_ids(env, meeting_id)
+    first = create_request(env, team["staff"], meeting_id, "기한을 다음 주로 바꿔 주세요", item_id)
+    second = create_request(env, team["staff"], meeting_id, "요약 보완")
+
+    for who in ("mgr", "mgr2", "exe"):  # 해결 API 와 같은 판정: 관리자 이상 + 열람 가능
+        body = pending_requests(env, team[who])
+        assert body["total"] == 2
+        assert [i["requestId"] for i in body["items"]] == [first, second]  # 오래된 요청 먼저
+    item_entry, meeting_entry = pending_requests(env, team["mgr"])["items"]
+    assert set(item_entry) == {"requestId", "meetingId", "meetingTitle", "itemId", "itemTitle", "requester", "createdAt",
+                               "commentPreview"}
+    assert (item_entry["meetingId"], item_entry["meetingTitle"], item_entry["itemId"], item_entry["itemTitle"]) == (
+        meeting_id, "주간 회의", item_id, "자료 정리")
+    assert item_entry["requester"] == {"id": team["staff"].id, "name": "김담당"}
+    assert item_entry["commentPreview"] == "기한을 다음 주로 바꿔 주세요"
+    assert (meeting_entry["itemId"], meeting_entry["itemTitle"]) == (None, None)
+
+    # 담당자(처리 불가)에게는 보이지 않는다. 요청자 본인도 마찬가지
+    assert pending_requests(env, team["staff"]) == {"total": 0, "items": []}
+    assert pending_requests(env, team["staff2"]) == {"total": 0, "items": []}
+
+
+def test_pending_change_requests_drop_after_resolve(env, team):
+    meeting_id = make_meeting(env["factory"], team["mgr"], participants=[team["staff"]])
+    accepted = create_request(env, team["staff"], meeting_id, "첫 요청")
+    waiting = create_request(env, team["staff"], meeting_id, "둘째 요청")
+    rejected = create_request(env, team["staff"], meeting_id, "셋째 요청")
+    res = call(env, "POST", team["mgr"], f"/api/meetings/{meeting_id}/change-requests/{accepted}/resolve", json={"decision": "accepted"})
+    assert res.status_code == 200
+    res = call(env, "POST", team["exe"], f"/api/meetings/{meeting_id}/change-requests/{rejected}/resolve",
+               json={"decision": "rejected", "reason": "불가"})
+    assert res.status_code == 200
+    for who in ("mgr", "mgr2", "exe"):
+        body = pending_requests(env, team[who])
+        assert body["total"] == 1 and [i["requestId"] for i in body["items"]] == [waiting]
+
+
+def test_pending_change_requests_isolated_by_tenant(env, team):
+    ours = make_meeting(env["factory"], team["mgr"], participants=[team["staff"]])
+    theirs = make_meeting(env["factory"], team["outsider"])
+    mine = create_request(env, team["staff"], ours, "우리 요청")
+    create_request(env, team["outsider"], theirs, "다른 고객사 요청")
+    assert [i["requestId"] for i in pending_requests(env, team["exe"])["items"]] == [mine]
+    outsider = pending_requests(env, team["outsider"])
+    assert outsider["total"] == 1 and outsider["items"][0]["meetingId"] == theirs
+
+
+def test_pending_change_requests_comment_preview_and_limit(env, team):
+    meeting_id = make_meeting(env["factory"], team["mgr"])
+    long_comment = "가" * 100
+    create_request(env, team["mgr"], meeting_id, long_comment)
+    for n in range(54):
+        create_request(env, team["mgr"], meeting_id, f"요청 {n}")
+    body = pending_requests(env, team["exe"])
+    assert body["total"] == 55 and len(body["items"]) == 50
+    assert body["items"][0]["commentPreview"] == "가" * 80 + "…"
