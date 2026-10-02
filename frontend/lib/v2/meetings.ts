@@ -115,12 +115,14 @@ const UPLOAD_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_V2_UPLOAD_TIMEOUT_MS) |
  * 허용 형식(415)·용량(413)은 서버 설정이 판정하고, 오류 문구도 서버가 준 것을 그대로 쓴다.
  */
 export function uploadMeeting(
-  input: { file: File; title: string; heldAt: string },
+  input: { file: File; title: string; heldAt: string; participantIds?: number[] },
   signal?: AbortSignal,
 ): Promise<UploadAccepted> {
   const form = new FormData();
   form.append("file", input.file);
   form.append("title", input.title);
   form.append("heldAt", input.heldAt);
+  // 참석자는 같은 이름(participantIds)으로 여러 번 보낸다(서버는 반복·쉼표 묶음 모두 받음). 없으면 보내지 않는다
+  for (const id of input.participantIds ?? []) form.append("participantIds", String(id));
   return request<UploadAccepted>("/meetings/upload", { method: "POST", body: form, signal, timeoutMs: UPLOAD_TIMEOUT_MS });
 }

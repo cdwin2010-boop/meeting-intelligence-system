@@ -5,7 +5,7 @@
  * - 입력: 음성 파일(선택 또는 끌어다 놓기), 회의명(비우면 서버가 파일명으로 채움), 회의 일시(브라우저 현지 시각 → 오프셋 붙은 ISO)
  * - POST /api/meetings/upload(202) 성공 시 /v2/meetings/{meetingId} 로 이동. 처리(전사·추출)는 서버 백그라운드
  * - 허용 형식(415)·용량(413)은 서버 설정이 판정한다. 오류는 서버 문구로 보여 주고 같은 입력으로 다시 시도할 수 있다
- * - 참석자 선택은 계정 목록 API 가 아직 없어 넣지 않는다(서버에서 선택 항목). 회의 유형 선택도 v2.0 이후
+ * - 참석자는 같은 고객사 계정 중 여러 명 선택(선택 사항, 목록 조회 실패해도 올리기는 가능). 회의 유형 선택은 v2.0 이후
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -13,6 +13,7 @@ import { useEffect, useId, useRef, useState, type DragEvent, type FormEvent } fr
 
 import { Button, StatusDot } from "@/components/mono";
 import { detailPath, V2_MEETINGS_PATH } from "@/components/v2/meeting-display";
+import { ParticipantPicker } from "@/components/v2/ParticipantPicker";
 import { isAbortError } from "@/lib/v2/errors";
 import { uploadMeeting } from "@/lib/v2/meetings";
 
@@ -57,6 +58,7 @@ export default function V2UploadPage() {
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
+  const [participantIds, setParticipantIds] = useState<number[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +106,7 @@ export default function V2UploadPage() {
     const controller = new AbortController();
     controllerRef.current = controller;
     try {
-      const accepted = await uploadMeeting({ file, title: title.trim(), heldAt }, controller.signal);
+      const accepted = await uploadMeeting({ file, title: title.trim(), heldAt, participantIds }, controller.signal);
       router.push(detailPath(accepted.meetingId));
     } catch (err) {
       if (isAbortError(err)) return;
@@ -217,6 +219,8 @@ export default function V2UploadPage() {
             </div>
             <span className="text-xs text-mn-muted">상대 날짜(다음 주 화요일 등)를 이 일시 기준으로 계산합니다.</span>
           </fieldset>
+
+          <ParticipantPicker selected={participantIds} onChange={setParticipantIds} disabled={submitting} />
 
           {formError ? (
             <p role="alert" className="text-sm">

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import action_items, auth, me, meeting_actions, meeting_queries, meetings, probe
+from app.api import accounts, action_items, auth, me, meeting_actions, meeting_queries, meetings, probe
 from app.config import settings
 
 app = FastAPI(title="Meeting Intelligence Backend (v2)")
@@ -19,6 +19,7 @@ app.include_router(meeting_queries.router)
 app.include_router(meeting_actions.router)
 app.include_router(action_items.router)
 app.include_router(me.router)
+app.include_router(accounts.router)
 # 3단계 검증용 보호 엔드포인트(업무 API가 생기면 제거)
 app.include_router(probe.router)
 

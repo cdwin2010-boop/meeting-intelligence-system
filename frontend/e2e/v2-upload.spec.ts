@@ -14,6 +14,13 @@ const json = (route: Route, status: number, body: unknown) =>
 const AUDIO = { name: "weekly_1001.m4a", mimeType: "audio/mp4", buffer: Buffer.from("fake-audio") };
 const TEXT = { name: "memo.txt", mimeType: "text/plain", buffer: Buffer.from("not audio") };
 
+// 참석자 선택 목록(같은 고객사 계정)
+const ACCOUNTS = [
+  { id: 2, name: "권부장", rank: "executive" },
+  { id: 7, name: "한팀장", rank: "manager" },
+  { id: 9, name: "김대리", rank: "staff" },
+];
+
 const DETAIL = {
   id: 77,
   title: "설비 점검 주간 회의",
@@ -33,13 +40,14 @@ const DETAIL = {
   recentEvents: [],
 };
 
-/** me 는 가짜 토큰일 때만 성공. 업로드는 handler 로 테스트별 응답, 상세는 고정 응답 */
+/** me 는 가짜 토큰일 때만 성공. 업로드는 handler 로 테스트별 응답, 참석자 목록·상세는 고정 응답(테스트에서 다시 가로채 바꿀 수 있음) */
 async function openUpload(page: Page, upload: (route: Route) => unknown) {
   await page.route("**/api/auth/me", (route) =>
     route.request().headers()["authorization"] === `Bearer ${FAKE_TOKEN}`
       ? json(route, 200, ACCOUNT)
       : json(route, 401, { detail: "인증이 필요합니다" }),
   );
+  await page.route("**/api/accounts", (route) => json(route, 200, ACCOUNTS));
   await page.route("**/api/meetings/upload", (route) => upload(route) as Promise<void>);
   await page.route(/\/api\/meetings\/\d+$/, (route) => json(route, 200, DETAIL));
   await page.goto("/v2/login");
@@ -80,6 +88,7 @@ test.describe("v2 회의록 올리기", () => {
     expect(body).toContain('name="file"; filename="weekly_1001.m4a"');
     expect(body).toContain("설비 점검 주간 회의");
     expect(body).toContain("2026-10-01T13:20:00+09:00"); // 설정 timezoneId: Asia/Seoul
+    expect(body).not.toContain('name="participantIds"'); // 참석자를 고르지 않으면 보내지 않는다
   });
 
   test("파일 없이 제출 → 안내 문구, 요청 없음", async ({ page }) => {
@@ -125,5 +134,50 @@ test.describe("v2 회의록 올리기", () => {
     await alert.getByRole("button", { name: "다시 시도" }).click();
     await expect(page).toHaveURL(/\/v2\/meetings\/77$/);
     expect(calls).toBe(2);
+  });
+
+  test("참석자 목록 표시 → 두 명 선택 후 올리기 → participantIds 로 함께 전송", async ({ page }) => {
+    let body = "";
+    await openUpload(page, (route) => {
+      body = route.request().postDataBuffer()?.toString("utf-8") ?? "";
+      return json(route, 202, { meetingId: 77, jobId: 7 });
+    });
+    const picker = page.getByRole("group", { name: /참석자/ });
+    await expect(picker.getByRole("checkbox")).toHaveCount(3);
+    await expect(picker).toContainText("권부장 · 지시자");
+    await expect(picker).toContainText("김대리 · 담당자");
+    await fillForm(page, AUDIO);
+    // 체크박스는 칩(라벨) 안에 숨겨져 있으므로 사용자처럼 칩을 눌러 고른다
+    const chip = (name: string) => picker.locator("label").filter({ hasText: name });
+    await chip("권부장 · 지시자").click();
+    await chip("김대리 · 담당자").click();
+    await chip("권부장 · 지시자").click(); // 해제도 반영
+    await chip("한팀장 · 중간관리자").click();
+    await expect(picker.getByLabel("권부장 · 지시자")).not.toBeChecked();
+    await expect(picker.getByLabel("김대리 · 담당자")).toBeChecked();
+    await expect(picker.getByLabel("한팀장 · 중간관리자")).toBeChecked();
+    await submitButton(page).click();
+    await expect(page).toHaveURL(/\/v2\/meetings\/77$/);
+    const sent = [...body.matchAll(/name="participantIds"\r\n\r\n(\d+)\r\n/g)].map((m) => Number(m[1])).sort((a, b) => a - b);
+    expect(sent).toEqual([7, 9]);
+  });
+
+  test("참석자 목록 오류 → 오류 표시, 올리기는 그대로 가능", async ({ page }) => {
+    let body = "";
+    await openUpload(page, (route) => {
+      body = route.request().postDataBuffer()?.toString("utf-8") ?? "";
+      return json(route, 202, { meetingId: 77, jobId: 8 });
+    });
+    // openUpload 이후 다시 가로채 오류로 바꾸고, 목록 다시 불러오기 대신 화면을 새로 연다
+    await page.route("**/api/accounts", (route) => json(route, 500, { detail: "서버 오류" }));
+    await page.reload();
+    const alert = page.getByRole("alert").filter({ hasText: "참석자 목록을 불러오지 못했습니다" });
+    await expect(alert).toContainText("서버 오류");
+    await expect(alert.getByRole("button", { name: "목록 다시 불러오기" })).toBeVisible();
+    await fillForm(page, AUDIO);
+    await submitButton(page).click();
+    await expect(page).toHaveURL(/\/v2\/meetings\/77$/);
+    expect(body).toContain('name="file"');
+    expect(body).not.toContain('name="participantIds"');
   });
 });
