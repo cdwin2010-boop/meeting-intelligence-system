@@ -86,7 +86,20 @@ class MeetingDetail(CamelModel):
     recent_events: list[EventOut]
 
 
+class SpeakerOut(CamelModel):
+    """화자 매핑 1건. 계정이면 accountId·accountName, 미등록이면 name(글자)만. displayName 은 화면 표시용("이름(미등록)")."""
+    label: str
+    account_id: int | None
+    account_name: str | None
+    name: str | None
+    display_name: str
+    unregistered: bool
+
+
 class TranscriptOut(CamelModel):
     full_text: str
     segments: list[dict[str, Any]] | None
     stt_provider: str
+    # 화자 매핑 반영(추가 필드): 줄머리 화자 표기를 표시 이름으로 바꾼 원문과 매핑 목록. fullText·segments 는 원본 그대로
+    display_text: str = ""
+    speakers: list[SpeakerOut] = []

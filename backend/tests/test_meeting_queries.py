@@ -240,7 +240,9 @@ def test_transcript_returned_and_404_when_missing(env):
 
     res = get(env, mgr, f"/api/meetings/{with_transcript}/transcript")
     assert res.status_code == 200
-    assert res.json() == {"fullText": "[00:00:01] 화자1: 안녕하세요", "segments": None, "sttProvider": "fake"}
+    # displayText·speakers 는 화자 매핑 반영용 추가 필드(매핑이 없으면 원문 그대로·빈 목록)
+    assert res.json() == {"fullText": "[00:00:01] 화자1: 안녕하세요", "segments": None, "sttProvider": "fake",
+                          "displayText": "[00:00:01] 화자1: 안녕하세요", "speakers": []}
     missing = get(env, mgr, f"/api/meetings/{without}/transcript")
     assert missing.status_code == 404 and missing.json() == {"detail": "전사문이 없습니다"}
 

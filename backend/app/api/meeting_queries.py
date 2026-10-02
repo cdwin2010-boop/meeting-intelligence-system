@@ -14,6 +14,7 @@ from app.api.meeting_schemas import (
     MeetingDetail,
     MeetingListItem,
     MeetingListPage,
+    SpeakerOut,
     TranscriptOut,
 )
 from app.auth.access import get_visible_meeting, has_assigned_item, meeting_visibility
@@ -22,6 +23,7 @@ from app.auth.scope import scoped
 from app.db import get_session
 from app.models import Account, ActionItem, Event, Job, Meeting, MeetingParticipant, SourceDocument, Transcript
 from app.models.common import MEETING_STATUSES
+from app.services.speakers import SpeakerView, display_text, load_speakers
 from app.services.views import record_meeting_view
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
@@ -217,4 +219,23 @@ def get_transcript(
     transcript = session.scalar(scoped(select(Transcript), account).where(Transcript.meeting_id == meeting.id))
     if transcript is None:
         raise _not_found("전사문이 없습니다")
-    return TranscriptOut(full_text=transcript.full_text, segments=transcript.segments, stt_provider=transcript.stt_provider)
+    speakers = load_speakers(session, meeting.id)
+    return TranscriptOut(
+        full_text=transcript.full_text,
+        segments=transcript.segments,
+        stt_provider=transcript.stt_provider,
+        display_text=display_text(transcript.full_text, speakers),
+        speakers=[speaker_out(s) for s in speakers],
+    )
+
+
+def speaker_out(speaker: SpeakerView) -> SpeakerOut:
+    """화자 매핑 → 응답(미등록이면 이름 글자와 "이름(미등록)" 표시)."""
+    return SpeakerOut(
+        label=speaker.label,
+        account_id=speaker.account_id,
+        account_name=speaker.account_name,
+        name=speaker.display_name if speaker.unregistered else None,
+        display_name=speaker.display,
+        unregistered=speaker.unregistered,
+    )
