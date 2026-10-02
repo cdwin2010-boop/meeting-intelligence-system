@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import Account, ActionItem, MailOutbox, Meeting, MeetingParticipant, SourceDocument
+from app.models.common import INACTIVE_ITEM_STATUSES
 
 SUBJECT_PREFIX = "[회의록]"
 
@@ -57,7 +58,8 @@ def queue_immediate_new_minutes(session: Session, meeting: Meeting) -> int:
     )
     participants = select(MeetingParticipant.account_id).where(MeetingParticipant.meeting_id == meeting.id)
     assignees = select(ActionItem.assignee_id).where(
-        ActionItem.meeting_id == meeting.id, ActionItem.assignee_id.is_not(None), ActionItem.status != "deleted"
+        ActionItem.meeting_id == meeting.id, ActionItem.assignee_id.is_not(None),
+        ActionItem.status.not_in(INACTIVE_ITEM_STATUSES),
     )
     candidates = participants.union(assignees)
     created = 0

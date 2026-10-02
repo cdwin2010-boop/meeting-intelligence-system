@@ -17,6 +17,7 @@ from app.auth.access import VIEW_ALL_RANKS, can_confirm_condition, meeting_visib
 from app.auth.deps import get_current_account, has_rank
 from app.db import get_session
 from app.models import Account, ActionItem, Event, Meeting, MeetingView, Notice
+from app.models.common import INACTIVE_ITEM_STATUSES
 from app.models.common import utcnow
 
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -104,10 +105,18 @@ class Todos(CamelModel):
 # ---------------- 안내 ----------------
 @router.get("/notices", response_model=list[NoticeOut], response_model_by_alias=True)
 def my_notices(account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> list[NoticeOut]:
-    """내 미확인 안내(최신순)."""
+    """내 미확인 안내(최신순). 종결·삭제된 업무에 대한 안내는 빼고 보여 준다(행은 그대로 둠)."""
+    inactive_item = exists().where(
+        ActionItem.id == Notice.entity_id, ActionItem.status.in_(INACTIVE_ITEM_STATUSES)
+    )
     rows = session.scalars(
         select(Notice)
-        .where(Notice.tenant_id == account.tenant_id, Notice.account_id == account.id, Notice.seen_at.is_(None))
+        .where(
+            Notice.tenant_id == account.tenant_id,
+            Notice.account_id == account.id,
+            Notice.seen_at.is_(None),
+            ~((Notice.entity_type == "action_item") & inactive_item),
+        )
         .order_by(Notice.id.desc())
     ).all()
     return [

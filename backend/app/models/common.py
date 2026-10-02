@@ -51,5 +51,7 @@ MEETING_STATUSES = ("processing", "awaiting_confirmation", "confirmed", "failed"
 CONFIRM_KINDS = ("manager", "registration", "period_elapsed", "due_reached")
 # 업무 상태
 ACTION_ITEM_STATUSES = ("pending", "confirmed", "closed", "deleted")
+# 끝난 업무(종결·삭제): 할 일·자동 확정·알림·메일 대상에서 뺀다
+INACTIVE_ITEM_STATUSES = ("closed", "deleted")
 # 처리 작업 상태: 대기 → 실행 중 → 완료 / 실패 / 말소리 없음
 JOB_STATUSES = ("queued", "running", "completed", "failed", "no_content")

@@ -33,6 +33,11 @@ class ActionItem(Base):
     confirm_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
     confirmed_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    # 종결(status=closed)·삭제(status=deleted) 한 사람과 시각. 삭제도 행은 지우지 않고 상태만 바꾼다
+    closed_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    closed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    deleted_by: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     # 발화 근거: 시작 시각(초)과 인용문
     evidence_start_sec: Mapped[float | None] = mapped_column(Float, nullable=True)
     evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
