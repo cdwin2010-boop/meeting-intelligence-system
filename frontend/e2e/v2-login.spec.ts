@@ -1,5 +1,6 @@
 /*
  * v2 로그인·인증 보호 E2E. 실제 백엔드 없이 page.route 로 v2 API(/api/auth/*) 요청을 가로채 가짜로 응답한다.
+ * /v2 홈은 할 일 화면이라 /api/me/todos·notices 도 빈 목록으로 가로챈다.
  * 가짜 토큰은 고정 문자열이고 실제 비밀번호·토큰은 쓰지 않는다.
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
@@ -12,6 +13,9 @@ const TOKEN_KEY = "mi.v2.accessToken";
 // v2 API 주소(기본 8001)가 환경에 따라 달라도 경로로 가로챈다(프론트 dev 서버에는 /api/auth 가 없다)
 const LOGIN_URL = "**/api/auth/login";
 const ME_URL = "**/api/auth/me";
+// /v2 홈(할 일 화면)이 부르는 API: 빈 목록으로 응답
+const EMPTY_LIST = { total: 0, items: [] };
+const EMPTY_TODOS = { awaitingConfirmMeetings: EMPTY_LIST, needsCompletionItems: EMPTY_LIST, myItems: EMPTY_LIST, unreadAutoConfirmed: EMPTY_LIST };
 
 const json = (route: Route, status: number, body: unknown) =>
   route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -30,6 +34,8 @@ async function mockAuthApi(page: Page, options: { meStatus?: number } = {}) {
     if (options.meStatus && options.meStatus !== 200) return json(route, options.meStatus, { detail: "인증이 필요합니다" });
     return authorized ? json(route, 200, ACCOUNT) : json(route, 401, { detail: "인증이 필요합니다" });
   });
+  await page.route("**/api/me/todos", (route) => json(route, 200, EMPTY_TODOS));
+  await page.route("**/api/me/notices", (route) => json(route, 200, []));
 }
 
 const storedToken = (page: Page) => page.evaluate((key) => window.sessionStorage.getItem(key), TOKEN_KEY);
@@ -47,9 +53,9 @@ test.describe("v2 로그인", () => {
     await expect(page.getByLabel("아이디")).toBeFocused(); // 첫 입력란 자동 포커스
     await fillAndSubmit(page, GOOD.loginId, GOOD.password);
     await expect(page).toHaveURL(/\/v2$/);
-    await expect(page.getByRole("heading", { name: "로그인됨" })).toBeVisible();
-    await expect(page.getByText("김담당")).toBeVisible();
-    await expect(page.getByText("중간관리자")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "할 일" })).toBeVisible();
+    await expect(page.getByLabel("로그인 사용자")).toContainText("김담당");
+    await expect(page.getByLabel("로그인 사용자")).toContainText("중간관리자");
     expect(await storedToken(page)).toBe(FAKE_TOKEN);
   });
 
@@ -82,7 +88,7 @@ test.describe("v2 로그인", () => {
     await mockAuthApi(page);
     await page.goto("/v2/login");
     await fillAndSubmit(page, GOOD.loginId, GOOD.password);
-    await expect(page.getByRole("heading", { name: "로그인됨" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "할 일" })).toBeVisible();
     await page.getByRole("button", { name: "로그아웃" }).click();
     await expect(page).toHaveURL(/\/v2\/login(\?.*)?$/);
     await expect(page.getByLabel("아이디")).toBeVisible();
@@ -95,7 +101,7 @@ test.describe("v2 로그인", () => {
       await page.goto(`/v2/login?next=${encodeURIComponent(next)}`);
       await fillAndSubmit(page, GOOD.loginId, GOOD.password);
       await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/v2$/);
-      await expect(page.getByRole("heading", { name: "로그인됨" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "할 일" })).toBeVisible();
     });
   }
 
