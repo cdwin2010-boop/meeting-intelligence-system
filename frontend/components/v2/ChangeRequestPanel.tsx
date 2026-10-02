@@ -1,31 +1,20 @@
 "use client";
 
 /*
- * 수정 요청 패널(회의록 상세): 회의록 전체 또는 업무 하나를 골라 코멘트를 남기고, 남긴 요청 목록을 보여 준다.
- * - GET·POST /api/meetings/{id}/change-requests. 회의록을 볼 수 있으면 누구나 남길 수 있다(판정은 서버)
- * - 수정 요청은 기록일 뿐 회의록·업무 상태와 자동 확정 시계를 바꾸지 않는다
- * - 작성 실패(400·403·422·서버 오류)는 서버 문구를 보여 주고 입력값은 그대로 둔다. 해결(수락·반려) 동작은 아직 없음
- * - 업무 원장의 "수정 요청" 버튼이 target 을 넘기면 그 업무를 대상으로 골라 두고 입력칸으로 포커스를 옮긴다
+ * 수정 요청 패널(회의록 상세): 남긴 수정 요청 목록을 보여 준다. 작성은 팝업(ChangeRequestDialog)에서 한다.
+ * - GET /api/meetings/{id}/change-requests. 회의록을 볼 수 있으면 누구나 남길 수 있다(판정은 서버)
+ * - 수정 요청은 기록일 뿐 회의록·업무 상태와 자동 확정 시계를 바꾸지 않는다. 해결(수락·반려) 동작은 아직 없음
+ * - "회의록 전체 수정 요청" 버튼은 onRequestMeeting 으로 팝업을 연다
+ * - refreshKey 가 바뀌면(팝업에서 남긴 뒤) 목록을 다시 받고 완료 문구를 보여 준다
  */
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Badge, Button, StatusDot } from "@/components/mono";
 import { formatDateTime } from "@/components/v2/meeting-display";
 import { isAbortError } from "@/lib/v2/errors";
-import {
-  CHANGE_REQUEST_MAX,
-  createChangeRequest,
-  listChangeRequests,
-  type ActionItem,
-  type ChangeRequest,
-} from "@/lib/v2/meetings";
+import { listChangeRequests, type ActionItem, type ChangeRequest } from "@/lib/v2/meetings";
 
 type ListState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; requests: ChangeRequest[] };
-
-type Notice = { tone: "ready" | "error"; text: string } | null;
-
-const fieldClass =
-  "mn-focus w-full rounded-mn-control border border-mn-border bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50";
 
 const errorMessage = (error: unknown, fallback: string) => (error instanceof Error && error.message ? error.message : fallback);
 
@@ -34,20 +23,14 @@ const DECISION_LABEL: Record<string, string> = { accepted: "수락됨", rejected
 interface ChangeRequestPanelProps {
   meetingId: number;
   items: ActionItem[];
-  /** 업무 원장에서 고른 대상(nonce 가 바뀔 때마다 다시 적용) */
-  target: { itemId: number; nonce: number } | null;
+  /** 팝업에서 수정 요청을 남길 때마다 1씩 늘어난다(0 이면 아직 없음) */
+  refreshKey: number;
+  onRequestMeeting: () => void;
 }
 
-export function ChangeRequestPanel({ meetingId, items, target }: ChangeRequestPanelProps) {
-  const baseId = useId();
+export function ChangeRequestPanel({ meetingId, items, refreshKey, onRequestMeeting }: ChangeRequestPanelProps) {
   const [list, setList] = useState<ListState>({ kind: "loading" });
-  const [itemId, setItemId] = useState("");
-  const [comment, setComment] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState<Notice>(null);
   const listRef = useRef<AbortController | null>(null);
-  const saveRef = useRef<AbortController | null>(null);
-  const commentRef = useRef<HTMLTextAreaElement>(null);
 
   const load = useCallback(async () => {
     listRef.current?.abort();
@@ -64,47 +47,18 @@ export function ChangeRequestPanel({ meetingId, items, target }: ChangeRequestPa
 
   useEffect(() => {
     void load();
-    return () => {
-      listRef.current?.abort();
-      saveRef.current?.abort();
-    };
+    return () => listRef.current?.abort();
   }, [load]);
 
-  // 업무 원장에서 "수정 요청"을 누르면 그 업무를 대상으로 고르고 입력칸으로 이동
+  // 팝업에서 남긴 뒤 목록 새로 받기
+  const firstRefresh = useRef(true);
   useEffect(() => {
-    if (!target) return;
-    setItemId(String(target.itemId));
-    setNotice(null);
-    commentRef.current?.focus();
-  }, [target]);
-
-  async function onSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    if (saving) return;
-    const text = comment.trim();
-    if (!text) {
-      setNotice({ tone: "error", text: "코멘트를 입력하세요." });
+    if (firstRefresh.current) {
+      firstRefresh.current = false;
       return;
     }
-    saveRef.current?.abort();
-    const controller = new AbortController();
-    saveRef.current = controller;
-    setSaving(true);
-    setNotice(null);
-    try {
-      await createChangeRequest(meetingId, { comment: text, itemId: itemId ? Number(itemId) : null }, controller.signal);
-      setComment("");
-      setItemId("");
-      setNotice({ tone: "ready", text: "수정 요청을 남겼습니다" });
-      void load();
-    } catch (error) {
-      if (isAbortError(error)) return;
-      // 입력값은 그대로 둔다
-      setNotice({ tone: "error", text: `수정 요청을 남기지 못했습니다 · ${errorMessage(error, "서버 오류")}` });
-    } finally {
-      setSaving(false);
-    }
-  }
+    void load();
+  }, [refreshKey, load]);
 
   const titleOf = (id: number | null) => {
     if (id === null) return "회의록 전체";
@@ -116,7 +70,15 @@ export function ChangeRequestPanel({ meetingId, items, target }: ChangeRequestPa
     <section aria-label="수정 요청" className="flex flex-col gap-4 rounded-mn-card border border-mn-border bg-mn-surface p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-base font-semibold tracking-tight">수정 요청</h2>
-        <span className="text-xs text-mn-muted">수정 요청은 기록만 남기며 확정 일정은 멈추지 않습니다.</span>
+        <span className="flex flex-wrap items-center gap-3">
+          <span className="text-xs text-mn-muted">수정 요청은 기록만 남기며 확정 일정은 멈추지 않습니다.</span>
+          <Button size="sm" onClick={onRequestMeeting}>
+            회의록 전체 수정 요청
+          </Button>
+        </span>
+      </div>
+      <div aria-live="polite" className="text-sm empty:hidden">
+        {refreshKey > 0 ? <StatusDot tone="ready" label="수정 요청을 남겼습니다" /> : null}
       </div>
 
       {list.kind === "loading" ? (
@@ -153,68 +115,6 @@ export function ChangeRequestPanel({ meetingId, items, target }: ChangeRequestPa
           ))}
         </ol>
       )}
-
-      <form onSubmit={(event) => void onSubmit(event)} className="flex flex-col gap-3 border-t border-mn-border pt-4">
-        <div className="grid gap-3 sm:grid-cols-[240px_minmax(0,1fr)]">
-          <div className="flex flex-col gap-2">
-            <label htmlFor={`${baseId}-target`} className="text-sm font-medium">
-              대상
-            </label>
-            <select
-              id={`${baseId}-target`}
-              value={itemId}
-              disabled={saving}
-              onChange={(event) => {
-                setNotice(null);
-                setItemId(event.target.value);
-              }}
-              className={`${fieldClass} h-10`}
-            >
-              <option value="">회의록 전체</option>
-              {items.map((it) => (
-                <option key={it.id} value={String(it.id)}>
-                  {it.title || "(업무명 없음)"}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <label htmlFor={`${baseId}-comment`} className="text-sm font-medium">
-              코멘트
-            </label>
-            <textarea
-              id={`${baseId}-comment`}
-              ref={commentRef}
-              value={comment}
-              maxLength={CHANGE_REQUEST_MAX}
-              rows={3}
-              disabled={saving}
-              placeholder="고쳐야 할 내용을 적어 주세요"
-              onChange={(event) => {
-                setNotice(null);
-                setComment(event.target.value);
-              }}
-              className={`${fieldClass} py-2 placeholder:text-mn-muted`}
-            />
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div aria-live="polite" className="text-sm">
-            {notice ? (
-              notice.tone === "error" ? (
-                <span role="alert">
-                  <StatusDot tone="error" label={notice.text} />
-                </span>
-              ) : (
-                <StatusDot tone="ready" label={notice.text} />
-              )
-            ) : null}
-          </div>
-          <Button type="submit" disabled={saving}>
-            {saving ? "보내는 중…" : "수정 요청 남기기"}
-          </Button>
-        </div>
-      </form>
     </section>
   );
 }

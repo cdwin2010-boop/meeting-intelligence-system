@@ -153,7 +153,7 @@ test.describe("v2 회의록·업무 확정과 수정 요청", () => {
     await expect(ledger(page).getByRole("alert")).toContainText("이 업무를 수정·확정할 권한이 없습니다");
   });
 
-  test("수정 요청: 업무 행에서 대상 선택 → 작성 → 목록 표시, 실패 시 입력 유지", async ({ page }) => {
+  test("수정 요청 팝업: 업무 행에서 열기 → 실패 시 팝업 안 서버 문구·입력 유지 → 성공 시 닫힘·목록 표시", async ({ page }) => {
     const created: unknown[] = [];
     let fail = true;
     await openDetail(page, {
@@ -170,26 +170,93 @@ test.describe("v2 회의록·업무 확정과 수정 요청", () => {
     });
     const panel = page.getByRole("region", { name: "수정 요청" });
     await expect(panel.getByText("남긴 수정 요청이 없습니다.")).toBeVisible();
+    // 화면 아래 패널에는 작성 입력칸이 없다
+    await expect(panel.getByLabel("코멘트")).toHaveCount(0);
 
-    await page.getByRole("button", { name: "정리 자료 공유 수정 요청" }).click();
-    await expect(panel.getByLabel("대상")).toHaveValue("103");
-    await expect(panel.getByLabel("코멘트")).toBeFocused();
-    await panel.getByLabel("코멘트").fill("기한을 다음 주로 바꿔 주세요");
-    await panel.getByRole("button", { name: "수정 요청 남기기" }).click();
-    await expect(panel.getByRole("alert")).toContainText("수정 요청을 남기지 못했습니다 · 권한이 없습니다");
-    await expect(panel.getByLabel("코멘트")).toHaveValue("기한을 다음 주로 바꿔 주세요");
-    await expect(panel.getByLabel("대상")).toHaveValue("103");
+    const scrollBefore = await page.evaluate(() => window.scrollY);
+    const opener = page.getByRole("button", { name: "정리 자료 공유 수정 요청" });
+    await opener.click();
+    const dialog = page.getByRole("dialog", { name: "수정 요청" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("정리 자료 공유");
+    await expect(dialog.getByRole("button", { name: "취소" })).toBeFocused();
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+
+    await dialog.getByLabel("코멘트").fill("기한을 다음 주로 바꿔 주세요");
+    await dialog.getByRole("button", { name: "수정 요청 남기기" }).click();
+    await expect(dialog.getByRole("alert")).toContainText("수정 요청을 남기지 못했습니다 · 권한이 없습니다");
+    await expect(dialog.getByLabel("코멘트")).toHaveValue("기한을 다음 주로 바꿔 주세요");
+    await expect(dialog).toBeVisible();
 
     fail = false;
-    await panel.getByRole("button", { name: "수정 요청 남기기" }).click();
-    await expect(panel.getByText("수정 요청을 남겼습니다")).toBeVisible();
+    await dialog.getByRole("button", { name: "수정 요청 남기기" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused(); // 연 버튼으로 포커스 복귀
     expect(created).toEqual([{ comment: "기한을 다음 주로 바꿔 주세요", itemId: 103 }]);
+    await expect(panel.getByText("수정 요청을 남겼습니다")).toBeVisible();
     const list = panel.getByRole("list", { name: "수정 요청 목록" });
     await expect(list.getByText("기한을 다음 주로 바꿔 주세요")).toBeVisible();
     await expect(list.getByText("정리 자료 공유")).toBeVisible();
     await expect(list.getByText("해결 대기")).toBeVisible();
-    await expect(panel.getByLabel("코멘트")).toHaveValue("");
     // 수정 요청은 확정 상태를 바꾸지 않는다
     await expect(page.getByRole("button", { name: "회의록 확정" })).toBeVisible();
+  });
+
+  test("수정 요청 팝업: 회의록 전체 대상으로 남기기(itemId null)", async ({ page }) => {
+    const created: unknown[] = [];
+    await openDetail(page, {
+      requestsPost: (route) => {
+        created.push(route.request().postDataJSON());
+        return json(route, 201, { requestId: 502 });
+      },
+      requestsGet: (route) =>
+        json(route, 200, created.length === 0 ? [] : [
+          { requestId: 502, requester: { id: 7, name: "한팀장" }, comment: "요약을 보완해 주세요", itemId: null,
+            createdAt: "2026-10-02T03:00:00Z", resolution: null },
+        ]),
+    });
+    const panel = page.getByRole("region", { name: "수정 요청" });
+    await panel.getByRole("button", { name: "회의록 전체 수정 요청" }).click();
+    const dialog = page.getByRole("dialog", { name: "수정 요청" });
+    await expect(dialog).toContainText("회의록 전체");
+    await dialog.getByLabel("코멘트").fill("요약을 보완해 주세요");
+    await dialog.getByRole("button", { name: "수정 요청 남기기" }).click();
+    await expect(dialog).toBeHidden();
+    expect(created).toEqual([{ comment: "요약을 보완해 주세요", itemId: null }]);
+    const list = panel.getByRole("list", { name: "수정 요청 목록" });
+    await expect(list.getByText("요약을 보완해 주세요")).toBeVisible();
+    await expect(list.getByText("회의록 전체")).toBeVisible();
+  });
+
+  test("수정 요청 팝업: 취소·Esc·배경 클릭으로 닫힘, 요청 없음, 포커스 복귀", async ({ page }) => {
+    let posts = 0;
+    await openDetail(page, {
+      requestsPost: (route) => {
+        posts += 1;
+        return json(route, 201, { requestId: 503 });
+      },
+    });
+    const opener = page.getByRole("button", { name: "견적 재검토 수정 요청" });
+    const dialog = page.getByRole("dialog", { name: "수정 요청" });
+
+    await opener.click();
+    await dialog.getByLabel("코멘트").fill("임시 메모");
+    await dialog.getByRole("button", { name: "취소" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+
+    // 다시 열면 입력은 비어 있다
+    await opener.click();
+    await expect(dialog.getByLabel("코멘트")).toHaveValue("");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+
+    await opener.click();
+    await expect(dialog).toBeVisible();
+    await page.mouse.click(5, 5); // 배경
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+    expect(posts).toBe(0);
   });
 });

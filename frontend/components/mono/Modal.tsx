@@ -55,6 +55,8 @@ export interface ModalProps {
   confirmLoading?: boolean;
   closeOnEsc?: boolean;
   closeOnOverlayClick?: boolean;
+  /** 처음 포커스 위치. "cancel"이면 tone과 상관없이 취소 버튼에 먼저 포커스(없으면 기존 규칙: danger만 취소) */
+  initialFocus?: "cancel";
   /**
    * 대화상자 상자의 크기·위치 클래스. 없으면 기존 그대로 "w-full max-w-md".
    * 크기를 직접 조절하는 창(전사 원문)처럼 기본 폭 제한을 풀어야 할 때만 넘긴다.
@@ -78,6 +80,7 @@ export function Modal({
   confirmLoading = false,
   closeOnEsc = true,
   closeOnOverlayClick = true,
+  initialFocus,
   panelClassName = "w-full max-w-md",
   panelStyle,
   children,
@@ -111,7 +114,7 @@ export function Modal({
     modalStack.push({ id, root });
 
     // 3) 초기 포커스: danger는 Cancel(안전한 쪽), 그 외는 첫 번째 포커스 가능 요소
-    const initial = tone === "danger" ? cancelRef.current : getFocusable(dialog)[0];
+    const initial = tone === "danger" || initialFocus === "cancel" ? cancelRef.current : getFocusable(dialog)[0];
     (initial ?? dialog).focus();
 
     // 4) 키보드: ESC 닫기 + Tab 포커스 트랩 (맨 위 모달일 때만)
@@ -158,7 +161,7 @@ export function Modal({
       setInert(modalStack[modalStack.length - 1]?.root, false);
       opener?.focus();
     };
-  }, [open, id, tone, closeOnEsc]);
+  }, [open, id, tone, closeOnEsc, initialFocus]);
 
   // 서버 렌더링 중에는 document가 없으므로 아무것도 그리지 않습니다.
   if (!open || typeof document === "undefined") return null;
