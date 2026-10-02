@@ -10,7 +10,7 @@ from pydantic import Field
 from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.orm import Session, aliased
 
-from app.api.meeting_actions import CR_CREATED, CR_RESOLVED, RESOLVE_MIN_RANK
+from app.api.meeting_actions import CR_CREATED, CR_RESOLVED, RESOLVE_MIN_RANK, on_deleted_item
 from app.api.meeting_schemas import AccountRef
 from app.api.schemas import CamelModel
 from app.auth.access import VIEW_ALL_RANKS, can_confirm_condition, meeting_visibility
@@ -270,6 +270,7 @@ def _preview(comment: str) -> str:
 def _pending_change_requests(session: Session, account: Account, visible) -> TodoList:
     """5) 수정 요청 대기: 내가 해결할 수 있는(해결 API 와 같은 판정) 아직 해결되지 않은 요청. 오래된 요청 먼저.
     내가 남긴 요청은 내 목록에서만 뺀다(다른 관리자·지시자에게는 그대로, total 도 같은 조건).
+    대상 업무가 삭제된 요청도 뺀다(사건 행은 그대로).
     요청자·대상 업무 이름은 id 모아 한 번씩 조회(쿼리 수 고정)."""
     if not has_rank(account, RESOLVE_MIN_RANK):
         return TodoList(total=0, items=[])
@@ -283,6 +284,7 @@ def _pending_change_requests(session: Session, account: Account, visible) -> Tod
             created.entity_type == "meeting",
             created.event_type == CR_CREATED,
             or_(created.actor_account_id.is_(None), created.actor_account_id != account.id),
+            ~on_deleted_item(created),
             visible,
             ~exists().where(
                 resolved.tenant_id == created.tenant_id,

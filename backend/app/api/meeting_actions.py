@@ -6,7 +6,7 @@
 - 데이터 변경과 이벤트 기록은 같은 세션에서 한 번에 커밋한다.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
 from app.api.action_items import confirm_item
@@ -112,7 +112,18 @@ def confirm_meeting(
 
 
 # ---------------- 수정 요청 ----------------
+def on_deleted_item(request_event):
+    """수정 요청(사건) 대상 업무가 삭제됐는지의 SQL 조건. 부모(업무)가 삭제되면 딸린 요청은 목록·할 일·해결에서 숨긴다
+    (사건 행은 지우지 않는다). 회의록 전체 대상(itemId 없음)은 해당 없음. 수정 요청 조회·해결과 할 일(me.py)이 함께 쓴다."""
+    return exists().where(
+        ActionItem.id == request_event.payload["itemId"].as_integer(),
+        ActionItem.tenant_id == request_event.tenant_id,
+        ActionItem.status == "deleted",
+    )
+
+
 def _request_event(session: Session, meeting: Meeting, request_id: int) -> Event:
+    """해결 대상 요청. 없거나 대상 업무가 삭제됐으면 404(목록에서 숨긴 요청과 같게)."""
     event = session.scalar(
         select(Event).where(
             Event.id == request_id,
@@ -120,6 +131,7 @@ def _request_event(session: Session, meeting: Meeting, request_id: int) -> Event
             Event.entity_type == "meeting",
             Event.entity_id == meeting.id,
             Event.event_type == CR_CREATED,
+            ~on_deleted_item(Event),
         )
     )
     if event is None:
@@ -210,6 +222,7 @@ def list_change_requests(
             Event.entity_type == "meeting",
             Event.entity_id == meeting.id,
             Event.event_type == CR_CREATED,
+            ~on_deleted_item(Event),  # 삭제된 업무에 남은 요청은 숨김(회의록 전체 대상은 그대로)
         )
         .order_by(Event.id)
     ).all()

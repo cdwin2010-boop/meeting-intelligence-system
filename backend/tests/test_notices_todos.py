@@ -8,7 +8,7 @@ from sqlalchemy import select, text
 
 from app.db import make_engine
 from app.jobs.auto_confirm import run_auto_confirm
-from app.models import ActionItem, Meeting, MeetingView, Notice
+from app.models import ActionItem, Event, Meeting, MeetingView, Notice
 from app.models.common import utcnow
 from app.services.processing import process_meeting
 from tests.test_meeting_queries import make_meeting
@@ -406,3 +406,35 @@ def test_pending_change_requests_exclude_own_requests(env, team):
     assert ids("exe") == [by_mgr, by_staff]
     assert ids("mgr2") == [by_mgr, by_exe, by_staff]  # 다른 관리자에게는 모두
     assert pending_requests(env, team["staff"]) == {"total": 0, "items": []}
+
+
+def test_pending_change_requests_hide_requests_on_deleted_items(env, team):
+    meeting_id = make_meeting(env["factory"], team["mgr"], participants=[team["staff"]],
+                              items=[{"title": "지울 업무"}, {"title": "남길 업무"}])
+    deleted_item, kept_item = item_ids(env, meeting_id)
+    on_deleted = create_request(env, team["staff"], meeting_id, "지울 업무 요청", deleted_item)
+    on_kept = create_request(env, team["staff"], meeting_id, "남길 업무 요청", kept_item)
+    on_meeting = create_request(env, team["staff"], meeting_id, "회의록 전체 요청")
+
+    def listed(who):
+        return [r["requestId"] for r in call(env, "GET", team[who], f"/api/meetings/{meeting_id}/change-requests").json()]
+
+    assert pending_requests(env, team["exe"])["total"] == 3
+    assert call(env, "POST", team["mgr"], f"/api/action-items/{deleted_item}/delete").status_code == 200
+
+    for who in ("mgr", "mgr2", "exe"):
+        body = pending_requests(env, team[who])
+        assert body["total"] == 2 and [i["requestId"] for i in body["items"]] == [on_kept, on_meeting]
+        assert listed(who) == [on_kept, on_meeting]
+    assert listed("staff") == [on_kept, on_meeting]  # 요청자 본인 조회에서도 숨김
+
+    # 숨긴 요청은 해결할 수 없다(없는 요청과 같이 404), 사건 행은 남아 있다
+    res = call(env, "POST", team["exe"], f"/api/meetings/{meeting_id}/change-requests/{on_deleted}/resolve",
+               json={"decision": "accepted"})
+    assert res.status_code == 404
+    with env["factory"]() as s:
+        assert s.get(Event, on_deleted) is not None
+    # 남은 요청은 그대로 해결 가능
+    res = call(env, "POST", team["exe"], f"/api/meetings/{meeting_id}/change-requests/{on_kept}/resolve",
+               json={"decision": "rejected"})
+    assert res.status_code == 200
