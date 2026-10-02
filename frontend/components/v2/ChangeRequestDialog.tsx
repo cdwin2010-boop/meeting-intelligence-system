@@ -7,14 +7,24 @@
  * - 하단 "수정 요청 내역"은 화면이 이미 받은 목록(list)에서 이 대상의 요청만 골라 보여 준다(열 때 따로 요청하지 않음)
  *   GET 이 쪽 인자·전체 건수를 지원하지 않아 화면에서 10건씩 나눈다. 열 때는 첫 쪽, 새 요청을 남기면 마지막 쪽(작성 순이라 새 요청이 끝)
  * - 실패(400·403·422·서버 오류)는 팝업 안에 서버 문구를 보여 주고 입력값은 그대로 둔다
+ * - 내역의 해결 대기 요청마다 "답변·해결": 답변(선택, reason)을 적고 수락·반려
+ *   (POST .../change-requests/{requestId}/resolve). 성공하면 응답으로 그 요청만 바꿔 처리자·처리 시각·답변을 보여 준다.
+ *   버튼은 모두에게 보이고 권한(관리자 이상)·직급 우선 판정은 서버가 한다. 403·409·422 는 그 요청 아래에 서버 문구, 답변은 유지
  * - 닫기에 먼저 포커스, Esc·배경 클릭으로 닫기, 닫히면 연 버튼으로 포커스 복귀(Modal 이 처리)
  */
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Button, Modal, StatusDot } from "@/components/mono";
-import { ChangeRequestEntries, type ChangeRequestListState } from "@/components/v2/ChangeRequestPanel";
+import { ChangeRequestEntries, type ChangeRequestListState } from "@/components/v2/ChangeRequestHistory";
 import { isAbortError } from "@/lib/v2/errors";
-import { CHANGE_REQUEST_MAX, createChangeRequest } from "@/lib/v2/meetings";
+import {
+  CHANGE_REQUEST_MAX,
+  CHANGE_REQUEST_REASON_MAX,
+  createChangeRequest,
+  resolveChangeRequest,
+  type ChangeRequest,
+  type ChangeRequestDecision,
+} from "@/lib/v2/meetings";
 
 const errorMessage = (error: unknown, fallback: string) => (error instanceof Error && error.message ? error.message : fallback);
 
@@ -29,6 +39,77 @@ type Notice = { tone: "ready" | "error"; text: string } | null;
 /** 팝업 내역 한 쪽 건수 */
 const HISTORY_PAGE_SIZE = 10;
 
+interface ResolveFormProps {
+  meetingId: number;
+  request: ChangeRequest;
+  onResolved: (saved: ChangeRequest) => void;
+  onCancel: () => void;
+}
+
+/** 해결 대기 요청 하나의 답변·해결 입력. 실패하면 서버 문구를 보여 주고 답변은 그대로 둔다 */
+function ResolveForm({ meetingId, request, onResolved, onCancel }: ResolveFormProps) {
+  const reasonId = useId();
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState<ChangeRequestDecision | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const saveRef = useRef<AbortController | null>(null);
+  useEffect(() => () => saveRef.current?.abort(), []);
+
+  async function resolve(decision: ChangeRequestDecision) {
+    if (saving) return;
+    const controller = new AbortController();
+    saveRef.current = controller;
+    setSaving(decision);
+    setError(null);
+    try {
+      const text = reason.trim();
+      const saved = await resolveChangeRequest(meetingId, request.requestId, { decision, reason: text || null }, controller.signal);
+      onResolved(saved);
+    } catch (err) {
+      if (isAbortError(err)) return;
+      setError(`처리하지 못했습니다 · ${errorMessage(err, "서버 오류")}`);
+      setSaving(null);
+    }
+  }
+
+  return (
+    <div aria-label="답변·해결" role="group" className="mt-2 flex flex-col gap-2 rounded-mn-control border border-mn-border p-3">
+      <label htmlFor={reasonId} className="text-xs font-medium">
+        답변 <span className="font-normal text-mn-muted">(선택)</span>
+      </label>
+      <textarea
+        id={reasonId}
+        value={reason}
+        maxLength={CHANGE_REQUEST_REASON_MAX}
+        rows={2}
+        disabled={saving !== null}
+        placeholder="처리 내용이나 반려 이유를 적어 주세요"
+        onChange={(event) => {
+          setError(null);
+          setReason(event.target.value);
+        }}
+        className="mn-focus w-full rounded-mn-control border border-mn-border bg-mn-bg px-3 py-2 text-sm text-mn-text outline-none placeholder:text-mn-muted disabled:opacity-50"
+      />
+      {error ? (
+        <p role="alert" className="text-sm">
+          <StatusDot tone="error" label={error} />
+        </p>
+      ) : null}
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button size="sm" disabled={saving !== null} onClick={onCancel}>
+          취소
+        </Button>
+        <Button size="sm" disabled={saving !== null} onClick={() => void resolve("rejected")}>
+          {saving === "rejected" ? "처리 중…" : "반려"}
+        </Button>
+        <Button size="sm" disabled={saving !== null} onClick={() => void resolve("accepted")}>
+          {saving === "accepted" ? "처리 중…" : "수락"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 interface ChangeRequestDialogProps {
   meetingId: number;
   /** 대상. null 이면 닫힘 */
@@ -39,14 +120,18 @@ interface ChangeRequestDialogProps {
   onClose: () => void;
   /** 새 요청을 남긴 뒤 부른다(목록 다시 받기) */
   onCreated: () => Promise<void>;
+  /** 해결 응답으로 그 요청만 바꾼다 */
+  onResolved: (saved: ChangeRequest) => void;
 }
 
-export function ChangeRequestDialog({ meetingId, target, list, onRetryList, onClose, onCreated }: ChangeRequestDialogProps) {
+export function ChangeRequestDialog({ meetingId, target, list, onRetryList, onClose, onCreated, onResolved }: ChangeRequestDialogProps) {
   const commentId = useId();
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [page, setPage] = useState(1);
+  // 답변·해결 입력을 펼친 요청(한 번에 하나)
+  const [resolvingId, setResolvingId] = useState<number | null>(null);
   const saveRef = useRef<AbortController | null>(null);
 
   // 열 때마다 입력을 비우고, 닫히면 진행 중인 요청을 취소한다
@@ -58,6 +143,7 @@ export function ChangeRequestDialog({ meetingId, target, list, onRetryList, onCl
     setNotice(null);
     setSaving(false);
     setPage(1);
+    setResolvingId(null);
     return () => saveRef.current?.abort();
   }, [open, targetItemId]);
 
@@ -154,7 +240,31 @@ export function ChangeRequestDialog({ meetingId, target, list, onRetryList, onCl
           <h3 className="text-sm font-medium">수정 요청 내역</h3>
           {/* 내역이 길면 이 영역만 스크롤(팝업은 화면 높이를 넘지 않음) */}
           <div className="max-h-[min(40dvh,320px)] overflow-y-auto">
-            <ChangeRequestEntries list={history} label="이 대상의 수정 요청 내역" onRetry={onRetryList} />
+            <ChangeRequestEntries
+              list={history}
+              label="이 대상의 수정 요청 내역"
+              onRetry={onRetryList}
+              renderActions={(req) =>
+                req.resolution ? null : resolvingId === req.requestId ? (
+                  <ResolveForm
+                    key={req.requestId}
+                    meetingId={meetingId}
+                    request={req}
+                    onCancel={() => setResolvingId(null)}
+                    onResolved={(saved) => {
+                      setResolvingId(null);
+                      onResolved(saved);
+                    }}
+                  />
+                ) : (
+                  <span className="mt-1">
+                    <Button size="sm" onClick={() => setResolvingId(req.requestId)}>
+                      답변·해결
+                    </Button>
+                  </span>
+                )
+              }
+            />
           </div>
           {total > HISTORY_PAGE_SIZE ? (
             <nav aria-label="수정 요청 내역 쪽" className="flex flex-wrap items-center justify-between gap-3 text-sm text-mn-muted">

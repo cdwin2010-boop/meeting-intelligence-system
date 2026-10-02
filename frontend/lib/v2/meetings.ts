@@ -187,6 +187,28 @@ export function createChangeRequest(
   });
 }
 
+/** 수정 요청 결정: 수락 또는 반려 */
+export type ChangeRequestDecision = "accepted" | "rejected";
+
+/** 해결 답변(reason) 최대 글자 수(서버 검사와 같음) */
+export const CHANGE_REQUEST_REASON_MAX = 2000;
+
+/**
+ * POST /api/meetings/{id}/change-requests/{requestId}/resolve {decision, reason?} → 해결 정보가 담긴 수정 요청.
+ * 관리자 이상만(아니면 403), 더 높은 직급이 이미 결정했으면 409, 없는 요청 404. 권한 판정은 서버
+ */
+export function resolveChangeRequest(
+  id: number,
+  requestId: number,
+  input: { decision: ChangeRequestDecision; reason: string | null },
+  signal?: AbortSignal,
+): Promise<ChangeRequest> {
+  return request<ChangeRequest>(
+    `/meetings/${encodeURIComponent(String(id))}/change-requests/${encodeURIComponent(String(requestId))}/resolve`,
+    { method: "POST", body: input, signal },
+  );
+}
+
 /** POST /api/meetings/upload 응답(202 접수, 처리는 서버 백그라운드) */
 export interface UploadAccepted {
   meetingId: number;

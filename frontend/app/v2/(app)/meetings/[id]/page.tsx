@@ -7,8 +7,9 @@
  * - 근거 인용·타임스탬프는 글자로만 표시(오디오 재생 API 가 아직 없음). 업무명·기한 수정 버튼은 다음 단계
  * - 확정 대기 회의록은 머리에 "회의록 확정"(MeetingConfirmButton, 회의록만 확정). 업무는 원장 행마다 "확정"(확정 전 업무만)
  * - 상세 응답에 권한 값이 없어 확정 버튼은 모두에게 보이고, 거부(403·409 보완 필요 등)는 서버 문구를 그대로 보여 준다
- * - 수정 요청: 업무 행 "수정 요청"·회의록 전체 수정 요청 버튼이 팝업(ChangeRequestDialog)을 연다(상태·확정 시계 변화 없음).
- *   목록은 useChangeRequests 로 한 번 받아 화면 아래 패널과 팝업 내역이 함께 쓰고, 남긴 뒤에만 다시 받는다(팝업은 열린 채)
+ * - 수정 요청: 업무 행 "수정 요청"·머리 오른쪽 "회의록 전체 수정 요청" 버튼이 팝업(ChangeRequestDialog)을 연다(상태·확정 시계 변화 없음).
+ *   본문에 수정 요청 영역은 두지 않는다. 목록은 useChangeRequests 로 한 번 받아 팝업 내역이 쓰고, 남긴 뒤에만 다시 받는다(팝업은 열린 채).
+ *   팝업 내역에서 답변·해결(수락·반려)하면 응답으로 그 요청만 바꾼다
  * - 업무 원장 담당자 칸의 지정/변경(AssigneeDialog): 저장 성공 시 서버가 준 업무로 그 행만 바꾼다(권한 판정은 서버)
  * - 화자 확정 패널(SpeakerPanel)에서 저장하면 업무 원장(상세 재조회)과 전사문(displayText)을 새로 받아 바꾼다
  * - 전사문 보기: fullText·segments 는 원본, displayText·speakers 는 이름 적용본(서버 응답 그대로). 지정된 화자가 없으면 원본만,
@@ -30,7 +31,7 @@ import {
 } from "@/components/v2/meeting-display";
 import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
 import { ChangeRequestDialog, type ChangeRequestTarget } from "@/components/v2/ChangeRequestDialog";
-import { ChangeRequestPanel, useChangeRequests } from "@/components/v2/ChangeRequestPanel";
+import { useChangeRequests } from "@/components/v2/ChangeRequestHistory";
 import { MeetingConfirmButton } from "@/components/v2/MeetingConfirmButton";
 import { SpeakerPanel } from "@/components/v2/SpeakerPanel";
 import { ApiError, isAbortError, type MissingField } from "@/lib/v2/errors";
@@ -608,9 +609,12 @@ export default function V2MeetingDetailPage() {
             <Mono muted>{formatDateTime(meeting.heldAt)}</Mono>
           </div>
         </div>
-        {meeting.status === "awaiting_confirmation" ? (
-          <MeetingConfirmButton meetingId={meeting.id} title={meeting.title} onConfirmed={onMeetingConfirmed} />
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={() => setChangeTarget({ itemId: null, label: "회의록 전체" })}>회의록 전체 수정 요청</Button>
+          {meeting.status === "awaiting_confirmation" ? (
+            <MeetingConfirmButton meetingId={meeting.id} title={meeting.title} onConfirmed={onMeetingConfirmed} />
+          ) : null}
+        </div>
       </header>
       <Overview meeting={meeting} />
       <LedgerTable
@@ -621,12 +625,6 @@ export default function V2MeetingDetailPage() {
       />
       <AssigneeDialog item={assigneeTarget} onClose={() => setAssigneeTarget(null)} onSaved={onAssigneeSaved} />
       <SpeakerPanel key={`speakers-${meeting.id}`} meetingId={meeting.id} onSaved={onSpeakersSaved} />
-      <ChangeRequestPanel
-        list={changeRequests.list}
-        items={meeting.actionItems}
-        onRetry={() => void changeRequests.reload()}
-        onRequestMeeting={() => setChangeTarget({ itemId: null, label: "회의록 전체" })}
-      />
       <ChangeRequestDialog
         meetingId={meeting.id}
         target={changeTarget}
@@ -634,6 +632,7 @@ export default function V2MeetingDetailPage() {
         onRetryList={() => void changeRequests.reload()}
         onClose={() => setChangeTarget(null)}
         onCreated={changeRequests.reload}
+        onResolved={changeRequests.replace}
       />
       <TranscriptPanel key={meeting.id} meetingId={meeting.id} version={transcriptVersion} />
     </>
