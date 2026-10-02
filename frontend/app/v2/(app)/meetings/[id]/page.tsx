@@ -11,6 +11,8 @@
  *   목록은 useChangeRequests 로 한 번 받아 화면 아래 패널과 팝업 내역이 함께 쓰고, 남긴 뒤에만 다시 받는다(팝업은 열린 채)
  * - 업무 원장 담당자 칸의 지정/변경(AssigneeDialog): 저장 성공 시 서버가 준 업무로 그 행만 바꾼다(권한 판정은 서버)
  * - 화자 확정 패널(SpeakerPanel)에서 저장하면 업무 원장(상세 재조회)과 전사문(displayText)을 새로 받아 바꾼다
+ * - 전사문 보기: fullText·segments 는 원본, displayText·speakers 는 이름 적용본(서버 응답 그대로). 지정된 화자가 없으면 원본만,
+ *   있으면 기본 이름 적용본과 "원본 보기"/"이름 적용본 보기" 전환. 화자를 저장하면 적용본으로 돌아온다
  * - 다른 회의록으로 바뀌거나 화면을 떠나면 이전 요청은 AbortController 로 취소한다
  */
 import Link from "next/link";
@@ -320,7 +322,12 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onRequestChange }
   );
 }
 
-function TranscriptBody({ state, onRetry }: { state: TranscriptState; onRetry: () => void }) {
+type TranscriptView = "applied" | "original";
+
+/** 지정된 화자가 있어야 이름 적용본이 의미가 있다 */
+const hasSpeakers = (transcript: Transcript) => (transcript.speakers ?? []).length > 0;
+
+function TranscriptBody({ state, view, onRetry }: { state: TranscriptState; view: TranscriptView; onRetry: () => void }) {
   switch (state.kind) {
     case "idle":
     case "loading":
@@ -344,11 +351,12 @@ function TranscriptBody({ state, onRetry }: { state: TranscriptState; onRetry: (
       );
     case "ready": {
       const segments = (state.transcript.segments ?? []).filter((s) => (s.text ?? "").trim());
-      // 화자 매핑 표시 이름(서버가 준 speakers 그대로): 구간의 화자 표기를 바꿔 보여 준다
-      const names = new Map((state.transcript.speakers ?? []).map((sp) => [sp.label, sp.displayName]));
-      // 구간이 있으면 시각·화자별로, 없으면 서버가 표시 이름을 반영한 원문(displayText, 없으면 원문)을 그대로
+      // 이름 적용본이면 화자 매핑 표시 이름(서버가 준 speakers 그대로)으로 구간의 화자 표기를 바꾸고, 원본이면 표기 그대로
+      const applied = view === "applied";
+      const names = new Map(applied ? (state.transcript.speakers ?? []).map((sp) => [sp.label, sp.displayName]) : []);
+      // 구간이 있으면 시각·화자별로, 없으면 적용본은 displayText(없으면 원문), 원본은 fullText 를 그대로
       if (segments.length === 0) {
-        const text = state.transcript.displayText ?? state.transcript.fullText;
+        const text = applied ? state.transcript.displayText ?? state.transcript.fullText : state.transcript.fullText;
         return text.trim() ? (
           <p className="whitespace-pre-wrap text-sm leading-6">{text}</p>
         ) : (
@@ -376,6 +384,8 @@ function TranscriptBody({ state, onRetry }: { state: TranscriptState; onRetry: (
 function TranscriptPanel({ meetingId, version }: { meetingId: number; version: number }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<TranscriptState>({ kind: "idle" });
+  // 원하는 보기. 지정된 화자가 없으면 아래에서 원본으로 고정한다
+  const [view, setView] = useState<TranscriptView>("applied");
   const controllerRef = useRef<AbortController | null>(null);
   const panelId = useId();
 
@@ -403,12 +413,16 @@ function TranscriptPanel({ meetingId, version }: { meetingId: number; version: n
       firstVersion.current = false;
       return;
     }
+    // 화자를 저장하면 이름 적용본 보기로 돌아온다
+    setView("applied");
     if (openRef.current) void load();
     else {
       controllerRef.current?.abort();
       setState({ kind: "idle" });
     }
   }, [version, load]);
+
+  const shownView: TranscriptView = state.kind === "ready" && hasSpeakers(state.transcript) ? view : "original";
 
   function toggle() {
     const next = !open;
@@ -431,8 +445,22 @@ function TranscriptPanel({ meetingId, version }: { meetingId: number; version: n
         </button>
       </h2>
       {open ? (
-        <div id={panelId} className="max-h-[480px] overflow-y-auto border-t border-mn-border px-5 py-4">
-          <TranscriptBody state={state} onRetry={() => void load()} />
+        <div id={panelId} className="border-t border-mn-border">
+          {state.kind === "ready" ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-mn-border px-5 py-3 text-sm">
+              <span aria-live="polite" className="text-mn-muted">
+                현재 보기 <span className="font-medium text-mn-text">{shownView === "applied" ? "이름 적용본" : "원본"}</span>
+              </span>
+              {hasSpeakers(state.transcript) ? (
+                <Button size="sm" onClick={() => setView(shownView === "applied" ? "original" : "applied")}>
+                  {shownView === "applied" ? "원본 보기" : "이름 적용본 보기"}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="max-h-[480px] overflow-y-auto px-5 py-4">
+            <TranscriptBody state={state} view={shownView} onRetry={() => void load()} />
+          </div>
         </div>
       ) : null}
     </section>
