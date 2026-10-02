@@ -5,7 +5,7 @@
 - staff: 참석자이거나, 담당자로 지정된 업무(삭제 제외)가 있거나, 등록자인 회의록만.
 확정·수정 권한(can_confirm_meeting·can_write_item)도 이 모듈에 둔다(맨 아래).
 """
-from sqlalchemy import ColumnElement, and_, exists, or_, select, true
+from sqlalchemy import ColumnElement, and_, exists, false, or_, select, true
 from sqlalchemy.orm import Session, aliased
 
 from app.auth.scope import scoped
@@ -60,24 +60,35 @@ def registrant_id(session: Session, meeting: Meeting) -> int | None:
     return session.scalar(select(SourceDocument.registered_by).where(SourceDocument.id == meeting.source_document_id))
 
 
+def meeting_lead_condition(account: Account) -> ColumnElement[bool]:
+    """Meeting 조회에 붙일 '이 관리자가 총괄' 조건(등록한 관리자, 또는 담당자 등록 회의록의 참석 관리자).
+    총괄 규칙은 여기 한 곳에만 둔다(is_meeting_lead·할 일 목록이 함께 쓴다)."""
+    if account.rank != "manager":
+        return false()
+    document = aliased(SourceDocument)
+    registrant = aliased(Account)
+    staff_registered = exists().where(
+        document.id == Meeting.source_document_id,
+        registrant.id == document.registered_by,
+        registrant.rank == "staff",
+    )
+    return or_(is_registrant(account), and_(staff_registered, is_participant(account)))
+
+
+def can_confirm_condition(account: Account) -> ColumnElement[bool]:
+    """Meeting 조회에 붙일 회의록 확정 권한 조건(지시자 또는 총괄)."""
+    return true() if account.rank == "executive" else meeting_lead_condition(account)
+
+
 def is_meeting_lead(session: Session, account: Account, meeting: Meeting) -> bool:
-    """관리자가 이 회의록의 총괄인지(등록한 관리자, 또는 담당자 등록 회의록의 참석 관리자)."""
+    """관리자가 이 회의록의 총괄인지(meeting_lead_condition 과 같은 규칙)."""
     if account.rank != "manager":
         return False
-    registered_by = registrant_id(session, meeting)
-    if registered_by == account.id:
-        return True
-    registrant = session.get(Account, registered_by) if registered_by is not None else None
-    if registrant is None or registrant.rank != "staff":
-        return False
-    return session.scalar(
-        select(MeetingParticipant.account_id).where(
-            MeetingParticipant.meeting_id == meeting.id, MeetingParticipant.account_id == account.id
-        )
-    ) is not None
+    return session.scalar(select(Meeting.id).where(Meeting.id == meeting.id, meeting_lead_condition(account))) is not None
 
 
 def can_confirm_meeting(session: Session, account: Account, meeting: Meeting) -> bool:
+    """회의록 확정 권한. 화자 매핑 저장도 같은 판정을 쓴다."""
     return account.rank == "executive" or is_meeting_lead(session, account, meeting)
 
 

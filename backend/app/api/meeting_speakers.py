@@ -1,6 +1,8 @@
 """화자 매핑 조회·저장 API: GET·PUT /api/meetings/{id}/speakers.
 
-- 권한: 회의록을 볼 수 있어야 하고(아니면 404), 그중 등록자 또는 관리자 이상만(아니면 403).
+- 조회 권한: 회의록을 볼 수 있어야 하고(아니면 404), 그중 등록자 또는 관리자 이상만(아니면 403).
+- 저장 권한: 위에 더해 회의록 확정 권한(can_confirm_meeting: 지시자, 또는 총괄 관리자)이 있어야 한다(아니면 403).
+  등록하지 않은 관리자와 담당자 직급 등록자는 저장할 수 없다.
 - 저장은 전체 교체. 화자 표기는 그 회의록 전사문에 나오는 것만, 각 표기는 같은 고객사 활성 계정(accountId)
   또는 미등록 이름 글자(name) 중 정확히 하나. 어긋나면 400 이고 아무것도 저장하지 않는다.
 - 직급 우선: 지금 매핑을 저장한 사람보다 직급이 낮으면 409(같거나 높으면 덮어씀). 수정 요청 해결과 같은 규칙.
@@ -14,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.api.meeting_queries import speaker_out
 from app.api.meeting_schemas import SpeakerOut
 from app.api.schemas import CamelModel
-from app.auth.access import VIEW_ALL_RANKS, get_visible_meeting
+from app.auth.access import VIEW_ALL_RANKS, can_confirm_meeting, get_visible_meeting
 from app.auth.deps import RANK_ORDER, get_current_account
 from app.db import get_session
 from app.models import Account, Meeting, MeetingSpeaker, SourceDocument, Transcript, append_event
@@ -91,6 +93,8 @@ def save_speakers(
     session: Session = Depends(get_session),
 ) -> SpeakersOut:
     meeting = _editable_meeting(session, account, meeting_id)
+    if not can_confirm_meeting(session, account, meeting):
+        raise _http(status.HTTP_403_FORBIDDEN, "화자 매핑은 이 회의록을 확정할 수 있는 사람만 저장할 수 있습니다")
     transcript = _transcript(session, meeting)
     if transcript is None:
         raise _http(status.HTTP_404_NOT_FOUND, "전사문이 없습니다")

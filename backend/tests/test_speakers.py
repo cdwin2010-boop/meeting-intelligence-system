@@ -198,14 +198,39 @@ def test_requires_login(env, team):
     assert env["client"].put(f"/api/meetings/{meeting_id}/speakers", json={"speakers": []}).status_code == 401
 
 
-def test_staff_registrant_allowed_but_other_staff_forbidden(env, team):
-    # 담당자 직급 등록자는 가능, 같은 회의 참석자(담당자 직급)는 볼 수는 있어도 403
+def test_staff_registrant_can_view_but_not_save_and_other_staff_forbidden(env, team):
+    # 담당자 직급 등록자는 조회만 가능(저장 403), 같은 회의 참석자(담당자 직급)는 조회·저장 모두 403
     meeting_id, _ = meeting_with_items(env, team["staff"], [], participants=[team["lee"]])
-    assert put(env, team["staff"], meeting_id, [{"label": "화자1", "name": "홍길동"}]).status_code == 200
+    assert call(env, "GET", team["staff"], f"/api/meetings/{meeting_id}/speakers").status_code == 200
+    assert put(env, team["staff"], meeting_id, [{"label": "화자1", "name": "홍길동"}]).status_code == 403
     assert call(env, "GET", team["lee"], f"/api/meetings/{meeting_id}/speakers").status_code == 403
     assert put(env, team["lee"], meeting_id, []).status_code == 403
     # 참석자는 전사문(매핑 반영)은 그대로 볼 수 있다
     assert call(env, "GET", team["lee"], f"/api/meetings/{meeting_id}/transcript").status_code == 200
+
+
+def test_save_allowed_for_lead_and_executive_only(env, team):
+    # 관리자 등록 회의록: 등록 관리자(총괄)·지시자 허용, 등록하지 않은 관리자는 조회만(저장 403)
+    other_mgr = add_account(env["factory"], "고객사A", "mgr2", "manager", name="정관리")
+    meeting_id, _ = meeting_with_items(env, team["mgr"], [])
+    assert put(env, team["mgr"], meeting_id, [{"label": "화자1", "name": "가"}]).status_code == 200
+    assert call(env, "GET", other_mgr, f"/api/meetings/{meeting_id}/speakers").status_code == 200
+    res = put(env, other_mgr, meeting_id, [{"label": "화자1", "name": "나"}])
+    assert res.status_code == 403
+    assert res.json()["detail"] == "화자 매핑은 이 회의록을 확정할 수 있는 사람만 저장할 수 있습니다"
+    assert put(env, team["exe"], meeting_id, [{"label": "화자1", "name": "다"}]).status_code == 200
+
+
+def test_staff_registered_meeting_saved_by_participant_manager_or_executive(env, team):
+    # 담당자 등록 회의록: 참석한 관리자(총괄)·지시자 허용, 참석 안 한 관리자와 등록자(담당자 직급)는 403
+    other_mgr = add_account(env["factory"], "고객사A", "mgr2", "manager", name="정관리")
+    meeting_id, _ = meeting_with_items(env, team["staff"], [], participants=[team["mgr"]])
+    assert put(env, other_mgr, meeting_id, [{"label": "화자1", "name": "가"}]).status_code == 403
+    assert put(env, team["staff"], meeting_id, [{"label": "화자1", "name": "가"}]).status_code == 403
+    assert put(env, team["mgr"], meeting_id, [{"label": "화자1", "name": "나"}]).status_code == 200
+    assert put(env, team["exe"], meeting_id, [{"label": "화자1", "name": "다"}]).status_code == 200
+    with env["factory"]() as s:
+        assert [m.display_name for m in s.scalars(select(MeetingSpeaker).where(MeetingSpeaker.meeting_id == meeting_id))] == ["다"]
 
 
 def test_other_tenant_and_unrelated_staff_get_404(env, team):
@@ -216,11 +241,12 @@ def test_other_tenant_and_unrelated_staff_get_404(env, team):
 
 
 def test_lower_rank_cannot_overwrite_higher_rank_mapping(env, team):
-    meeting_id, _ = meeting_with_items(env, team["staff"], [])
+    # 담당자 등록 회의록에 참석한 관리자(mgr)는 총괄이라 저장 권한은 있다
+    meeting_id, _ = meeting_with_items(env, team["staff"], [], participants=[team["mgr"]])
     assert put(env, team["exe"], meeting_id, [{"label": "화자1", "accountId": team["exe"].id}]).status_code == 200
     res = put(env, team["mgr"], meeting_id, [{"label": "화자1", "name": "다른 사람"}])
     assert res.status_code == 409
-    assert put(env, team["staff"], meeting_id, []).status_code == 409  # 등록자(담당자 직급)도 마찬가지
+    assert put(env, team["staff"], meeting_id, []).status_code == 403  # 등록자(담당자 직급)는 저장 권한 자체가 없음
     assert put(env, team["exe"], meeting_id, [{"label": "화자1", "name": "정정"}]).status_code == 200  # 같은 직급은 덮어씀
     # 관리자가 정한 매핑은 지시자가 덮을 수 있다
     meeting2, _ = meeting_with_items(env, team["mgr"], [], day=1)

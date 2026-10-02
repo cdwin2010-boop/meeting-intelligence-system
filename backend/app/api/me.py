@@ -10,7 +10,7 @@ from sqlalchemy import exists, func, select, update
 from sqlalchemy.orm import Session
 
 from app.api.schemas import CamelModel
-from app.auth.access import VIEW_ALL_RANKS, meeting_visibility
+from app.auth.access import VIEW_ALL_RANKS, can_confirm_condition, meeting_visibility
 from app.auth.deps import get_current_account
 from app.db import get_session
 from app.models import Account, ActionItem, Meeting, MeetingView, Notice
@@ -141,11 +141,11 @@ def my_todos(account: Account = Depends(get_current_account), session: Session =
     visible = meeting_visibility(account)
     is_manager = account.rank in VIEW_ALL_RANKS
 
-    # 1) 확정 대기 회의록(관리자 이상)
+    # 1) 확정 대기 회의록: 그 회의록을 확정할 수 있는 사람(지시자·총괄)에게만
     awaiting = TodoList(total=0, items=[])
     if is_manager:
         stmt = select(Meeting.id, Meeting.title, Meeting.auto_confirm_at).where(
-            visible, Meeting.status == "awaiting_confirmation"
+            visible, can_confirm_condition(account), Meeting.status == "awaiting_confirmation"
         )
         awaiting = TodoList(
             total=_count(session, stmt),

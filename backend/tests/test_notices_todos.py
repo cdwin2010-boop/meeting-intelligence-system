@@ -196,7 +196,8 @@ def test_notices_list_and_seen_is_idempotent_and_ignores_others(env, team):
 
 # ---------------- 할 일 ----------------
 def test_todos_for_staff_and_manager(env, team):
-    awaiting = make_meeting(env["factory"], team["staff"], items=[
+    # 담당자 등록 회의록: 참석한 관리자(mgr)가 총괄이라 확정 대기 묶음에 보인다
+    awaiting = make_meeting(env["factory"], team["staff"], participants=[team["mgr"]], items=[
         {"title": "빈 담당", "assignee_id": None},
         {"title": "내 업무", "assignee_id": team["staff"].id, "due_date": date(2026, 10, 9)},
         {"title": "내 미확정", "assignee_id": team["staff"].id, "due_undetermined": True, "status": "confirmed"},
@@ -221,6 +222,24 @@ def test_todos_for_staff_and_manager(env, team):
     assert mgr["needsCompletionItems"] == {"total": 1, "items": [
         {"meetingId": awaiting, "itemId": blank_id, "title": "빈 담당", "missingFields": ["assignee", "dueDate"]}]}
     assert mgr["myItems"] == {"total": 0, "items": []}
+
+
+def test_awaiting_meetings_only_for_those_who_can_confirm(env, team):
+    f = env["factory"]
+    by_mgr = make_meeting(f, team["mgr"], items=[{"title": "빈 담당", "assignee_id": None}])
+    by_staff = make_meeting(f, team["staff"], day=1, participants=[team["mgr2"]])
+
+    def awaiting_ids(who):
+        body = call(env, "GET", team[who], "/api/me/todos").json()
+        return sorted(m["id"] for m in body["awaitingConfirmMeetings"]["items"]), body
+
+    ids, mgr = awaiting_ids("mgr")  # 본인 등록 회의록만(담당자 등록 회의록은 참석 안 해 총괄 아님)
+    assert ids == [by_mgr] and mgr["awaitingConfirmMeetings"]["total"] == 1
+    ids, mgr2 = awaiting_ids("mgr2")  # 등록 안 한 관리자 회의록은 미표시, 참석한 담당자 등록 회의록은 표시
+    assert ids == [by_staff] and mgr2["awaitingConfirmMeetings"]["total"] == 1
+    assert awaiting_ids("exe")[0] == sorted([by_mgr, by_staff])  # 지시자는 모두
+    # 보완 필요 업무 묶음은 그대로(관리자 이상이면 열람 가능한 회의록 전체)
+    assert [i["meetingId"] for i in mgr2["needsCompletionItems"]["items"]] == [by_mgr]
 
 
 def test_unread_auto_confirmed_disappears_after_view_and_returns_after_new_confirm(env, team):
