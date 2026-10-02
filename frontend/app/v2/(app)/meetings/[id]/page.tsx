@@ -8,7 +8,7 @@
  * - 확정 대기 회의록은 머리에 "회의록 확정"(MeetingConfirmButton, 회의록만 확정). 업무는 원장 행마다 "확정"(확정 전 업무만)
  * - 상세 응답에 권한 값이 없어 확정 버튼은 모두에게 보이고, 거부(403·409 보완 필요 등)는 서버 문구를 그대로 보여 준다
  * - 수정 요청: 업무 행 "수정 요청"·회의록 전체 수정 요청 버튼이 팝업(ChangeRequestDialog)을 연다(상태·확정 시계 변화 없음).
- *   남기면 팝업이 닫히고 화면 아래 목록(ChangeRequestPanel)이 다시 받는다
+ *   목록은 useChangeRequests 로 한 번 받아 화면 아래 패널과 팝업 내역이 함께 쓰고, 남긴 뒤에만 다시 받는다(팝업은 열린 채)
  * - 업무 원장 담당자 칸의 지정/변경(AssigneeDialog): 저장 성공 시 서버가 준 업무로 그 행만 바꾼다(권한 판정은 서버)
  * - 화자 확정 패널(SpeakerPanel)에서 저장하면 업무 원장(상세 재조회)과 전사문(displayText)을 새로 받아 바꾼다
  * - 다른 회의록으로 바뀌거나 화면을 떠나면 이전 요청은 AbortController 로 취소한다
@@ -28,7 +28,7 @@ import {
 } from "@/components/v2/meeting-display";
 import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
 import { ChangeRequestDialog, type ChangeRequestTarget } from "@/components/v2/ChangeRequestDialog";
-import { ChangeRequestPanel } from "@/components/v2/ChangeRequestPanel";
+import { ChangeRequestPanel, useChangeRequests } from "@/components/v2/ChangeRequestPanel";
 import { MeetingConfirmButton } from "@/components/v2/MeetingConfirmButton";
 import { SpeakerPanel } from "@/components/v2/SpeakerPanel";
 import { ApiError, isAbortError, type MissingField } from "@/lib/v2/errors";
@@ -449,8 +449,8 @@ export default function V2MeetingDetailPage() {
   const [transcriptVersion, setTranscriptVersion] = useState(0);
   const [assigneeTarget, setAssigneeTarget] = useState<ActionItem | null>(null);
   const [changeTarget, setChangeTarget] = useState<ChangeRequestTarget | null>(null);
-  const [requestsVersion, setRequestsVersion] = useState(0);
   const controllerRef = useRef<AbortController | null>(null);
+  const changeRequests = useChangeRequests(meetingId);
 
   const load = useCallback(async () => {
     controllerRef.current?.abort();
@@ -462,7 +462,6 @@ export default function V2MeetingDetailPage() {
     controllerRef.current = controller;
     setState({ kind: "loading" });
     setChangeTarget(null);
-    setRequestsVersion(0);
     try {
       setState({ kind: "ready", meeting: await getMeeting(meetingId, controller.signal) });
     } catch (error) {
@@ -532,10 +531,6 @@ export default function V2MeetingDetailPage() {
     setChangeTarget({ itemId: item.id, label: item.title || "(업무명 없음)" });
   }, []);
 
-  const onChangeRequested = useCallback(() => {
-    setChangeTarget(null);
-    setRequestsVersion((v) => v + 1);
-  }, []);
 
   if (state.kind === "loading") {
     return (
@@ -599,17 +594,18 @@ export default function V2MeetingDetailPage() {
       <AssigneeDialog item={assigneeTarget} onClose={() => setAssigneeTarget(null)} onSaved={onAssigneeSaved} />
       <SpeakerPanel key={`speakers-${meeting.id}`} meetingId={meeting.id} onSaved={onSpeakersSaved} />
       <ChangeRequestPanel
-        key={`requests-${meeting.id}`}
-        meetingId={meeting.id}
+        list={changeRequests.list}
         items={meeting.actionItems}
-        refreshKey={requestsVersion}
+        onRetry={() => void changeRequests.reload()}
         onRequestMeeting={() => setChangeTarget({ itemId: null, label: "회의록 전체" })}
       />
       <ChangeRequestDialog
         meetingId={meeting.id}
         target={changeTarget}
+        list={changeRequests.list}
+        onRetryList={() => void changeRequests.reload()}
         onClose={() => setChangeTarget(null)}
-        onCreated={onChangeRequested}
+        onCreated={changeRequests.reload}
       />
       <TranscriptPanel key={meeting.id} meetingId={meeting.id} version={transcriptVersion} />
     </>
