@@ -4,7 +4,8 @@
  * v2 회의록 상세 (시안 docs/ui-v2-mockups/05-meeting-detail.html) — 조회 전용
  * - GET /api/meetings/{id}: 개요·요약·결정사항·업무 원장. 404(없음·권한 없음)는 "찾을 수 없음"으로 따로 보여 준다
  * - 전사문은 펼칠 때 처음 한 번 GET /api/meetings/{id}/transcript 로 불러온다(전사문 없음 404 도 안내)
- * - 근거 인용·타임스탬프는 글자로만 표시(오디오 재생 API 가 아직 없음). 확정·수정 같은 쓰기 버튼은 다음 단계
+ * - 근거 인용·타임스탬프는 글자로만 표시(오디오 재생 API 가 아직 없음). 확정·업무명·기한 수정 버튼은 다음 단계
+ * - 업무 원장 담당자 칸의 지정/변경(AssigneeDialog): 저장 성공 시 서버가 준 업무로 그 행만 바꾼다(권한 판정은 서버)
  * - 화자 확정 패널(SpeakerPanel)에서 저장하면 업무 원장(상세 재조회)과 전사문(displayText)을 새로 받아 바꾼다
  * - 다른 회의록으로 바뀌거나 화면을 떠나면 이전 요청은 AbortController 로 취소한다
  */
@@ -21,6 +22,7 @@ import {
   meetingStatus,
   V2_MEETINGS_PATH,
 } from "@/components/v2/meeting-display";
+import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
 import { SpeakerPanel } from "@/components/v2/SpeakerPanel";
 import { ApiError, isAbortError, type MissingField } from "@/lib/v2/errors";
 import { getMeeting, getTranscript, type ActionItem, type MeetingDetail, type Transcript } from "@/lib/v2/meetings";
@@ -141,7 +143,7 @@ function DueCell({ item }: { item: ActionItem }) {
   return <Mono>{item.dueDate}</Mono>;
 }
 
-function LedgerTable({ items }: { items: ActionItem[] }) {
+function LedgerTable({ items, onEditAssignee }: { items: ActionItem[]; onEditAssignee: (item: ActionItem) => void }) {
   const needsCount = items.filter((item) => item.needsCompletion).length;
   return (
     <section aria-label="업무 원장" className="flex flex-col gap-3">
@@ -155,11 +157,11 @@ function LedgerTable({ items }: { items: ActionItem[] }) {
         </span>
       </div>
       <div className="overflow-x-auto rounded-mn-card border border-mn-border bg-mn-surface">
-        <table aria-label="업무 원장" className="w-full min-w-[880px] table-fixed border-collapse text-sm">
+        <table aria-label="업무 원장" className="w-full min-w-[940px] table-fixed border-collapse text-sm">
           <colgroup>
             <col className="w-[120px]" />
             <col />
-            <col className="w-[120px]" />
+            <col className="w-[180px]" />
             <col className="w-[128px]" />
             <col className="w-[160px]" />
             <col className="w-[240px]" />
@@ -190,7 +192,18 @@ function LedgerTable({ items }: { items: ActionItem[] }) {
                       <StatusDot tone={status.tone} label={status.label} />
                     </td>
                     <td className="px-4 py-3">{item.title || <span className="text-mn-muted">(업무명 없음)</span>}</td>
-                    <td className="px-4">{item.assignee?.name ?? <span className="text-mn-muted">—</span>}</td>
+                    <td className="px-4">
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate">{item.assignee?.name ?? <span className="text-mn-muted">—</span>}</span>
+                        <Button
+                          size="sm"
+                          aria-label={`${item.title || "업무명 없음"} 담당자 ${item.assignee ? "변경" : "지정"}`}
+                          onClick={() => onEditAssignee(item)}
+                        >
+                          {item.assignee ? "변경" : "지정"}
+                        </Button>
+                      </span>
+                    </td>
                     <td className="px-4">
                       <DueCell item={item} />
                     </td>
@@ -353,6 +366,7 @@ export default function V2MeetingDetailPage() {
 
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [transcriptVersion, setTranscriptVersion] = useState(0);
+  const [assigneeTarget, setAssigneeTarget] = useState<ActionItem | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
@@ -393,6 +407,16 @@ export default function V2MeetingDetailPage() {
       throw error;
     }
   }, [meetingId]);
+
+  /** 담당자 저장 뒤: 서버가 준 업무로 그 행만 바꾼다(보완 필요 표시도 서버 값 그대로) */
+  const onAssigneeSaved = useCallback((saved: ActionItem) => {
+    setAssigneeTarget(null);
+    setState((prev) =>
+      prev.kind === "ready"
+        ? { ...prev, meeting: { ...prev.meeting, actionItems: prev.meeting.actionItems.map((it) => (it.id === saved.id ? saved : it)) } }
+        : prev,
+    );
+  }, []);
 
   if (state.kind === "loading") {
     return (
@@ -442,7 +466,8 @@ export default function V2MeetingDetailPage() {
         </div>
       </header>
       <Overview meeting={meeting} />
-      <LedgerTable items={meeting.actionItems} />
+      <LedgerTable items={meeting.actionItems} onEditAssignee={setAssigneeTarget} />
+      <AssigneeDialog item={assigneeTarget} onClose={() => setAssigneeTarget(null)} onSaved={onAssigneeSaved} />
       <SpeakerPanel key={`speakers-${meeting.id}`} meetingId={meeting.id} onSaved={onSpeakersSaved} />
       <TranscriptPanel key={meeting.id} meetingId={meeting.id} version={transcriptVersion} />
     </>
