@@ -131,9 +131,10 @@ def test_manual_meeting_confirm_notifies_managers_except_actor(env, team):
         s.commit()
     meeting_id = make_meeting(env["factory"], team["mgr2"],  # 등록자 = manager → 수신 대상
                               participants=[team["mgr"], team["mgr2"], team["exe"], team["staff"], inactive])
-    res = call(env, "POST", team["mgr"], f"/api/meetings/{meeting_id}/confirm")
+    # 관리자 등록 회의록은 등록자·지시자만 확정(㉟) → 지시자가 확정
+    res = call(env, "POST", team["exe"], f"/api/meetings/{meeting_id}/confirm")
     assert res.status_code == 200
-    assert recipients(env) == sorted([team["mgr2"].id, team["exe"].id])  # 본인·staff·비활성 제외, 등록자 중복 없음
+    assert recipients(env) == sorted([team["mgr2"].id, team["mgr"].id])  # 본인·staff·비활성 제외, 등록자 중복 없음
     notice = notices(env)[0]
     assert notice.kind == "confirmed_notice" and notice.entity_type == "meeting" and notice.entity_id == meeting_id
     assert notice.meeting_id == meeting_id and notice.payload == {"confirmKind": "manager", "title": "회의 0"}

@@ -1,4 +1,5 @@
-"""업무 쓰기 API: 보완(수정)·확정. manager·executive 만(staff 403).
+"""업무 쓰기 API: 보완(수정)·확정. staff 는 403, manager 는 본인이 등록한 회의록의 업무 또는 본인이 담당자인 업무만(아니면 403),
+executive 는 모든 업무(판정은 app/auth/access.py 의 can_write_item).
 데이터 변경과 이벤트 기록은 같은 세션에서 한 번에 커밋한다(둘 중 하나만 남지 않게).
 수정·확정해도 회의록의 first_created_at·auto_confirm_at(자동 확정 시계)은 건드리지 않는다."""
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -7,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.action_schemas import ActionItemPatch
 from app.api.meeting_schemas import AccountRef, ActionItemOut
-from app.auth.access import get_visible_meeting
+from app.auth.access import can_write_item, get_visible_meeting
 from app.auth.deps import require_rank
 from app.auth.scope import scoped
 from app.db import get_session
@@ -35,6 +36,14 @@ def get_visible_item(session: Session, account: Account, item_id: int) -> Action
     item = session.scalar(scoped(select(ActionItem), account).where(ActionItem.id == item_id))
     if item is None or get_visible_meeting(session, account, item.meeting_id) is None:
         raise _http(status.HTTP_404_NOT_FOUND, "업무를 찾을 수 없습니다")
+    return item
+
+
+def get_writable_item(session: Session, account: Account, item_id: int) -> ActionItem:
+    """볼 수 없으면 404, 볼 수는 있어도 수정·확정 권한이 없으면 403."""
+    item = get_visible_item(session, account, item_id)
+    if not can_write_item(session, account, item, session.get(Meeting, item.meeting_id)):
+        raise _http(status.HTTP_403_FORBIDDEN, "이 업무를 수정·확정할 권한이 없습니다")
     return item
 
 
@@ -78,7 +87,7 @@ def update_action_item(
     account: Account = Depends(require_rank("manager")),
     session: Session = Depends(get_session),
 ) -> ActionItemOut:
-    item = get_visible_item(session, account, item_id)
+    item = get_writable_item(session, account, item_id)
     if item.status == "deleted":
         raise _http(status.HTTP_409_CONFLICT, "삭제된 업무는 수정할 수 없습니다")
 
@@ -149,7 +158,7 @@ def confirm_action_item(
     account: Account = Depends(require_rank("manager")),
     session: Session = Depends(get_session),
 ) -> ActionItemOut:
-    item = get_visible_item(session, account, item_id)
+    item = get_writable_item(session, account, item_id)
     if item.status == "confirmed":
         return item_out(session, item)  # 멱등: 이벤트를 다시 남기지 않음
     if item.status != "pending":

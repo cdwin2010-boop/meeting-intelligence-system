@@ -194,7 +194,8 @@ def test_confirm_item_requires_completion_then_is_idempotent(env, team):
 
 # ---------------- 회의록 확정 ----------------
 def test_confirm_meeting_ignores_item_completion(env, team):
-    meeting_id = make_meeting(env["factory"], team["staff"], items=[{"assignee_id": None}])
+    # 담당자 등록 회의록: 참석한 관리자가 총괄로 확정(㉟)
+    meeting_id = make_meeting(env["factory"], team["staff"], items=[{"assignee_id": None}], participants=[team["mgr"]])
     res = call(env, "POST", team["mgr"], f"/api/meetings/{meeting_id}/confirm")
     assert res.status_code == 200
     body = res.json()
@@ -222,7 +223,7 @@ def test_confirm_meeting_with_items_reports_skipped(env, team):
         {"assignee_id": None},  # 보완 필요 → 건너뜀
         {"assignee_id": team["lee"].id, "due_undetermined": True},  # 미확정 선택 → 확정
         {"assignee_id": team["lee"].id, "due_undetermined": True, "status": "deleted"},  # 삭제 → 대상 아님
-    ])
+    ], participants=[team["mgr"]])  # 참석 관리자 = 총괄(㉟)
     ok1, skipped, ok2, deleted = item_ids(env["factory"], meeting_id)
     res = call(env, "POST", team["mgr"], f"/api/meetings/{meeting_id}/confirm", params={"withItems": "true"})
     assert res.status_code == 200
