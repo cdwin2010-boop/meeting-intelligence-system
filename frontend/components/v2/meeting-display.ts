@@ -1,8 +1,8 @@
 /*
- * v2 회의록 표시 규칙(목록·상세 공용): 상태 → 점 색 + 글자 라벨, 시각 형식.
+ * v2 회의록 표시 규칙(목록·상세 공용): 상태 → 점 색 + 글자 라벨, 단계(진행중·종료·보류·삭제) 글자 라벨, 시각 형식.
  */
 import type { StatusDotTone } from "@/components/mono";
-import type { MeetingStatus } from "@/lib/v2/meetings";
+import type { EndKind, MeetingPhase, MeetingStatus } from "@/lib/v2/meetings";
 import type { ConfirmKind } from "@/lib/v2/todos";
 
 const AUTO_CONFIRM_KINDS = new Set<string>(["period_elapsed", "due_reached"]);
@@ -26,6 +26,28 @@ export function meetingStatus(meeting: { status: MeetingStatus; confirmKind: Con
     default:
       return { tone: "queued", label: String(meeting.status) };
   }
+}
+
+/** 단계 탭 순서와 글자 라벨 */
+export const MEETING_PHASES: MeetingPhase[] = ["active", "ended", "on_hold", "deleted"];
+
+export const PHASE_LABEL: Record<MeetingPhase, string> = {
+  active: "진행중",
+  ended: "종료",
+  on_hold: "보류",
+  deleted: "삭제",
+};
+
+export const END_KIND_LABEL: Record<EndKind, string> = {
+  auto: "자동 종료",
+  manager: "관리자 직권 종료",
+};
+
+/** 단계 글자(종료는 구분까지): 예) "종료 · 자동 종료". 서버가 단계를 주지 않으면 진행중 */
+export function phaseText(meeting: { phase?: MeetingPhase; endKind?: EndKind | null }): string {
+  const phase = meeting.phase ?? "active";
+  const label = PHASE_LABEL[phase] ?? String(phase);
+  return phase === "ended" && meeting.endKind ? `${label} · ${END_KIND_LABEL[meeting.endKind] ?? meeting.endKind}` : label;
 }
 
 export const CONFIRM_KIND_LABEL: Record<ConfirmKind, string> = {

@@ -16,6 +16,9 @@
  *   업무 원장(상세 재조회)과 전사문(displayText)을 새로 받은 뒤 팝업이 닫힌다
  * - 전사문 보기: fullText·segments 는 원본, displayText·speakers 는 이름 적용본(서버 응답 그대로). 지정된 화자가 없으면 원본만,
  *   있으면 기본 이름 적용본과 "원본 보기"/"이름 적용본 보기" 전환. 화자를 저장하면 적용본으로 돌아온다
+ * - 단계(진행중·종료·보류·삭제)는 제목 줄에 글자 라벨(종료는 자동 종료/관리자 직권 종료 구분까지). 보류·종료·삭제 기록이 있으면
+ *   "처리 기록"에 처리자·시각·사유를 읽기 전용으로 보여 준다(서버 응답 그대로, 없으면 칸 생략)
+ * - 보류·종료·삭제된 회의록의 쓰기 버튼은 그대로 두고, 서버가 409 로 거부하면 각 버튼이 서버 문구를 그대로 보여 준다
  * - 다른 회의록으로 바뀌거나 화면을 떠나면 이전 요청은 AbortController 로 취소한다
  */
 import Link from "next/link";
@@ -25,10 +28,12 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { Badge, Button, StatusDot, type StatusDotTone } from "@/components/mono";
 import {
   CONFIRM_KIND_LABEL,
+  END_KIND_LABEL,
   formatDate,
   formatDateTime,
   formatOffset,
   meetingStatus,
+  phaseText,
   V2_MEETINGS_PATH,
 } from "@/components/v2/meeting-display";
 import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
@@ -190,6 +195,60 @@ function Overview({ meeting, speakerSummary }: { meeting: MeetingDetail; speaker
           <p className="mt-2 text-sm text-mn-muted">결정사항이 없습니다.</p>
         )}
       </div>
+    </section>
+  );
+}
+
+interface PhaseRecord {
+  label: string;
+  by: string | null;
+  at: string | null | undefined;
+  reason: string | null | undefined;
+}
+
+/** 보류·재개·종료·삭제 기록(처리자·시각·사유). 서버가 준 값만, 하나도 없으면 그리지 않는다 */
+function PhaseRecords({ meeting }: { meeting: MeetingDetail }) {
+  const records: PhaseRecord[] = [];
+  if (meeting.onHoldAt) {
+    records.push({ label: meeting.onHold ? "보류" : "보류(재개됨)", by: meeting.onHoldBy?.name ?? null, at: meeting.onHoldAt, reason: meeting.onHoldReason });
+  }
+  if (meeting.resumedAt) {
+    records.push({ label: "재개", by: meeting.resumedBy?.name ?? null, at: meeting.resumedAt, reason: null });
+  }
+  if (meeting.endedAt) {
+    const kind = meeting.endKind ? END_KIND_LABEL[meeting.endKind] ?? meeting.endKind : null;
+    // 자동 종료는 처리자 없음
+    records.push({
+      label: kind ? `종료 · ${kind}` : "종료",
+      by: meeting.endedBy?.name ?? (meeting.endKind === "auto" ? "자동" : null),
+      at: meeting.endedAt,
+      reason: meeting.endReason,
+    });
+  }
+  if (meeting.deletedAt) {
+    records.push({ label: "삭제", by: meeting.deletedBy?.name ?? null, at: meeting.deletedAt, reason: meeting.deleteReason });
+  }
+  if (records.length === 0) return null;
+  return (
+    <section aria-label="처리 기록" className="rounded-mn-card border border-mn-border bg-mn-surface p-5">
+      <h2 className="text-xs text-mn-muted">처리 기록</h2>
+      <ul className="mt-2 flex flex-col divide-y divide-mn-border">
+        {records.map((record) => (
+          <li key={record.label} className="flex flex-col gap-1 py-2 text-sm">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{record.label}</span>
+              {record.by ? <span className="text-mn-muted">{record.by}</span> : null}
+              {record.at ? <Mono muted>{formatDateTime(record.at)}</Mono> : null}
+            </span>
+            {record.reason ? (
+              <span className="whitespace-pre-wrap">
+                <span className="text-mn-muted">사유 </span>
+                {record.reason}
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -672,6 +731,9 @@ export default function V2MeetingDetailPage() {
           <h1 className="text-[28px] font-semibold leading-9 tracking-tight text-mn-text">{meeting.title || "(제목 없음)"}</h1>
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <StatusDot tone={status.tone} label={status.label} />
+            <span aria-label="회의록 단계">
+              <Badge>{phaseText(meeting)}</Badge>
+            </span>
             <Mono muted>{formatDateTime(meeting.heldAt)}</Mono>
           </div>
         </div>
@@ -682,6 +744,7 @@ export default function V2MeetingDetailPage() {
           ) : null}
         </div>
       </header>
+      <PhaseRecords meeting={meeting} />
       <Overview
         meeting={meeting}
         speakerSummary={

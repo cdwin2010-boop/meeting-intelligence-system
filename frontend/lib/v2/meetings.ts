@@ -8,6 +8,12 @@ import type { ConfirmKind } from "./todos";
 
 export type MeetingStatus = "processing" | "awaiting_confirmation" | "confirmed" | "failed" | "no_content";
 
+/** 회의록 단계(서버 phase): 진행중 / 종료 / 보류 / 삭제. status(처리·확정 상태)와 별개 */
+export type MeetingPhase = "active" | "ended" | "on_hold" | "deleted";
+
+/** 종료 구분: 자동 종료(업무가 모두 종결) / 관리자 직권 종료 */
+export type EndKind = "auto" | "manager";
+
 export interface MeetingListItem {
   id: number;
   title: string;
@@ -19,6 +25,8 @@ export interface MeetingListItem {
   itemCount: number;
   needsCompletionCount: number;
   autoConfirmAt: string | null;
+  /** 회의록 단계(추가 필드). 없는 서버 응답이면 진행중으로 본다 */
+  phase?: MeetingPhase;
 }
 
 /** GET /api/meetings (회의 일시 최신순, page 는 1부터) */
@@ -31,8 +39,9 @@ export interface MeetingListPage {
 
 export const MEETINGS_PAGE_SIZE = 20;
 
-export function listMeetings(page: number, signal?: AbortSignal): Promise<MeetingListPage> {
-  const query = new URLSearchParams({ page: String(page), size: String(MEETINGS_PAGE_SIZE) });
+/** GET /api/meetings?phase=…(기본 active). 담당자가 on_hold·deleted 를 요청하면 서버가 403 */
+export function listMeetings(page: number, signal?: AbortSignal, phase: MeetingPhase = "active"): Promise<MeetingListPage> {
+  const query = new URLSearchParams({ page: String(page), size: String(MEETINGS_PAGE_SIZE), phase });
   return request<MeetingListPage>(`/meetings?${query.toString()}`, { signal });
 }
 
@@ -75,7 +84,23 @@ export interface MeetingDetail {
   origin: string;
   participants: AccountRef[];
   actionItems: ActionItem[];
-  recentEvents: { eventType: string; actor: AccountRef | null; createdAt: string }[];
+  /** reason: 처리 사유가 있는 사건(업무 종결·삭제, 회의록 보류·직권 종료·삭제)만, 그 밖에는 null */
+  recentEvents: { eventType: string; actor: AccountRef | null; createdAt: string; reason?: string | null }[];
+  // 아래는 보류·종료·삭제(추가 필드). 이 필드가 없는 서버 응답이면 진행중·기록 없음으로 본다
+  phase?: MeetingPhase;
+  onHold?: boolean;
+  onHoldBy?: AccountRef | null;
+  onHoldAt?: string | null;
+  onHoldReason?: string | null;
+  resumedBy?: AccountRef | null;
+  resumedAt?: string | null;
+  endKind?: EndKind | null;
+  endedBy?: AccountRef | null;
+  endedAt?: string | null;
+  endReason?: string | null;
+  deletedBy?: AccountRef | null;
+  deletedAt?: string | null;
+  deleteReason?: string | null;
 }
 
 /** 전사 구간: 서버가 엔진 결과를 그대로 저장하므로 키는 snake_case(start_sec 등)다 */
