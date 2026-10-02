@@ -6,6 +6,7 @@
 - 재개: 같은 행의 on_hold=false + 재개한 사람·시각. 진행 중 업무(확정 대기·확정)의 기한을 모두 비워(미확정 표시도 해제) 보완 필요로 만든다.
   확정된 업무도 비운다(PATCH 의 "확정 업무 빈칸 금지" 규칙은 재개 때만 예외). 종결·삭제 업무는 그대로.
   확정 대기 회의록의 자동 확정 시각은 보류했던 기간만큼 뒤로 미룬다(남은 기간 유지). 보류 중이 아니면 200(멱등, 변경 없음)
+- 보류는 사유(reason) 필수(사건 meeting.on_hold 에 남김), 재개는 사유를 받지 않는다(누가·언제만)
 - 데이터 변경과 사건(meeting.on_hold·meeting.resumed, 기한을 비운 업무마다 item.updated via=meeting_resumed)은 한 번에 커밋한다."""
 from datetime import datetime
 
@@ -13,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.action_schemas import ReasonBody
 from app.api.meeting_schemas import AccountRef
 from app.api.schemas import CamelModel
 from app.auth.access import can_confirm_meeting, get_visible_meeting
@@ -20,6 +22,7 @@ from app.auth.deps import require_rank
 from app.db import get_session
 from app.models import Account, ActionItem, Meeting, MeetingHold, append_event
 from app.models.common import utcnow
+from app.services.reasons import latest_reason
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
@@ -52,6 +55,8 @@ class MeetingHoldResult(CamelModel):
     resumed_by: AccountRef | None
     resumed_at: datetime | None
     auto_confirm_at: datetime | None
+    # 마지막 보류 사유(보류 기록이 없거나 사유 도입 전 보류면 None)
+    on_hold_reason: str | None = None
     # 재개로 기한을 비운 업무 id(보류·멱등 응답에서는 빈 목록)
     cleared_due_item_ids: list[int] = []
 
@@ -69,6 +74,7 @@ def _result(session: Session, meeting: Meeting, hold: MeetingHold | None, cleare
         on_hold_by=_ref(session, hold.on_hold_by if hold else None), on_hold_at=hold.on_hold_at if hold else None,
         resumed_by=_ref(session, hold.resumed_by if hold else None), resumed_at=hold.resumed_at if hold else None,
         auto_confirm_at=meeting.auto_confirm_at, cleared_due_item_ids=cleared or [],
+        on_hold_reason=latest_reason(session, meeting, "meeting.on_hold") if hold else None,
     )
 
 
@@ -87,6 +93,7 @@ def _holdable_meeting(session: Session, account: Account, meeting_id: int) -> Me
 @router.post("/{meeting_id}/hold", response_model=MeetingHoldResult, response_model_by_alias=True)
 def hold_meeting(
     meeting_id: int,
+    body: ReasonBody,
     account: Account = Depends(require_rank("manager")),
     session: Session = Depends(get_session),
 ) -> MeetingHoldResult:
@@ -101,7 +108,7 @@ def hold_meeting(
     append_event(
         session, tenant_id=meeting.tenant_id, entity_type="meeting", entity_id=meeting.id,
         event_type="meeting.on_hold", actor_account_id=account.id,
-        payload={"before": {"onHold": False}, "after": {"onHold": True}},
+        payload={"before": {"onHold": False}, "after": {"onHold": True}, "reason": body.reason},
     )
     session.commit()
     return _result(session, meeting, hold)

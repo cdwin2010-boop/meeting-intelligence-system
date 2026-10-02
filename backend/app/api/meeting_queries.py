@@ -26,6 +26,7 @@ from app.models import (
 )
 from app.models.closure import meeting_phase, phase_condition
 from app.models.common import MEETING_STATUSES
+from app.services.reasons import event_reason, latest_reason
 from app.services.speakers import SpeakerView, display_text, load_speakers
 from app.services.views import record_meeting_view
 
@@ -129,13 +130,13 @@ def _account_ref(session: Session, account_id: int | None) -> AccountRef | None:
 
 
 def _recent_events(session: Session, meeting: Meeting) -> list[EventOut]:
-    """이 회의록과 그 작업·업무·전사문에 기록된 사건 최근 20건(최신순). payload 는 내보내지 않는다."""
+    """이 회의록과 그 작업·업무·전사문에 기록된 사건 최근 20건(최신순). payload 는 내보내지 않고 처리 사유만 꺼내 준다."""
     job_ids = select(Job.id).where(Job.meeting_id == meeting.id).scalar_subquery()
     item_ids = select(ActionItem.id).where(ActionItem.meeting_id == meeting.id).scalar_subquery()
     transcript_ids = select(Transcript.id).where(Transcript.meeting_id == meeting.id).scalar_subquery()
     actor = aliased(Account)
     rows = session.execute(
-        select(Event.event_type, Event.created_at, actor.id.label("actor_id"), actor.name.label("actor_name"))
+        select(Event.event_type, Event.created_at, Event.payload, actor.id.label("actor_id"), actor.name.label("actor_name"))
         .outerjoin(actor, actor.id == Event.actor_account_id)
         .where(
             Event.tenant_id == meeting.tenant_id,
@@ -154,6 +155,7 @@ def _recent_events(session: Session, meeting: Meeting) -> list[EventOut]:
             event_type=row.event_type,
             actor=AccountRef(id=row.actor_id, name=row.actor_name) if row.actor_id is not None else None,
             created_at=row.created_at,
+            reason=event_reason(row.payload),
         )
         for row in rows
     ]
@@ -222,6 +224,9 @@ def get_meeting(
         ended_at=closure.ended_at if closure else None,
         deleted_by=_account_ref(session, closure.deleted_by) if closure else None,
         deleted_at=closure.deleted_at if closure else None,
+        on_hold_reason=latest_reason(session, meeting, "meeting.on_hold") if hold else None,
+        end_reason=latest_reason(session, meeting, "meeting.ended") if closure and closure.ended_at else None,
+        delete_reason=latest_reason(session, meeting, "meeting.deleted") if closure and closure.deleted_at else None,
     )
     # 상세 조회가 성공한 경우에만 열람 기록(첫 열람 유지, 마지막 열람 갱신)
     record_meeting_view(session, account, meeting)

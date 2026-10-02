@@ -41,6 +41,24 @@ class ChangeRequestCreate(CamelModel):
         return stripped
 
 
+# 처리 사유 최대 글자 수(수정 요청 코멘트·해결 사유와 같음)
+REASON_MAX = 2000
+
+
+class ReasonBody(CamelModel):
+    """처리 사유(필수): 업무 종결·삭제, 회의록 보류·삭제·직권 종료. 내용은 판단하지 않고 비어 있지 않은지만 본다(앞뒤 공백 제거).
+    없거나 공백뿐이면 422(FastAPI 입력 검증, 수정 요청 코멘트와 같은 방식)."""
+    reason: str = Field(min_length=1, max_length=REASON_MAX)
+
+    @field_validator("reason")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("reason 는 비워 둘 수 없습니다")
+        return stripped
+
+
 class ChangeRequestCreated(CamelModel):
     request_id: int
 

@@ -17,6 +17,9 @@ _BEFORE_HOLDS = "4ad1176618ed"  # meeting_holds 마이그레이션의 down_revis
 DUE = date(2026, 10, 9)
 
 
+REASON = {"reason": "테스트 처리 사유"}  # ㊺-2: 업무 종결·삭제, 회의록 보류·직권 종료·삭제는 사유 필수
+
+
 @pytest.fixture
 def team(env):
     f = env["factory"]
@@ -70,7 +73,7 @@ def meeting(env, team):
 
 
 def hold(env, account, meeting_id):
-    return call(env, "POST", account, f"/api/meetings/{meeting_id}/hold")
+    return call(env, "POST", account, f"/api/meetings/{meeting_id}/hold", json=REASON)
 
 
 def resume(env, account, meeting_id):
@@ -147,8 +150,8 @@ def test_writes_rejected_while_on_hold(env, team, meeting):
     requests = [
         ("PATCH", f"/api/action-items/{pending_id}", {"json": {"title": "새 이름"}}),
         ("POST", f"/api/action-items/{pending_id}/confirm", {}),
-        ("POST", f"/api/action-items/{confirmed_id}/close", {}),
-        ("POST", f"/api/action-items/{pending_id}/delete", {}),
+        ("POST", f"/api/action-items/{confirmed_id}/close", {"json": REASON}),
+        ("POST", f"/api/action-items/{pending_id}/delete", {"json": REASON}),
         ("POST", f"/api/meetings/{meeting_id}/confirm", {}),
         ("PUT", f"/api/meetings/{meeting_id}/speakers", {"json": {"speakers": []}}),
     ]

@@ -17,13 +17,18 @@ def get_or_create_closure(session: Session, meeting: Meeting) -> MeetingClosure:
     return closure
 
 
-def end_meeting(session: Session, meeting: Meeting, *, kind: str, actor_id: int | None, closed_item_ids: list[int]) -> MeetingClosure:
+def end_meeting(
+    session: Session, meeting: Meeting, *, kind: str, actor_id: int | None, closed_item_ids: list[int], reason: str | None = None
+) -> MeetingClosure:
+    """종료 기록. 직권 종료는 사유를 사건에 남기고, 자동 종료는 사유 없음(구분 auto 로 구별)."""
     closure = get_or_create_closure(session, meeting)
     closure.end_kind, closure.ended_by, closure.ended_at = kind, actor_id, utcnow()
+    payload = {"endKind": kind, "closedItemIds": closed_item_ids}
+    if reason is not None:
+        payload["reason"] = reason
     append_event(
         session, tenant_id=meeting.tenant_id, entity_type="meeting", entity_id=meeting.id,
-        event_type="meeting.ended", actor_account_id=actor_id,
-        payload={"endKind": kind, "closedItemIds": closed_item_ids},
+        event_type="meeting.ended", actor_account_id=actor_id, payload=payload,
     )
     return closure
 

@@ -3,13 +3,15 @@
   진행 중 업무(확정 대기·확정)를 모두 종결(직권이므로 확정 전 업무도, 업무마다 item.closed via=meeting_ended)한 뒤 회의록 종료(구분 manager)
 - 삭제 POST /api/meetings/{id}/delete: 처리 중이 아니면 어떤 상태든(보류·종료 포함) 삭제 표시. 이미 삭제면 200(멱등, 사건 없음).
   회의록·업무·수정 요청 행은 그대로 두고, 딸린 업무·요청은 회의록 단계로 목록·할 일·자동 확정·메일에서 빠진다
-- 기록: meeting_closures(종료 구분·처리자·시각, 삭제 처리자·시각) + 사건 meeting.ended·meeting.deleted. 한 번에 커밋한다."""
+- 기록: meeting_closures(종료 구분·처리자·시각, 삭제 처리자·시각) + 사건 meeting.ended·meeting.deleted. 한 번에 커밋한다.
+- 직권 종료·삭제는 사유(reason) 필수. 사유는 사건(meeting.ended·meeting.deleted, 직권 종료로 종결한 업무의 item.closed)에 남긴다."""
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.action_schemas import ReasonBody
 from app.api.meeting_hold import ACTIVE_ITEM_STATUSES, reject_if_locked
 from app.api.meeting_schemas import AccountRef
 from app.api.schemas import CamelModel
@@ -20,6 +22,7 @@ from app.models import Account, ActionItem, Meeting, MeetingClosure, append_even
 from app.models.closure import meeting_phase
 from app.models.common import utcnow
 from app.services.lifecycle import end_meeting, get_or_create_closure
+from app.services.reasons import latest_reason
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
@@ -34,6 +37,9 @@ class MeetingPhaseResult(CamelModel):
     ended_at: datetime | None
     deleted_by: AccountRef | None
     deleted_at: datetime | None
+    # 직권 종료 사유(자동 종료·사유 도입 전 종료는 None), 삭제 사유
+    end_reason: str | None = None
+    delete_reason: str | None = None
     # 직권 종료로 종결한 업무 id(그 밖의 응답에서는 빈 목록)
     closed_item_ids: list[int] = []
 
@@ -57,6 +63,8 @@ def phase_result(session: Session, meeting: Meeting, closed_item_ids: list[int] 
         deleted_by=_ref(session, closure.deleted_by) if closure else None,
         deleted_at=closure.deleted_at if closure else None,
         closed_item_ids=closed_item_ids or [],
+        end_reason=latest_reason(session, meeting, "meeting.ended") if closure and closure.ended_at else None,
+        delete_reason=latest_reason(session, meeting, "meeting.deleted") if closure and closure.deleted_at else None,
     )
 
 
@@ -72,6 +80,7 @@ def _managed_meeting(session: Session, account: Account, meeting_id: int, action
 @router.post("/{meeting_id}/end", response_model=MeetingPhaseResult, response_model_by_alias=True)
 def end_meeting_by_manager(
     meeting_id: int,
+    body: ReasonBody,
     account: Account = Depends(require_rank("manager")),
     session: Session = Depends(get_session),
 ) -> MeetingPhaseResult:
@@ -95,10 +104,10 @@ def end_meeting_by_manager(
         append_event(
             session, tenant_id=item.tenant_id, entity_type="action_item", entity_id=item.id,
             event_type="item.closed", actor_account_id=account.id,
-            payload={"before": {"status": before}, "after": {"status": "closed"}, "via": "meeting_ended"},
+            payload={"before": {"status": before}, "after": {"status": "closed"}, "via": "meeting_ended", "reason": body.reason},
         )
         closed.append(item.id)
-    end_meeting(session, meeting, kind="manager", actor_id=account.id, closed_item_ids=closed)
+    end_meeting(session, meeting, kind="manager", actor_id=account.id, closed_item_ids=closed, reason=body.reason)
     session.commit()
     return phase_result(session, meeting, closed)
 
@@ -106,6 +115,7 @@ def end_meeting_by_manager(
 @router.post("/{meeting_id}/delete", response_model=MeetingPhaseResult, response_model_by_alias=True)
 def delete_meeting(
     meeting_id: int,
+    body: ReasonBody,
     account: Account = Depends(require_rank("manager")),
     session: Session = Depends(get_session),
 ) -> MeetingPhaseResult:
@@ -119,7 +129,7 @@ def delete_meeting(
     append_event(
         session, tenant_id=meeting.tenant_id, entity_type="meeting", entity_id=meeting.id,
         event_type="meeting.deleted", actor_account_id=account.id,
-        payload={"before": {"phase": meeting_phase(meeting)}, "after": {"phase": "deleted"}},
+        payload={"before": {"phase": meeting_phase(meeting)}, "after": {"phase": "deleted"}, "reason": body.reason},
     )
     session.commit()
     return phase_result(session, meeting)

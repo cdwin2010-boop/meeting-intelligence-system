@@ -17,6 +17,9 @@ from tests.test_upload_processing import _alembic, add_account, auth, env, uploa
 _BEFORE_NOTICES = "2b93bc811d65"  # meeting_views·notices 마이그레이션의 down_revision
 
 
+REASON = {"reason": "테스트 처리 사유"}  # ㊺-2: 업무 종결·삭제, 회의록 보류·직권 종료·삭제는 사유 필수
+
+
 @pytest.fixture
 def team(env):
     f = env["factory"]
@@ -420,7 +423,7 @@ def test_pending_change_requests_hide_requests_on_deleted_items(env, team):
         return [r["requestId"] for r in call(env, "GET", team[who], f"/api/meetings/{meeting_id}/change-requests").json()]
 
     assert pending_requests(env, team["exe"])["total"] == 3
-    assert call(env, "POST", team["mgr"], f"/api/action-items/{deleted_item}/delete").status_code == 200
+    assert call(env, "POST", team["mgr"], f"/api/action-items/{deleted_item}/delete", json=REASON).status_code == 200
 
     for who in ("mgr", "mgr2", "exe"):
         body = pending_requests(env, team[who])

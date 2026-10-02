@@ -208,7 +208,7 @@ def test_detail_fields_missing_fields_and_events(env):
 
     [created] = body["recentEvents"]
     assert created == {"eventType": "meeting.created", "actor": {"id": mgr.id, "name": "박관리"},
-                       "createdAt": created["createdAt"]}  # payload 는 내보내지 않음
+                       "createdAt": created["createdAt"], "reason": None}  # payload 는 내보내지 않음(처리 사유만, 없으면 None)
     assert "payload" not in res.text
 
 

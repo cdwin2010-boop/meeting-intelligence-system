@@ -19,6 +19,9 @@ _BEFORE_CLOSURES = "7c021789291d"  # meeting_closures 마이그레이션의 down
 DUE = date(2026, 10, 9)
 
 
+REASON = {"reason": "테스트 처리 사유"}  # ㊺-2: 업무 종결·삭제, 회의록 보류·직권 종료·삭제는 사유 필수
+
+
 @pytest.fixture
 def team(env):
     f = env["factory"]
@@ -72,11 +75,11 @@ def list_ids(env, account, **params):
 
 
 def end(env, account, meeting_id):
-    return call(env, "POST", account, f"/api/meetings/{meeting_id}/end")
+    return call(env, "POST", account, f"/api/meetings/{meeting_id}/end", json=REASON)
 
 
 def delete(env, account, meeting_id):
-    return call(env, "POST", account, f"/api/meetings/{meeting_id}/delete")
+    return call(env, "POST", account, f"/api/meetings/{meeting_id}/delete", json=REASON)
 
 
 # ---------------- 상태별 목록·담당자 조회 제한 ----------------
@@ -87,7 +90,7 @@ def phases(env, team):
     held = new_meeting(env, team, day=2)
     deleted = new_meeting(env, team, day=3)
     assert end(env, team["lead"], ended).status_code == 200
-    assert call(env, "POST", team["lead"], f"/api/meetings/{held}/hold").status_code == 200
+    assert call(env, "POST", team["lead"], f"/api/meetings/{held}/hold", json=REASON).status_code == 200
     assert delete(env, team["lead"], deleted).status_code == 200
     return {"active": active, "ended": ended, "on_hold": held, "deleted": deleted}
 
@@ -123,12 +126,12 @@ def test_staff_can_list_active_and_ended_only(env, team, phases):
 def test_closing_last_item_auto_ends_meeting(env, team):
     meeting_id = new_meeting(env, team, items=[confirmed(title="첫째"), confirmed(title="둘째"), {"title": "지운 업무"}])
     first, second, removed = item_ids(env, meeting_id)
-    assert call(env, "POST", team["lead"], f"/api/action-items/{removed}/delete").status_code == 200  # 삭제 업무는 셈에서 제외
-    assert call(env, "POST", team["lead"], f"/api/action-items/{first}/close").status_code == 200
+    assert call(env, "POST", team["lead"], f"/api/action-items/{removed}/delete", json=REASON).status_code == 200  # 삭제 업무는 셈에서 제외
+    assert call(env, "POST", team["lead"], f"/api/action-items/{first}/close", json=REASON).status_code == 200
     assert closure(env, meeting_id) is None  # 아직 진행 중 업무가 남음
 
     before = datetime.now(timezone.utc)
-    assert call(env, "POST", team["exe"], f"/api/action-items/{second}/close").status_code == 200
+    assert call(env, "POST", team["exe"], f"/api/action-items/{second}/close", json=REASON).status_code == 200
     record = closure(env, meeting_id)
     assert record.end_kind == "auto" and record.ended_by is None and record.ended_at >= before - timedelta(seconds=1)
     [event] = meeting_events(env, meeting_id, "meeting.ended")
@@ -176,7 +179,7 @@ def test_end_state_rules(env, team):
     processing = new_meeting(env, team, status="processing")
     held = new_meeting(env, team, day=1)
     deleted = new_meeting(env, team, day=2)
-    call(env, "POST", team["lead"], f"/api/meetings/{held}/hold")
+    call(env, "POST", team["lead"], f"/api/meetings/{held}/hold", json=REASON)
     delete(env, team["lead"], deleted)
     assert end(env, team["lead"], processing).status_code == 409
     res = end(env, team["lead"], held)
@@ -267,17 +270,17 @@ def test_writes_rejected_on_ended_or_deleted(env, team, phase, word):
     requests = [
         ("PATCH", f"/api/action-items/{pending_id}", {"json": {"title": "새 이름"}}),
         ("POST", f"/api/action-items/{pending_id}/confirm", {}),
-        ("POST", f"/api/action-items/{pending_id}/delete", {}),
+        ("POST", f"/api/action-items/{pending_id}/delete", {"json": REASON}),
         ("POST", f"/api/meetings/{meeting_id}/confirm", {}),
         ("PUT", f"/api/meetings/{meeting_id}/speakers", {"json": {"speakers": []}}),
-        ("POST", f"/api/meetings/{meeting_id}/hold", {}),
+        ("POST", f"/api/meetings/{meeting_id}/hold", {"json": REASON}),
         ("POST", f"/api/meetings/{meeting_id}/resume", {}),
     ]
     for method, path, kwargs in requests:
         res = call(env, method, team["exe"], path, **kwargs)
         assert res.status_code == 409, (method, path, res.text)
         assert word in res.json()["detail"]
-    res = call(env, "POST", team["exe"], f"/api/action-items/{closed_id}/close")  # 이미 종결된 업무도 409
+    res = call(env, "POST", team["exe"], f"/api/action-items/{closed_id}/close", json=REASON)  # 이미 종결된 업무도 409
     assert res.status_code == 409
     assert get_item(env, pending_id).title == "확정 전" and get_item(env, pending_id).status == "pending"
 

@@ -1,14 +1,14 @@
 """업무 쓰기 API: 보완(수정)·확정·종결·삭제. 종결로 삭제되지 않은 업무가 모두 종결되면 회의록을 자동 종료한다. staff 는 403, manager 는 본인이 등록한 회의록의 업무 또는 본인이 담당자인 업무만(아니면 403),
 executive 는 모든 업무(판정은 app/auth/access.py 의 can_write_item). 종결도 같은 판정을 쓴다.
 삭제는 회의록 확정 권한(can_confirm_meeting: 지시자·총괄)만. 보류 중인 회의록의 업무는 수정·확정·종결·삭제 모두 409. 삭제는 행을 지우지 않고 status=deleted 로 표시한다.
-종결·삭제한 사람·시각은 closed_by/at·deleted_by/at 칸과 사건(item.closed·item.deleted)에 남긴다.
+종결·삭제한 사람·시각은 closed_by/at·deleted_by/at 칸과 사건(item.closed·item.deleted)에 남긴다. 종결·삭제는 사유(reason) 필수, 사유는 사건에 남긴다.
 데이터 변경과 이벤트 기록은 같은 세션에서 한 번에 커밋한다(둘 중 하나만 남지 않게).
 수정·확정해도 회의록의 first_created_at·auto_confirm_at(자동 확정 시계)은 건드리지 않는다."""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.action_schemas import ActionItemPatch
+from app.api.action_schemas import ActionItemPatch, ReasonBody
 from app.api.meeting_hold import reject_if_locked
 from app.api.meeting_schemas import AccountRef, ActionItemOut
 from app.auth.access import can_confirm_meeting, can_write_item, get_visible_meeting
@@ -184,6 +184,7 @@ def confirm_action_item(
 @router.post("/{item_id}/close", response_model=ActionItemOut, response_model_by_alias=True)
 def close_action_item(
     item_id: int,
+    body: ReasonBody,
     account: Account = Depends(require_rank("manager")),
     session: Session = Depends(get_session),
 ) -> ActionItemOut:
@@ -199,7 +200,7 @@ def close_action_item(
     append_event(
         session, tenant_id=item.tenant_id, entity_type="action_item", entity_id=item.id,
         event_type="item.closed", actor_account_id=account.id,
-        payload={"before": {"status": "confirmed"}, "after": {"status": "closed"}},
+        payload={"before": {"status": "confirmed"}, "after": {"status": "closed"}, "reason": body.reason},
     )
     # 삭제되지 않은 업무가 모두 종결이면 회의록 자동 종료(같은 트랜잭션)
     auto_end_if_all_closed(session, session.get(Meeting, item.meeting_id))
@@ -210,6 +211,7 @@ def close_action_item(
 @router.post("/{item_id}/delete", response_model=ActionItemOut, response_model_by_alias=True)
 def delete_action_item(
     item_id: int,
+    body: ReasonBody,
     account: Account = Depends(require_rank("manager")),
     session: Session = Depends(get_session),
 ) -> ActionItemOut:
@@ -226,7 +228,7 @@ def delete_action_item(
     append_event(
         session, tenant_id=item.tenant_id, entity_type="action_item", entity_id=item.id,
         event_type="item.deleted", actor_account_id=account.id,
-        payload={"before": {"status": before}, "after": {"status": "deleted"}},
+        payload={"before": {"status": before}, "after": {"status": "deleted"}, "reason": body.reason},
     )
     session.commit()
     return item_out(session, item)

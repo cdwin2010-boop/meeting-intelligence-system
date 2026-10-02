@@ -67,6 +67,8 @@ class EventOut(CamelModel):
     event_type: str
     actor: AccountRef | None
     created_at: datetime
+    # 처리 사유(추가 필드): 사유를 남기는 사건(업무 종결·삭제, 회의록 보류·직권 종료·삭제)만, 그 밖에는 None
+    reason: str | None = None
 
 
 class MeetingDetail(CamelModel):
@@ -99,6 +101,10 @@ class MeetingDetail(CamelModel):
     ended_at: datetime | None = None
     deleted_by: AccountRef | None = None
     deleted_at: datetime | None = None
+    # 처리 사유(추가 필드): 마지막 보류 사유, 직권 종료 사유(자동 종료는 None), 삭제 사유. 사유 도입 전 기록은 None
+    on_hold_reason: str | None = None
+    end_reason: str | None = None
+    delete_reason: str | None = None
 
 
 class SpeakerOut(CamelModel):
