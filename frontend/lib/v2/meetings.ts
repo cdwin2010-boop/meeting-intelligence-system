@@ -100,3 +100,27 @@ export function getMeeting(id: number, signal?: AbortSignal): Promise<MeetingDet
 export function getTranscript(id: number, signal?: AbortSignal): Promise<Transcript> {
   return request<Transcript>(`/meetings/${encodeURIComponent(String(id))}/transcript`, { signal });
 }
+
+/** POST /api/meetings/upload 응답(202 접수, 처리는 서버 백그라운드) */
+export interface UploadAccepted {
+  meetingId: number;
+  jobId: number;
+}
+
+// 큰 음성 파일 전송용 기한(일반 요청 30초와 따로). 기본 10분
+const UPLOAD_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_V2_UPLOAD_TIMEOUT_MS) || 600_000;
+
+/**
+ * 음성 회의록 올리기. heldAt 은 시간대 오프셋이 붙은 ISO 8601(예: 2026-10-01T14:00:00+09:00)이어야 한다.
+ * 허용 형식(415)·용량(413)은 서버 설정이 판정하고, 오류 문구도 서버가 준 것을 그대로 쓴다.
+ */
+export function uploadMeeting(
+  input: { file: File; title: string; heldAt: string },
+  signal?: AbortSignal,
+): Promise<UploadAccepted> {
+  const form = new FormData();
+  form.append("file", input.file);
+  form.append("title", input.title);
+  form.append("heldAt", input.heldAt);
+  return request<UploadAccepted>("/meetings/upload", { method: "POST", body: form, signal, timeoutMs: UPLOAD_TIMEOUT_MS });
+}

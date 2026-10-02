@@ -42,7 +42,7 @@ const MISSING_LABEL: Record<MissingField, string> = {
   dueDate: "기한 필요",
 };
 
-const ORIGIN_LABEL: Record<string, string> = { audio: "음성", text: "텍스트" };
+const ORIGIN_LABEL: Record<string, string> = { audio_minutes: "음성", audio: "음성", text: "텍스트" };
 
 /** 업무 상태 → 점 색 + 글자 라벨. 확정 전 보완 필요는 빨간 점으로 먼저 알린다 */
 function itemStatus(item: ActionItem): { tone: StatusDotTone; label: string } {
