@@ -91,7 +91,32 @@ export interface Transcript {
   fullText: string;
   segments: TranscriptSegment[] | null;
   sttProvider: string;
+  /** 줄머리 화자 표기를 표시 이름으로 바꾼 원문(미등록은 "이름(미등록)"). fullText 는 원본 그대로 */
+  displayText?: string;
+  speakers?: SpeakerMapping[];
 }
+
+/** 화자 매핑 1건: 계정이면 accountId·accountName, 미등록이면 name(글자)만. displayName 은 화면 표시용 */
+export interface SpeakerMapping {
+  label: string;
+  accountId: number | null;
+  accountName: string | null;
+  name: string | null;
+  displayName: string;
+  unregistered: boolean;
+}
+
+/** GET·PUT /api/meetings/{id}/speakers 응답 */
+export interface SpeakersResponse {
+  /** 전사문에 나오는 화자 표기(처음 나온 순서) */
+  labels: string[];
+  speakers: SpeakerMapping[];
+  /** 이번 저장으로 담당자가 자동으로 채워진 업무 id(조회에서는 빈 목록) */
+  autoAssignedItemIds: number[];
+}
+
+/** PUT 본문 항목: 화자마다 accountId 또는 name 중 하나만 */
+export type SpeakerInput = { label: string; accountId: number } | { label: string; name: string };
 
 export function getMeeting(id: number, signal?: AbortSignal): Promise<MeetingDetail> {
   return request<MeetingDetail>(`/meetings/${encodeURIComponent(String(id))}`, { signal });
@@ -99,6 +124,20 @@ export function getMeeting(id: number, signal?: AbortSignal): Promise<MeetingDet
 
 export function getTranscript(id: number, signal?: AbortSignal): Promise<Transcript> {
   return request<Transcript>(`/meetings/${encodeURIComponent(String(id))}/transcript`, { signal });
+}
+
+/** 화자 매핑 조회(등록자·관리자 이상만, 아니면 403 — 판정은 서버) */
+export function getSpeakers(id: number, signal?: AbortSignal): Promise<SpeakersResponse> {
+  return request<SpeakersResponse>(`/meetings/${encodeURIComponent(String(id))}/speakers`, { signal });
+}
+
+/** 화자 매핑 저장(전체 교체). 400(잘못된 표기·계정)·403·409(상위 직급 매핑)는 서버 문구로 ApiError */
+export function saveSpeakers(id: number, speakers: SpeakerInput[], signal?: AbortSignal): Promise<SpeakersResponse> {
+  return request<SpeakersResponse>(`/meetings/${encodeURIComponent(String(id))}/speakers`, {
+    method: "PUT",
+    body: { speakers },
+    signal,
+  });
 }
 
 /** POST /api/meetings/upload 응답(202 접수, 처리는 서버 백그라운드) */

@@ -50,6 +50,8 @@ async function openUpload(page: Page, upload: (route: Route) => unknown) {
   await page.route("**/api/accounts", (route) => json(route, 200, ACCOUNTS));
   await page.route("**/api/meetings/upload", (route) => upload(route) as Promise<void>);
   await page.route(/\/api\/meetings\/\d+$/, (route) => json(route, 200, DETAIL));
+  // 이동한 상세 화면의 화자 확정 패널용
+  await page.route(/\/api\/meetings\/\d+\/speakers$/, (route) => json(route, 200, { labels: [], speakers: [], autoAssignedItemIds: [] }));
   await page.goto("/v2/login");
   await page.evaluate(([key, token]) => window.sessionStorage.setItem(key, token), [TOKEN_KEY, FAKE_TOKEN]);
   await page.goto("/v2/upload");

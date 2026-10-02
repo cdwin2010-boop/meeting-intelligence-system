@@ -15,7 +15,7 @@ export const DEFAULT_TIMEOUT_MS = 30_000;
 export const AUTH_EXPIRED_EVENT = "mi:v2:auth-expired";
 
 export interface RequestOptions {
-  method?: "GET" | "POST" | "PATCH";
+  method?: "GET" | "POST" | "PATCH" | "PUT";
   /** JSON 으로 보낼 본문(FormData 는 그대로 보낸다) */
   body?: unknown;
   signal?: AbortSignal;

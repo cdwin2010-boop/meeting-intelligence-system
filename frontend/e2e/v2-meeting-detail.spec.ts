@@ -84,6 +84,9 @@ async function openDetail(
   await page.route(/\/api\/meetings\/\d+\/transcript$/, (route) =>
     (handlers.transcript ?? ((r: Route) => json(r, 404, { detail: "전사문이 없습니다" })))(route) as Promise<void>,
   );
+  // 화자 확정 패널이 부르는 API(이 스펙의 검증 대상 아님): 화자 없음·계정 없음으로 응답
+  await page.route(/\/api\/meetings\/\d+\/speakers$/, (route) => json(route, 200, { labels: [], speakers: [], autoAssignedItemIds: [] }));
+  await page.route("**/api/accounts", (route) => json(route, 200, []));
   await page.goto("/v2/login");
   await page.evaluate(([key, token]) => window.sessionStorage.setItem(key, token), [TOKEN_KEY, FAKE_TOKEN]);
   await page.goto(path);

@@ -5,6 +5,7 @@
  * - GET /api/meetings/{id}: 개요·요약·결정사항·업무 원장. 404(없음·권한 없음)는 "찾을 수 없음"으로 따로 보여 준다
  * - 전사문은 펼칠 때 처음 한 번 GET /api/meetings/{id}/transcript 로 불러온다(전사문 없음 404 도 안내)
  * - 근거 인용·타임스탬프는 글자로만 표시(오디오 재생 API 가 아직 없음). 확정·수정 같은 쓰기 버튼은 다음 단계
+ * - 화자 확정 패널(SpeakerPanel)에서 저장하면 업무 원장(상세 재조회)과 전사문(displayText)을 새로 받아 바꾼다
  * - 다른 회의록으로 바뀌거나 화면을 떠나면 이전 요청은 AbortController 로 취소한다
  */
 import Link from "next/link";
@@ -20,6 +21,7 @@ import {
   meetingStatus,
   V2_MEETINGS_PATH,
 } from "@/components/v2/meeting-display";
+import { SpeakerPanel } from "@/components/v2/SpeakerPanel";
 import { ApiError, isAbortError, type MissingField } from "@/lib/v2/errors";
 import { getMeeting, getTranscript, type ActionItem, type MeetingDetail, type Transcript } from "@/lib/v2/meetings";
 
@@ -248,10 +250,13 @@ function TranscriptBody({ state, onRetry }: { state: TranscriptState; onRetry: (
       );
     case "ready": {
       const segments = (state.transcript.segments ?? []).filter((s) => (s.text ?? "").trim());
-      // 구간이 있으면 시각·화자별로, 없으면 원문 전체를 그대로
+      // 화자 매핑 표시 이름(서버가 준 speakers 그대로): 구간의 화자 표기를 바꿔 보여 준다
+      const names = new Map((state.transcript.speakers ?? []).map((sp) => [sp.label, sp.displayName]));
+      // 구간이 있으면 시각·화자별로, 없으면 서버가 표시 이름을 반영한 원문(displayText, 없으면 원문)을 그대로
       if (segments.length === 0) {
-        return state.transcript.fullText.trim() ? (
-          <p className="whitespace-pre-wrap text-sm leading-6">{state.transcript.fullText}</p>
+        const text = state.transcript.displayText ?? state.transcript.fullText;
+        return text.trim() ? (
+          <p className="whitespace-pre-wrap text-sm leading-6">{text}</p>
         ) : (
           <p className="text-sm text-mn-muted">전사문 내용이 비어 있습니다.</p>
         );
@@ -262,7 +267,7 @@ function TranscriptBody({ state, onRetry }: { state: TranscriptState; onRetry: (
             <li key={index} className="flex gap-4 text-sm">
               <Mono muted>{formatOffset(segment.start_sec)}</Mono>
               <div className="min-w-0">
-                {segment.speaker ? <p className="text-xs text-mn-muted">{segment.speaker}</p> : null}
+                {segment.speaker ? <p className="text-xs text-mn-muted">{names.get(segment.speaker) ?? segment.speaker}</p> : null}
                 <p className="leading-6">{segment.text}</p>
               </div>
             </li>
@@ -273,8 +278,8 @@ function TranscriptBody({ state, onRetry }: { state: TranscriptState; onRetry: (
   }
 }
 
-/** 전사문 접고 펼치기. 처음 펼칠 때만 불러온다 */
-function TranscriptPanel({ meetingId }: { meetingId: number }) {
+/** 전사문 접고 펼치기. 처음 펼칠 때만 불러온다. version 이 바뀌면(화자 저장 등) 펼쳐져 있으면 다시, 접혀 있으면 다음에 펼칠 때 불러온다 */
+function TranscriptPanel({ meetingId, version }: { meetingId: number; version: number }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<TranscriptState>({ kind: "idle" });
   const controllerRef = useRef<AbortController | null>(null);
@@ -295,6 +300,21 @@ function TranscriptPanel({ meetingId }: { meetingId: number }) {
   }, [meetingId]);
 
   useEffect(() => () => controllerRef.current?.abort(), []);
+
+  const openRef = useRef(open);
+  openRef.current = open;
+  const firstVersion = useRef(true);
+  useEffect(() => {
+    if (firstVersion.current) {
+      firstVersion.current = false;
+      return;
+    }
+    if (openRef.current) void load();
+    else {
+      controllerRef.current?.abort();
+      setState({ kind: "idle" });
+    }
+  }, [version, load]);
 
   function toggle() {
     const next = !open;
@@ -332,6 +352,7 @@ export default function V2MeetingDetailPage() {
   const meetingId = /^\d+$/.test(rawId) ? Number(rawId) : null;
 
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [transcriptVersion, setTranscriptVersion] = useState(0);
   const controllerRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
@@ -356,6 +377,22 @@ export default function V2MeetingDetailPage() {
     void load();
     return () => controllerRef.current?.abort();
   }, [load]);
+
+  /** 화자 저장 뒤: 화면을 비우지 않고 상세(업무 원장)만 다시 받아 바꾸고, 전사문도 다시 불러오게 한다 */
+  const onSpeakersSaved = useCallback(async () => {
+    setTranscriptVersion((v) => v + 1);
+    if (meetingId === null) return;
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    try {
+      setState({ kind: "ready", meeting: await getMeeting(meetingId, controller.signal) });
+    } catch (error) {
+      // 갱신 실패는 지금 보이는 내용을 그대로 두고, 화자 패널이 안내한다
+      if (isAbortError(error)) return;
+      throw error;
+    }
+  }, [meetingId]);
 
   if (state.kind === "loading") {
     return (
@@ -406,7 +443,8 @@ export default function V2MeetingDetailPage() {
       </header>
       <Overview meeting={meeting} />
       <LedgerTable items={meeting.actionItems} />
-      <TranscriptPanel key={meeting.id} meetingId={meeting.id} />
+      <SpeakerPanel key={`speakers-${meeting.id}`} meetingId={meeting.id} onSaved={onSpeakersSaved} />
+      <TranscriptPanel key={meeting.id} meetingId={meeting.id} version={transcriptVersion} />
     </>
   );
 }
