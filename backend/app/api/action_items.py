@@ -1,6 +1,6 @@
 """업무 쓰기 API: 보완(수정)·확정·종결·삭제. staff 는 403, manager 는 본인이 등록한 회의록의 업무 또는 본인이 담당자인 업무만(아니면 403),
 executive 는 모든 업무(판정은 app/auth/access.py 의 can_write_item). 종결도 같은 판정을 쓴다.
-삭제는 회의록 확정 권한(can_confirm_meeting: 지시자·총괄)만. 삭제는 행을 지우지 않고 status=deleted 로 표시한다.
+삭제는 회의록 확정 권한(can_confirm_meeting: 지시자·총괄)만. 보류 중인 회의록의 업무는 수정·확정·종결·삭제 모두 409. 삭제는 행을 지우지 않고 status=deleted 로 표시한다.
 종결·삭제한 사람·시각은 closed_by/at·deleted_by/at 칸과 사건(item.closed·item.deleted)에 남긴다.
 데이터 변경과 이벤트 기록은 같은 세션에서 한 번에 커밋한다(둘 중 하나만 남지 않게).
 수정·확정해도 회의록의 first_created_at·auto_confirm_at(자동 확정 시계)은 건드리지 않는다."""
@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.action_schemas import ActionItemPatch
+from app.api.meeting_hold import reject_if_on_hold
 from app.api.meeting_schemas import AccountRef, ActionItemOut
 from app.auth.access import can_confirm_meeting, can_write_item, get_visible_meeting
 from app.auth.deps import require_rank
@@ -42,10 +43,12 @@ def get_visible_item(session: Session, account: Account, item_id: int) -> Action
 
 
 def get_writable_item(session: Session, account: Account, item_id: int) -> ActionItem:
-    """볼 수 없으면 404, 볼 수는 있어도 수정·확정 권한이 없으면 403."""
+    """볼 수 없으면 404, 볼 수는 있어도 수정·확정 권한이 없으면 403, 회의록이 보류 중이면 409."""
     item = get_visible_item(session, account, item_id)
-    if not can_write_item(session, account, item, session.get(Meeting, item.meeting_id)):
+    meeting = session.get(Meeting, item.meeting_id)
+    if not can_write_item(session, account, item, meeting):
         raise _http(status.HTTP_403_FORBIDDEN, "이 업무를 수정·확정할 권한이 없습니다")
+    reject_if_on_hold(meeting)
     return item
 
 
@@ -209,8 +212,10 @@ def delete_action_item(
 ) -> ActionItemOut:
     """업무 삭제(표시만, 행은 남김): 지시자·총괄만(아니면 403). 어떤 상태든 삭제할 수 있고, 이미 삭제면 그대로 200(멱등, 사건 없음)."""
     item = get_visible_item(session, account, item_id)
-    if not can_confirm_meeting(session, account, session.get(Meeting, item.meeting_id)):
+    meeting = session.get(Meeting, item.meeting_id)
+    if not can_confirm_meeting(session, account, meeting):
         raise _http(status.HTTP_403_FORBIDDEN, "이 업무를 삭제할 권한이 없습니다")
+    reject_if_on_hold(meeting)
     if item.status == "deleted":
         return item_out(session, item)
     before = item.status

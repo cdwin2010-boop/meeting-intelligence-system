@@ -32,7 +32,7 @@ def _counts(session: Session) -> tuple[dict[int, int], dict[int, int], dict[int,
     awaiting = dict(
         session.execute(
             select(Meeting.tenant_id, func.count(Meeting.id))
-            .where(Meeting.status == "awaiting_confirmation")
+            .where(Meeting.status == "awaiting_confirmation", Meeting.on_hold.is_(False))
             .group_by(Meeting.tenant_id)
         ).all()
     )
@@ -44,6 +44,7 @@ def _counts(session: Session) -> tuple[dict[int, int], dict[int, int], dict[int,
                 ActionItem.status == "pending",
                 ActionItem.needs_supplement,
                 Meeting.status.not_in(EXCLUDED_MEETING_STATUSES),
+                Meeting.on_hold.is_(False),
             )
             .group_by(ActionItem.tenant_id)
         ).all()
@@ -57,6 +58,7 @@ def _counts(session: Session) -> tuple[dict[int, int], dict[int, int], dict[int,
                 ActionItem.status == "pending",
                 Meeting.tenant_id == ActionItem.tenant_id,
                 Meeting.status.not_in(EXCLUDED_MEETING_STATUSES),
+                Meeting.on_hold.is_(False),
                 ~exists().where(
                     MeetingView.meeting_id == ActionItem.meeting_id,
                     MeetingView.account_id == ActionItem.assignee_id,

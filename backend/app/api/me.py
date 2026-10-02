@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import Field
-from sqlalchemy import exists, func, or_, select, update
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.orm import Session, aliased
 
 from app.api.meeting_actions import CR_CREATED, CR_RESOLVED, RESOLVE_MIN_RANK
@@ -105,10 +105,11 @@ class Todos(CamelModel):
 # ---------------- 안내 ----------------
 @router.get("/notices", response_model=list[NoticeOut], response_model_by_alias=True)
 def my_notices(account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> list[NoticeOut]:
-    """내 미확인 안내(최신순). 종결·삭제된 업무에 대한 안내는 빼고 보여 준다(행은 그대로 둠)."""
+    """내 미확인 안내(최신순). 종결·삭제된 업무, 보류 중인 회의록에 대한 안내는 빼고 보여 준다(행은 그대로 둠)."""
     inactive_item = exists().where(
         ActionItem.id == Notice.entity_id, ActionItem.status.in_(INACTIVE_ITEM_STATUSES)
     )
+    held_meeting = exists().where(Meeting.id == Notice.meeting_id, Meeting.on_hold.is_(True))
     rows = session.scalars(
         select(Notice)
         .where(
@@ -116,6 +117,7 @@ def my_notices(account: Account = Depends(get_current_account), session: Session
             Notice.account_id == account.id,
             Notice.seen_at.is_(None),
             ~((Notice.entity_type == "action_item") & inactive_item),
+            ~held_meeting,
         )
         .order_by(Notice.id.desc())
     ).all()
@@ -164,7 +166,8 @@ def _not_viewed_since(account: Account, meeting_id_col, confirmed_at_col):
 
 @router.get("/todos", response_model=Todos, response_model_by_alias=True)
 def my_todos(account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> Todos:
-    visible = meeting_visibility(account)
+    # 보류 중인 회의록(과 딸린 업무)은 모든 할 일 묶음에서 뺀다
+    visible = and_(meeting_visibility(account), Meeting.on_hold.is_(False))
     is_manager = account.rank in VIEW_ALL_RANKS
 
     # 1) 확정 대기 회의록: 그 회의록을 확정할 수 있는 사람(지시자·총괄)에게만

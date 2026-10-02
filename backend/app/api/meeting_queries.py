@@ -21,7 +21,7 @@ from app.auth.access import get_visible_meeting, has_assigned_item, meeting_visi
 from app.auth.deps import get_current_account
 from app.auth.scope import scoped
 from app.db import get_session
-from app.models import Account, ActionItem, Event, Job, Meeting, MeetingParticipant, SourceDocument, Transcript
+from app.models import Account, ActionItem, Event, Job, Meeting, MeetingHold, MeetingParticipant, SourceDocument, Transcript
 from app.models.common import MEETING_STATUSES
 from app.services.speakers import SpeakerView, display_text, load_speakers
 from app.services.views import record_meeting_view
@@ -184,6 +184,7 @@ def get_meeting(
         for row in item_rows
     ]
 
+    hold = session.get(MeetingHold, meeting.id)
     detail = MeetingDetail(
         id=meeting.id,
         title=meeting.title,
@@ -201,6 +202,11 @@ def get_meeting(
         participants=[AccountRef(id=p.id, name=p.name) for p in participants],
         action_items=action_items,
         recent_events=_recent_events(session, meeting),
+        on_hold=bool(hold and hold.on_hold),
+        on_hold_by=_account_ref(session, hold.on_hold_by) if hold else None,
+        on_hold_at=hold.on_hold_at if hold else None,
+        resumed_by=_account_ref(session, hold.resumed_by) if hold else None,
+        resumed_at=hold.resumed_at if hold else None,
     )
     # 상세 조회가 성공한 경우에만 열람 기록(첫 열람 유지, 마지막 열람 갱신)
     record_meeting_view(session, account, meeting)

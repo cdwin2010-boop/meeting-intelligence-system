@@ -60,7 +60,7 @@ def item_auto_confirm_kind(
 def _confirm_meeting(session: Session, meeting_id: int, now: datetime) -> bool:
     changed = session.execute(
         update(Meeting)
-        .where(Meeting.id == meeting_id, Meeting.status == "awaiting_confirmation")
+        .where(Meeting.id == meeting_id, Meeting.status == "awaiting_confirmation", Meeting.on_hold.is_(False))
         .values(status="confirmed", confirm_kind="period_elapsed", confirmed_by=None, confirmed_at=now)
     ).rowcount
     if changed != 1:
@@ -84,6 +84,7 @@ def _confirm_item(session: Session, item_id: int, kind: str, now: datetime) -> b
             ActionItem.id == item_id,
             ActionItem.status == "pending",
             ~ActionItem.needs_supplement,  # 그 사이 빈칸이 되었으면 확정하지 않는다
+            ActionItem.meeting_id.in_(select(Meeting.id).where(Meeting.on_hold.is_(False))),  # 그 사이 보류됐으면 확정하지 않는다
         )
         .values(status="confirmed", confirm_kind=kind, confirmed_by=None, confirmed_at=now)
         .execution_options(synchronize_session=False)
@@ -111,6 +112,7 @@ def _plan(session: Session, now: datetime) -> tuple[list[int], list[tuple[int, s
             select(Meeting.id)
             .where(
                 Meeting.status == "awaiting_confirmation",
+                Meeting.on_hold.is_(False),
                 Meeting.auto_confirm_at.is_not(None),
                 Meeting.auto_confirm_at <= now,
             )
@@ -127,7 +129,7 @@ def _plan(session: Session, now: datetime) -> tuple[list[int], list[tuple[int, s
             Meeting.auto_confirm_at,
         )
         .join(Meeting, Meeting.id == ActionItem.meeting_id)
-        .where(ActionItem.status == "pending", Meeting.status.not_in(EXCLUDED_MEETING_STATUSES))
+        .where(ActionItem.status == "pending", Meeting.status.not_in(EXCLUDED_MEETING_STATUSES), Meeting.on_hold.is_(False))
         .order_by(ActionItem.id)
     ).all()
 

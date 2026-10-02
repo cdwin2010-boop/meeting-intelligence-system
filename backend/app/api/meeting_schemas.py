@@ -84,6 +84,12 @@ class MeetingDetail(CamelModel):
     participants: list[AccountRef]
     action_items: list[ActionItemOut]
     recent_events: list[EventOut]
+    # 보류(추가 필드): 보류 중이면 딸린 업무도 모두 보류. 마지막 보류·재개 기록
+    on_hold: bool = False
+    on_hold_by: AccountRef | None = None
+    on_hold_at: datetime | None = None
+    resumed_by: AccountRef | None = None
+    resumed_at: datetime | None = None
 
 
 class SpeakerOut(CamelModel):

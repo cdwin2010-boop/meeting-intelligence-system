@@ -18,6 +18,7 @@ from app.api.action_schemas import (
     MeetingConfirmResult,
     Resolution,
 )
+from app.api.meeting_hold import reject_if_on_hold
 from app.api.meeting_schemas import AccountRef
 from app.auth.access import can_confirm_meeting, get_visible_meeting
 from app.auth.deps import RANK_ORDER, get_current_account, require_rank
@@ -65,6 +66,7 @@ def confirm_meeting(
     # 회의록 확정은 총괄 관리자(등록자, 담당자 등록이면 참석 관리자)와 지시자만(그 밖의 관리자는 403). 상태 검사보다 먼저
     if not can_confirm_meeting(session, account, meeting):
         raise _http(status.HTTP_403_FORBIDDEN, "회의록을 총괄하는 관리자 또는 지시자만 확정할 수 있습니다")
+    reject_if_on_hold(meeting)
     if meeting.status not in ("awaiting_confirmation", "confirmed"):
         raise _http(status.HTTP_409_CONFLICT, f"확정할 수 없는 상태입니다({meeting.status})")
 

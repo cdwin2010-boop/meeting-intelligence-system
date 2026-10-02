@@ -13,6 +13,7 @@ from pydantic import Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.api.meeting_hold import reject_if_on_hold
 from app.api.meeting_queries import speaker_out
 from app.api.meeting_schemas import SpeakerOut
 from app.api.schemas import CamelModel
@@ -95,6 +96,7 @@ def save_speakers(
     meeting = _editable_meeting(session, account, meeting_id)
     if not can_confirm_meeting(session, account, meeting):
         raise _http(status.HTTP_403_FORBIDDEN, "화자 매핑은 이 회의록을 확정할 수 있는 사람만 저장할 수 있습니다")
+    reject_if_on_hold(meeting)
     transcript = _transcript(session, meeting)
     if transcript is None:
         raise _http(status.HTTP_404_NOT_FOUND, "전사문이 없습니다")
