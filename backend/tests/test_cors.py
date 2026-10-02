@@ -23,7 +23,7 @@ def test_preflight_from_allowed_origin(origin):
     assert res.headers["access-control-allow-origin"] == origin
     allowed_headers = {h.strip().lower() for h in res.headers["access-control-allow-headers"].split(",")}
     assert {"authorization", "content-type"} <= allowed_headers
-    assert {m.strip() for m in res.headers["access-control-allow-methods"].split(",")} == {"GET", "POST", "PATCH", "OPTIONS"}
+    assert {m.strip() for m in res.headers["access-control-allow-methods"].split(",")} == {"GET", "POST", "PATCH", "PUT", "OPTIONS"}
     assert "access-control-allow-credentials" not in res.headers
 
 
@@ -37,6 +37,14 @@ def test_disallowed_origin_gets_no_allow_origin(origin):
     assert "access-control-allow-origin" not in preflight(origin).headers
     res = TestClient(app).get("/api/health", headers={"Origin": origin})
     assert "access-control-allow-origin" not in res.headers
+
+
+def test_put_preflight_allowed():
+    # 화자 매핑 저장(PUT /api/meetings/{id}/speakers)이 브라우저에서 막히지 않아야 한다
+    res = preflight(ALLOWED, method="PUT")
+    assert res.status_code == 200
+    assert res.headers["access-control-allow-origin"] == ALLOWED
+    assert "PUT" in {m.strip() for m in res.headers["access-control-allow-methods"].split(",")}
 
 
 def test_disallowed_method_preflight_rejected():

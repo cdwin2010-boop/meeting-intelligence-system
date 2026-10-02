@@ -9,7 +9,7 @@ app = FastAPI(title="Meeting Intelligence Backend (v2)")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
-    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "PUT", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
     allow_credentials=False,
 )
