@@ -310,4 +310,86 @@ test.describe("v2 회의록·업무 확정과 수정 요청", () => {
     await expect(opener).toBeFocused();
     expect(posts).toBe(0);
   });
+
+  test.describe("수정 요청 팝업 내역 쪽 나누기(10건씩, 화면에서 나눔)", () => {
+    const makeRequests = (count: number, itemId: number | null = 103, startId = 700) =>
+      Array.from({ length: count }, (_, i) => ({
+        requestId: startId + i, requester: { id: 7, name: "한팀장" }, comment: `요청 ${i + 1}번`, itemId,
+        createdAt: "2026-10-02T03:00:00Z", resolution: null,
+      }));
+
+    test("10건 이하 → 쪽 번호 없음", async ({ page }) => {
+      await openDetail(page, { requestsGet: (route) => json(route, 200, makeRequests(10)) });
+      await page.getByRole("button", { name: "정리 자료 공유 수정 요청" }).click();
+      const dialog = page.getByRole("dialog", { name: "수정 요청" });
+      await expect(dialog.getByRole("list", { name: "이 대상의 수정 요청 내역" }).getByRole("listitem")).toHaveCount(10);
+      await expect(dialog.getByRole("navigation", { name: "수정 요청 내역 쪽" })).toHaveCount(0);
+    });
+
+    test("25건 → 첫 쪽 10건만, 2쪽·다음·이전 이동, 다시 열면 첫 쪽", async ({ page }) => {
+      // 다른 대상의 요청은 건수에 들어가지 않는다
+      await openDetail(page, { requestsGet: (route) => json(route, 200, [...makeRequests(25), ...makeRequests(3, null, 900)]) });
+      const opener = page.getByRole("button", { name: "정리 자료 공유 수정 요청" });
+      await opener.click();
+      const dialog = page.getByRole("dialog", { name: "수정 요청" });
+      const entries = dialog.getByRole("list", { name: "이 대상의 수정 요청 내역" });
+      const pager = dialog.getByRole("navigation", { name: "수정 요청 내역 쪽" });
+      await expect(entries.getByRole("listitem")).toHaveCount(10);
+      await expect(entries.getByRole("listitem").first()).toContainText("요청 1번");
+      await expect(entries.getByRole("listitem").last()).toContainText("요청 10번");
+      await expect(pager).toContainText("1–10 / 25");
+      await expect(pager.locator('[aria-current="page"]')).toHaveText("1");
+      await expect(pager.getByRole("button", { name: "이전" })).toBeDisabled();
+
+      await pager.getByRole("button", { name: "2쪽" }).click();
+      await expect(entries.getByRole("listitem").first()).toContainText("요청 11번");
+      await expect(entries.getByRole("listitem")).toHaveCount(10);
+      await expect(pager.locator('[aria-current="page"]')).toHaveText("2");
+      await expect(pager).toContainText("11–20 / 25");
+
+      await pager.getByRole("button", { name: "다음" }).click();
+      await expect(entries.getByRole("listitem")).toHaveCount(5);
+      await expect(entries.getByRole("listitem").last()).toContainText("요청 25번");
+      await expect(pager.getByRole("button", { name: "다음" })).toBeDisabled();
+      await pager.getByRole("button", { name: "이전" }).click();
+      await expect(pager.locator('[aria-current="page"]')).toHaveText("2");
+
+      await page.keyboard.press("Escape");
+      await opener.click();
+      await expect(pager.locator('[aria-current="page"]')).toHaveText("1");
+      await expect(entries.getByRole("listitem").first()).toContainText("요청 1번");
+    });
+
+    test("새 요청 후 팝업 열린 채 갱신 → 새 요청이 있는 마지막 쪽 표시", async ({ page }) => {
+      const requests = makeRequests(10);
+      await openDetail(page, {
+        requestsGet: (route) => json(route, 200, requests),
+        requestsPost: (route) => {
+          const body = route.request().postDataJSON() as { comment: string; itemId: number | null };
+          requests.push({ ...makeRequests(1, body.itemId, 800)[0], comment: body.comment });
+          return json(route, 201, { requestId: 800 });
+        },
+      });
+      await page.getByRole("button", { name: "정리 자료 공유 수정 요청" }).click();
+      const dialog = page.getByRole("dialog", { name: "수정 요청" });
+      const entries = dialog.getByRole("list", { name: "이 대상의 수정 요청 내역" });
+      const pager = dialog.getByRole("navigation", { name: "수정 요청 내역 쪽" });
+      await expect(pager).toHaveCount(0);
+
+      await dialog.getByLabel("코멘트").fill("열한 번째 요청");
+      await dialog.getByRole("button", { name: "수정 요청 남기기" }).click();
+      await expect(dialog).toBeVisible();
+      await expect(pager).toContainText("11–11 / 11");
+      await expect(pager.locator('[aria-current="page"]')).toHaveText("2");
+      await expect(entries.getByRole("listitem")).toHaveCount(1);
+      await expect(entries.getByText("열한 번째 요청")).toBeVisible();
+
+      await pager.getByRole("button", { name: "1쪽" }).click();
+      await expect(entries.getByRole("listitem")).toHaveCount(10);
+      // 화면 아래 패널은 쪽 나누기 없이 전체 표시(동작 변경 없음)
+      await page.keyboard.press("Escape");
+      const panel = page.getByRole("region", { name: "수정 요청", exact: true });
+      await expect(panel.getByRole("list", { name: "수정 요청 목록" }).getByRole("listitem")).toHaveCount(11);
+    });
+  });
 });

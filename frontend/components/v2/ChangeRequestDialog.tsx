@@ -5,12 +5,13 @@
  * - 대상은 연 버튼이 정한다(업무 하나 또는 회의록 전체). 팝업 안에서는 바꾸지 않는다
  * - POST /api/meetings/{id}/change-requests. 성공하면 입력을 비우고 onCreated(목록 다시 받기)를 기다린다. 팝업은 닫지 않는다
  * - 하단 "수정 요청 내역"은 화면이 이미 받은 목록(list)에서 이 대상의 요청만 골라 보여 준다(열 때 따로 요청하지 않음)
+ *   GET 이 쪽 인자·전체 건수를 지원하지 않아 화면에서 10건씩 나눈다. 열 때는 첫 쪽, 새 요청을 남기면 마지막 쪽(작성 순이라 새 요청이 끝)
  * - 실패(400·403·422·서버 오류)는 팝업 안에 서버 문구를 보여 주고 입력값은 그대로 둔다
  * - 닫기에 먼저 포커스, Esc·배경 클릭으로 닫기, 닫히면 연 버튼으로 포커스 복귀(Modal 이 처리)
  */
 import { useEffect, useId, useRef, useState } from "react";
 
-import { Modal, StatusDot } from "@/components/mono";
+import { Button, Modal, StatusDot } from "@/components/mono";
 import { ChangeRequestEntries, type ChangeRequestListState } from "@/components/v2/ChangeRequestPanel";
 import { isAbortError } from "@/lib/v2/errors";
 import { CHANGE_REQUEST_MAX, createChangeRequest } from "@/lib/v2/meetings";
@@ -24,6 +25,9 @@ export interface ChangeRequestTarget {
 }
 
 type Notice = { tone: "ready" | "error"; text: string } | null;
+
+/** 팝업 내역 한 쪽 건수 */
+const HISTORY_PAGE_SIZE = 10;
 
 interface ChangeRequestDialogProps {
   meetingId: number;
@@ -42,6 +46,7 @@ export function ChangeRequestDialog({ meetingId, target, list, onRetryList, onCl
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
+  const [page, setPage] = useState(1);
   const saveRef = useRef<AbortController | null>(null);
 
   // 열 때마다 입력을 비우고, 닫히면 진행 중인 요청을 취소한다
@@ -52,6 +57,7 @@ export function ChangeRequestDialog({ meetingId, target, list, onRetryList, onCl
     setComment("");
     setNotice(null);
     setSaving(false);
+    setPage(1);
     return () => saveRef.current?.abort();
   }, [open, targetItemId]);
 
@@ -80,12 +86,19 @@ export function ChangeRequestDialog({ meetingId, target, list, onRetryList, onCl
     setNotice({ tone: "ready", text: "수정 요청을 남겼습니다" });
     setSaving(false);
     await onCreated();
+    // 새 요청이 있는 마지막 쪽으로(실제 쪽 번호는 아래에서 마지막 쪽으로 맞춘다)
+    setPage(Number.MAX_SAFE_INTEGER);
   }
 
-  // 이 대상에 남긴 요청만(목록이 아직 없거나 실패면 그 상태 그대로)
+  // 이 대상에 남긴 요청만(목록이 아직 없거나 실패면 그 상태 그대로), 정렬은 받은 순서 그대로
+  const targetRequests = list.kind === "ready" && target ? list.requests.filter((req) => req.itemId === target.itemId) : [];
+  const total = targetRequests.length;
+  const lastPage = Math.max(1, Math.ceil(total / HISTORY_PAGE_SIZE));
+  const current = Math.min(Math.max(1, page), lastPage);
+  const firstIndex = (current - 1) * HISTORY_PAGE_SIZE;
   const history: ChangeRequestListState =
     list.kind === "ready" && target
-      ? { kind: "ready", requests: list.requests.filter((req) => req.itemId === target.itemId) }
+      ? { kind: "ready", requests: targetRequests.slice(firstIndex, firstIndex + HISTORY_PAGE_SIZE) }
       : list;
 
   return (
@@ -143,6 +156,38 @@ export function ChangeRequestDialog({ meetingId, target, list, onRetryList, onCl
           <div className="max-h-[min(40dvh,320px)] overflow-y-auto">
             <ChangeRequestEntries list={history} label="이 대상의 수정 요청 내역" onRetry={onRetryList} />
           </div>
+          {total > HISTORY_PAGE_SIZE ? (
+            <nav aria-label="수정 요청 내역 쪽" className="flex flex-wrap items-center justify-between gap-3 text-sm text-mn-muted">
+              <span className="font-mn-mono text-[13px]">
+                {firstIndex + 1}–{Math.min(firstIndex + HISTORY_PAGE_SIZE, total)} / {total}
+              </span>
+              <span className="flex flex-wrap items-center gap-2">
+                <Button size="sm" disabled={current <= 1} onClick={() => setPage(current - 1)}>
+                  이전
+                </Button>
+                {/* 현재 쪽은 누를 수 없는 표시(흰 테두리·굵게), 나머지는 쪽 이동 버튼. 확인 버튼이 유일한 primary 라 채움은 쓰지 않는다 */}
+                {Array.from({ length: lastPage }, (_, index) => index + 1).map((n) =>
+                  n === current ? (
+                    <span
+                      key={n}
+                      aria-current="page"
+                      aria-label={`${n}쪽`}
+                      className="inline-flex h-8 min-w-8 items-center justify-center rounded-mn-control border border-mn-text px-3 font-mn-mono text-[13px] font-semibold text-mn-text"
+                    >
+                      {n}
+                    </span>
+                  ) : (
+                    <Button key={n} size="sm" aria-label={`${n}쪽`} onClick={() => setPage(n)} className="font-mn-mono">
+                      {n}
+                    </Button>
+                  ),
+                )}
+                <Button size="sm" disabled={current >= lastPage} onClick={() => setPage(current + 1)}>
+                  다음
+                </Button>
+              </span>
+            </nav>
+          ) : null}
         </section>
       </div>
     </Modal>
