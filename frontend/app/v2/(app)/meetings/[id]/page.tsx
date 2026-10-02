@@ -11,7 +11,9 @@
  *   본문에 수정 요청 영역은 두지 않는다. 목록은 useChangeRequests 로 한 번 받아 팝업 내역이 쓰고, 남긴 뒤에만 다시 받는다(팝업은 열린 채).
  *   팝업 내역에서 답변·해결(수락·반려)하면 응답으로 그 요청만 바꾼다
  * - 업무 원장 담당자 칸의 지정/변경(AssigneeDialog): 저장 성공 시 서버가 준 업무로 그 행만 바꾼다(권한 판정은 서버)
- * - 화자 확정 패널(SpeakerPanel)에서 저장하면 업무 원장(상세 재조회)과 전사문(displayText)을 새로 받아 바꾼다
+ * - 화자 지정: 개요의 참석자 줄 "화자 지정" 버튼이 팝업(SpeakerDialog)을 연다. 지정된 화자 이름은 같은 줄에 한 줄 요약
+ *   (GET /api/meetings/{id}/speakers 를 회의록마다 한 번, 조회 실패·권한 없음이면 요약만 숨김). 저장하면 저장 응답으로 요약을 바꾸고
+ *   업무 원장(상세 재조회)과 전사문(displayText)을 새로 받은 뒤 팝업이 닫힌다
  * - 전사문 보기: fullText·segments 는 원본, displayText·speakers 는 이름 적용본(서버 응답 그대로). 지정된 화자가 없으면 원본만,
  *   있으면 기본 이름 적용본과 "원본 보기"/"이름 적용본 보기" 전환. 화자를 저장하면 적용본으로 돌아온다
  * - 다른 회의록으로 바뀌거나 화면을 떠나면 이전 요청은 AbortController 로 취소한다
@@ -33,15 +35,18 @@ import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
 import { ChangeRequestDialog, type ChangeRequestTarget } from "@/components/v2/ChangeRequestDialog";
 import { useChangeRequests } from "@/components/v2/ChangeRequestHistory";
 import { MeetingConfirmButton } from "@/components/v2/MeetingConfirmButton";
-import { SpeakerPanel } from "@/components/v2/SpeakerPanel";
+import { SpeakerDialog } from "@/components/v2/SpeakerDialog";
 import { ApiError, isAbortError, type MissingField } from "@/lib/v2/errors";
 import { confirmActionItem } from "@/lib/v2/action-items";
 import {
   getMeeting,
+  getSpeakers,
   getTranscript,
   type ActionItem,
   type MeetingConfirmResult,
   type MeetingDetail,
+  type SpeakerMapping,
+  type SpeakersResponse,
   type Transcript,
 } from "@/lib/v2/meetings";
 
@@ -111,7 +116,38 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Overview({ meeting }: { meeting: MeetingDetail }) {
+interface SpeakerSummaryProps {
+  /** 저장된 화자 매핑. null 이면(조회 전·실패·권한 없음) 요약을 보이지 않는다 */
+  speakers: SpeakerMapping[] | null;
+  notice: string | null;
+  onOpen: () => void;
+}
+
+/** 참석자 줄 아래: "화자 지정" 버튼 + 지정된 화자 이름 한 줄 요약 + 저장 결과 안내 */
+function SpeakerSummary({ speakers, notice, onOpen }: SpeakerSummaryProps) {
+  const names = (speakers ?? []).map((sp) => sp.displayName).filter(Boolean);
+  return (
+    <span className="mt-2 flex flex-col gap-1">
+      <span className="flex min-w-0 items-center gap-2">
+        <Button size="sm" onClick={onOpen} className="shrink-0">
+          화자 지정
+        </Button>
+        {names.length > 0 ? (
+          <span aria-label="지정된 화자" title={names.join(", ")} className="min-w-0 truncate text-xs text-mn-muted">
+            화자 {names.join(", ")}
+          </span>
+        ) : null}
+      </span>
+      {notice ? (
+        <span aria-live="polite" className="text-xs">
+          <StatusDot tone="ready" label={notice} />
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function Overview({ meeting, speakerSummary }: { meeting: MeetingDetail; speakerSummary: ReactNode }) {
   const decisions = meeting.decisions.map(decisionText).filter((v): v is string => v !== null);
   const confirmed = meeting.status === "confirmed";
   return (
@@ -123,7 +159,10 @@ function Overview({ meeting }: { meeting: MeetingDetail }) {
         <Field label="등록자">
           {meeting.registeredBy.name} · {ORIGIN_LABEL[meeting.origin] ?? meeting.origin}
         </Field>
-        <Field label="참석자">{meeting.participants.length > 0 ? meeting.participants.map((p) => p.name).join(", ") : "—"}</Field>
+        <Field label="참석자">
+          <span className="block">{meeting.participants.length > 0 ? meeting.participants.map((p) => p.name).join(", ") : "—"}</span>
+          {speakerSummary}
+        </Field>
         {confirmed ? (
           <Field label="확정">
             {meeting.confirmKind ? CONFIRM_KIND_LABEL[meeting.confirmKind] ?? meeting.confirmKind : "확정"}
@@ -476,6 +515,9 @@ export default function V2MeetingDetailPage() {
 
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [transcriptVersion, setTranscriptVersion] = useState(0);
+  const [speakerOpen, setSpeakerOpen] = useState(false);
+  const [speakers, setSpeakers] = useState<SpeakerMapping[] | null>(null);
+  const [speakerNotice, setSpeakerNotice] = useState<string | null>(null);
   const [assigneeTarget, setAssigneeTarget] = useState<ActionItem | null>(null);
   const [changeTarget, setChangeTarget] = useState<ChangeRequestTarget | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
@@ -505,6 +547,19 @@ export default function V2MeetingDetailPage() {
     return () => controllerRef.current?.abort();
   }, [load]);
 
+  // 화자 요약: 회의록마다 한 번 조회. 실패(권한 없음 포함)하면 요약만 숨긴다
+  useEffect(() => {
+    setSpeakers(null);
+    setSpeakerNotice(null);
+    setSpeakerOpen(false);
+    if (meetingId === null) return;
+    const controller = new AbortController();
+    getSpeakers(meetingId, controller.signal)
+      .then((data) => setSpeakers(data.speakers))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [meetingId]);
+
   /** 화자 저장 뒤: 화면을 비우지 않고 상세(업무 원장)만 다시 받아 바꾸고, 전사문도 다시 불러오게 한다 */
   const onSpeakersSaved = useCallback(async () => {
     setTranscriptVersion((v) => v + 1);
@@ -520,6 +575,17 @@ export default function V2MeetingDetailPage() {
       throw error;
     }
   }, [meetingId]);
+
+  /** 화자 팝업 저장 성공: 요약·안내를 저장 응답으로 바꾸고 상세·전사문을 새로 받는다(실패하면 팝업이 안내) */
+  const onSpeakerDialogSaved = useCallback(
+    async (saved: SpeakersResponse) => {
+      setSpeakers(saved.speakers);
+      const auto = saved.autoAssignedItemIds.length;
+      setSpeakerNotice(auto > 0 ? `화자를 저장했습니다 · 담당자 자동 지정 ${auto}건` : "화자를 저장했습니다");
+      await onSpeakersSaved();
+    },
+    [onSpeakersSaved],
+  );
 
   /** 담당자 저장 뒤: 서버가 준 업무로 그 행만 바꾼다(보완 필요 표시도 서버 값 그대로) */
   const replaceItem = useCallback((saved: ActionItem) => {
@@ -616,7 +682,19 @@ export default function V2MeetingDetailPage() {
           ) : null}
         </div>
       </header>
-      <Overview meeting={meeting} />
+      <Overview
+        meeting={meeting}
+        speakerSummary={
+          <SpeakerSummary
+            speakers={speakers}
+            notice={speakerNotice}
+            onOpen={() => {
+              setSpeakerNotice(null);
+              setSpeakerOpen(true);
+            }}
+          />
+        }
+      />
       <LedgerTable
         items={meeting.actionItems}
         onEditAssignee={setAssigneeTarget}
@@ -624,7 +702,12 @@ export default function V2MeetingDetailPage() {
         onRequestChange={onRequestChange}
       />
       <AssigneeDialog item={assigneeTarget} onClose={() => setAssigneeTarget(null)} onSaved={onAssigneeSaved} />
-      <SpeakerPanel key={`speakers-${meeting.id}`} meetingId={meeting.id} onSaved={onSpeakersSaved} />
+      <SpeakerDialog
+        meetingId={meeting.id}
+        open={speakerOpen}
+        onClose={() => setSpeakerOpen(false)}
+        onSaved={onSpeakerDialogSaved}
+      />
       <ChangeRequestDialog
         meetingId={meeting.id}
         target={changeTarget}

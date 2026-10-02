@@ -152,7 +152,8 @@ test.describe("v2 전사문 원본 보기", () => {
     await region.getByRole("button", { name: "원본 보기" }).click();
     await expect(region).toContainText("현재 보기 원본");
 
-    const speakerPanel = page.getByRole("region", { name: "화자 확정" });
+    await page.getByRole("button", { name: "화자 지정" }).click();
+    const speakerPanel = page.getByRole("dialog", { name: "화자 지정" });
     await speakerPanel.getByLabel("화자1", { exact: true }).selectOption({ label: "계정 없음 · 이름 직접 입력" });
     await speakerPanel.getByLabel("화자1 미등록 이름").fill("외부 김자문");
     await speakerPanel.getByRole("button", { name: "화자 저장" }).click();
