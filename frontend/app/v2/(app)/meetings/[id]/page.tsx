@@ -4,7 +4,8 @@
  * v2 회의록 상세 (시안 docs/ui-v2-mockups/05-meeting-detail.html)
  * - GET /api/meetings/{id}: 개요·요약·결정사항·업무 원장. 404(없음·권한 없음)는 "찾을 수 없음"으로 따로 보여 준다
  * - 전사문은 펼칠 때 처음 한 번 GET /api/meetings/{id}/transcript 로 불러온다(전사문 없음 404 도 안내)
- * - 근거 인용·타임스탬프는 글자로만 표시(오디오 재생 API 가 아직 없음). 업무명·기한 수정 버튼은 다음 단계
+ * - 근거 인용·타임스탬프는 글자로만 표시(오디오 재생 API 가 아직 없음). 업무명 수정 버튼은 다음 단계
+ * - 기한 칸(DueEditor): 날짜 선택 또는 "미확정"으로 PATCH. 재개된 회의록은 기한이 빈 업무 건수 안내를 머리 아래에 보여 준다
  * - 확정 대기 회의록은 머리에 "회의록 확정"(MeetingConfirmButton, 회의록만 확정). 업무는 원장 행마다 "확정"(확정 전 업무만)
  * - 상세 응답에 권한 값이 없어 확정 버튼은 모두에게 보이고, 거부(403·409 보완 필요 등)는 서버 문구를 그대로 보여 준다
  * - 수정 요청: 업무 행 "수정 요청"·머리 오른쪽 "회의록 전체 수정 요청" 버튼이 팝업(ChangeRequestDialog)을 연다(상태·확정 시계 변화 없음).
@@ -39,6 +40,7 @@ import {
   phaseText,
   V2_MEETINGS_PATH,
 } from "@/components/v2/meeting-display";
+import { DueEditor } from "@/components/v2/DueEditor";
 import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
 import { useAuth } from "@/components/v2/AuthProvider";
 import { ChangeRequestDialog, type ChangeRequestTarget } from "@/components/v2/ChangeRequestDialog";
@@ -264,16 +266,12 @@ function PhaseRecords({ meeting }: { meeting: MeetingDetail }) {
   );
 }
 
-function DueCell({ item }: { item: ActionItem }) {
-  if (item.dueUndetermined) return <Badge>미확정</Badge>;
-  if (!item.dueDate) return <span className="text-mn-muted">—</span>;
-  return <Mono>{item.dueDate}</Mono>;
-}
-
 interface LedgerTableProps {
   items: ActionItem[];
   onEditAssignee: (item: ActionItem) => void;
   onItemConfirmed: (item: ActionItem) => void;
+  /** 기한 저장 응답으로 그 행만 바꾼다 */
+  onItemUpdated: (item: ActionItem) => void;
   onRequestChange: (item: ActionItem) => void;
   /** 관리자 이상이면 종결(확정된 업무만)·삭제 버튼을 그린다(권한 판정은 서버) */
   manager: boolean;
@@ -281,7 +279,7 @@ interface LedgerTableProps {
   onDeleteItem: (item: ActionItem) => void;
 }
 
-function LedgerTable({ items, onEditAssignee, onItemConfirmed, onRequestChange, manager, onCloseItem, onDeleteItem }: LedgerTableProps) {
+function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, onRequestChange, manager, onCloseItem, onDeleteItem }: LedgerTableProps) {
   const needsCount = items.filter((item) => item.needsCompletion).length;
   // 업무 확정: 한 번에 한 건. 거부되면 서버 문구(보완 필요 409·권한 403 등)를 원장 위에 보여 준다
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
@@ -331,12 +329,12 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onRequestChange, 
         ) : null}
       </div>
       <div className="overflow-x-auto rounded-mn-card border border-mn-border bg-mn-surface">
-        <table aria-label="업무 원장" className="w-full min-w-[1140px] table-fixed border-collapse text-sm">
+        <table aria-label="업무 원장" className="w-full min-w-[1220px] table-fixed border-collapse text-sm">
           <colgroup>
             <col className="w-[120px]" />
             <col />
             <col className="w-[180px]" />
-            <col className="w-[128px]" />
+            <col className="w-[210px]" />
             <col className="w-[160px]" />
             <col className="w-[240px]" />
             <col className={manager ? "w-[320px]" : "w-[200px]"} />
@@ -381,7 +379,7 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onRequestChange, 
                       </span>
                     </td>
                     <td className="px-4">
-                      <DueCell item={item} />
+                      <DueEditor item={item} onSaved={onItemUpdated} />
                     </td>
                     <td className="px-4 py-3">
                       {item.needsCompletion && item.missingFields.length > 0 ? (
@@ -768,6 +766,11 @@ export default function V2MeetingDetailPage() {
   const { meeting } = state;
   const status = meetingStatus(meeting);
   const meetingName = meeting.title || "(제목 없음)";
+  // 재개된 회의록에서 기한이 비어 있는 업무(날짜도 '미확정'도 아님): 모두 입력하면 안내가 사라진다
+  const dueNeededCount =
+    meeting.resumedAt && meeting.phase !== "on_hold"
+      ? meeting.actionItems.filter((it) => it.missingFields.includes("dueDate")).length
+      : 0;
 
   /** 제목 줄 동작 → 팝업 내용 */
   const openMeetingAction = (kind: MeetingActionKind) => {
@@ -839,6 +842,11 @@ export default function V2MeetingDetailPage() {
         </div>
       </header>
       <PhaseRecords meeting={meeting} />
+      {dueNeededCount > 0 ? (
+        <p role="status" className="text-sm">
+          <StatusDot tone="error" label={`기한을 다시 설정해야 하는 업무 ${dueNeededCount}건`} />
+        </p>
+      ) : null}
       <Overview
         meeting={meeting}
         speakerSummary={
@@ -856,6 +864,7 @@ export default function V2MeetingDetailPage() {
         items={meeting.actionItems}
         onEditAssignee={setAssigneeTarget}
         onItemConfirmed={replaceItem}
+        onItemUpdated={replaceItem}
         onRequestChange={onRequestChange}
         manager={manager}
         onCloseItem={openItemClose}

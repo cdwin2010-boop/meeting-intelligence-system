@@ -37,3 +37,12 @@ export function deleteActionItem(itemId: number, reason: string, signal?: AbortS
     signal,
   });
 }
+
+/** 기한 설정: PATCH /api/action-items/{id} 에 dueDate(YYYY-MM-DD) 또는 dueUndetermined:true 중 하나만 보낸다. 권한·종결·삭제 거부는 서버 문구 */
+export function updateDue(
+  itemId: number,
+  due: { dueDate: string } | { dueUndetermined: true },
+  signal?: AbortSignal,
+): Promise<ActionItem> {
+  return request<ActionItem>(`/action-items/${encodeURIComponent(String(itemId))}`, { method: "PATCH", body: due, signal });
+}
