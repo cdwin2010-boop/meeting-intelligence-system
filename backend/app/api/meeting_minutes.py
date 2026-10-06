@@ -14,7 +14,7 @@ from pydantic import Field
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, aliased
 
-from app.api.meeting_hold import reject_if_locked
+from app.auth.locks import reject_if_locked
 from app.api.meeting_queries import minutes_out
 from app.api.meeting_schemas import AccountRef, MinutesOut
 from app.api.schemas import CamelModel

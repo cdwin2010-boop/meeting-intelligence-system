@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.action_schemas import ActionItemPatch, ReasonBody
-from app.api.meeting_hold import reject_if_locked
+from app.auth.locks import reject_if_locked
 from app.api.meeting_schemas import AccountRef, ActionItemOut
 from app.auth.access import can_confirm_meeting, can_write_item, get_visible_meeting
 from app.auth.deps import require_rank

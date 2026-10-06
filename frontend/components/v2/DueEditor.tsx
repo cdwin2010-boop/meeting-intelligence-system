@@ -14,10 +14,12 @@ import type { ActionItem } from "@/lib/v2/meetings";
 
 interface DueEditorProps {
   item: ActionItem;
+  /** 기한 입력 허용(set_due). 아니면 값만 보여 준다 */
+  editable: boolean;
   onSaved: (saved: ActionItem) => void;
 }
 
-export function DueEditor({ item, onSaved }: DueEditorProps) {
+export function DueEditor({ item, editable, onSaved }: DueEditorProps) {
   const [editing, setEditing] = useState(false);
   const [date, setDate] = useState("");
   const [saving, setSaving] = useState(false);
@@ -62,6 +64,8 @@ export function DueEditor({ item, onSaved }: DueEditorProps) {
   ) : (
     <span className="text-mn-muted">—</span>
   );
+
+  if (!editable) return value;
 
   if (!editing) {
     return (

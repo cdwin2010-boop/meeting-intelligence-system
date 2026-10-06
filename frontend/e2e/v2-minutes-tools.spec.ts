@@ -3,6 +3,7 @@
  * 실제 백엔드 없이 page.route 로 v2 API 를 가로챈다(상세는 동작에 따라 바뀌는 가짜 상태). 데이터는 모두 가상이다.
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";
 const TOKEN_KEY = "mi.v2.accessToken";
@@ -57,7 +58,7 @@ async function openDetail(
   await page.route("**/api/auth/me", (route) =>
     route.request().headers()["authorization"] === `Bearer ${FAKE_TOKEN}` ? json(route, 200, account) : json(route, 401, { detail: "인증 필요" }),
   );
-  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, detail));
+  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, withAllowed(detail, account)));
   await page.route(/\/api\/meetings\/41\/transcript$/, (route) => json(route, 404, { detail: "전사문이 없습니다" }));
   await page.route(/\/api\/meetings\/41\/speakers$/, (route) => json(route, 200, { labels: [], speakers: [], autoAssignedItemIds: [] }));
   await page.route(/\/api\/meetings\/41\/change-requests$/, (route) => json(route, 200, []));

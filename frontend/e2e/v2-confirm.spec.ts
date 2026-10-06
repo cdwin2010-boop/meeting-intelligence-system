@@ -4,6 +4,7 @@
  *  POST /api/action-items/{id}/confirm) 데이터는 모두 가상이다.
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { onJson, withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";
 const TOKEN_KEY = "mi.v2.accessToken";
@@ -53,14 +54,20 @@ async function openDetail(page: Page, mocks: Mocks) {
       ? json(route, 200, ACCOUNT)
       : json(route, 401, { detail: "인증이 필요합니다" }),
   );
-  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, DETAIL));
+  // 서버는 확정 뒤 상세를 다시 받으면 바뀐 상태를 주므로, 성공한 확정 응답을 현재 상세에 반영한다
+  const current = structuredClone(DETAIL) as typeof DETAIL;
+  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, withAllowed(current, ACCOUNT)));
   await page.route(/\/api\/meetings\/41\/transcript$/, (route) => json(route, 404, { detail: "전사문이 없습니다" }));
   await page.route(/\/api\/meetings\/41\/speakers$/, (route) => json(route, 200, { labels: [], speakers: [], autoAssignedItemIds: [] }));
   await page.route("**/api/accounts", (route) => json(route, 200, []));
-  await page.route(/\/api\/meetings\/41\/confirm$/, (route) =>
-    (mocks.meetingConfirm ?? ((r: Route) => json(r, 500, { detail: "없음" })))(route) as Promise<void>,
-  );
+  await page.route(/\/api\/meetings\/41\/confirm$/, (route) => {
+    onJson(route, (saved) => Object.assign(current, { status: saved.status, confirmKind: saved.confirmKind, confirmedBy: saved.confirmedBy, confirmedAt: saved.confirmedAt }));
+    return (mocks.meetingConfirm ?? ((r: Route) => json(r, 500, { detail: "없음" })))(route) as Promise<void>;
+  });
   await page.route(/\/api\/action-items\/(\d+)\/confirm$/, (route) => {
+    onJson(route, (saved) => {
+      current.actionItems = current.actionItems.map((it) => (it.id === saved.id ? saved : it));
+    });
     const itemId = Number(/action-items\/(\d+)\//.exec(route.request().url())?.[1]);
     return (mocks.itemConfirm ?? ((r: Route) => json(r, 500, { detail: "없음" })))(route, itemId) as Promise<void>;
   });

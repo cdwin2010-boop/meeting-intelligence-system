@@ -3,6 +3,7 @@
  * 실제 백엔드 없이 page.route 로 v2 API 와 음성 주소를 가로챈다(음성은 테스트에서 만든 120초 무음 WAV, Range 요청 지원). 데이터는 모두 가상이다.
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";
 const TOKEN_KEY = "mi.v2.accessToken";
@@ -67,7 +68,7 @@ async function openDetail(page: Page, audioUrl: "ok" | [number, string]) {
   await page.route("**/api/auth/me", (route) =>
     route.request().headers()["authorization"] === `Bearer ${FAKE_TOKEN}` ? json(route, 200, STAFF) : json(route, 401, { detail: "인증 필요" }),
   );
-  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, detail));
+  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, withAllowed(detail, STAFF)));
   await page.route(/\/api\/meetings\/41\/transcript$/, (route) => json(route, 200, transcript));
   await page.route(/\/api\/meetings\/41\/speakers$/, (route) => json(route, 200, { labels: [], speakers: [], autoAssignedItemIds: [] }));
   await page.route(/\/api\/meetings\/41\/change-requests$/, (route) => json(route, 200, []));

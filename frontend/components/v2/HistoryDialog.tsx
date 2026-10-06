@@ -4,6 +4,7 @@
  * 변경 이력 팝업(GET /api/meetings/{id}/history): 구분(직권 수정·업무 갱신·직권 등록)·변경자·시각·변경 전·후.
  * - 서버가 쪽 인자를 지원하지 않아(최신순 최대 200건) 받은 목록을 화면에서 20건 단위로 나눈다. 길면 팝업 안에서 스크롤한다.
  * - 같은 업로드 묶음(batchId)은 한 묶음으로 묶어 보여 준다(묶음 하나가 한 단위).
+ * - 업무 수정 구분("업무 수정")은 서버 구분 이름 그대로. 변경 전 값이 기록되지 않은 옛 사건은 "변경 전 기록 없음", 참석자 변경은 빠진 사람의 열람 영향(유지·열람 불가)을 글자로 표시한다.
  * - 열 때마다 새로 불러온다. 닫으면 진행 중인 요청을 취소한다.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -71,7 +72,7 @@ function EntryView({ entry }: { entry: HistoryEntry }) {
             <dd className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <span className="whitespace-pre-line">
                 <span className="text-mn-muted">변경 전 </span>
-                {formatValue(key, entry.before?.[key])}
+                {entry.beforeMissing ? <span className="text-mn-muted">변경 전 기록 없음</span> : formatValue(key, entry.before?.[key])}
               </span>
               <span className="whitespace-pre-line">
                 <span className="text-mn-muted">변경 후 </span>
@@ -81,6 +82,16 @@ function EntryView({ entry }: { entry: HistoryEntry }) {
           </div>
         ))}
       </dl>
+      {entry.viewImpact && entry.viewImpact.length > 0 ? (
+        <ul aria-label="열람 영향" className="flex flex-col gap-1 text-sm">
+          {entry.viewImpact.map((impact) => (
+            <li key={impact.accountId}>
+              <span className="text-mn-muted">열람 영향 </span>
+              {impact.name} · {impact.viewImpact}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </li>
   );
 }

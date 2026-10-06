@@ -3,6 +3,7 @@
  * (/api/auth/me, /api/meetings?phase=…, /api/meetings/{id} 와 상세 하위 자원) 데이터는 모두 가상이다.
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";
 const TOKEN_KEY = "mi.v2.accessToken";
@@ -17,7 +18,9 @@ const row = (id: number, title: string, phase: string) => ({
   status: "confirmed", confirmKind: "manager", itemCount: 2, needsCompletionCount: 0, autoConfirmAt: null, phase,
 });
 
-const pageOf = (items: unknown[], total = items.length, page = 1) => ({ items, total, page, size: 20 });
+const ALL_PHASES = ["active", "ended", "on_hold", "deleted"];
+// 서버는 목록 응답 최상위에 조회 가능한 단계(availablePhases)를 준다(관리자 4개, 담당자 진행중·종료)
+const pageOf = (items: unknown[], total = items.length, page = 1, availablePhases: string[] = ALL_PHASES) => ({ items, total, page, size: 20, availablePhases });
 
 async function login(page: Page, account: typeof MANAGER) {
   await page.route("**/api/auth/me", (route) =>
@@ -89,7 +92,7 @@ test.describe("v2 회의록 단계 탭", () => {
   });
 
   test("담당자: 진행중·종료 탭만", async ({ page }) => {
-    const requests = await openList(page, STAFF, (params, route) => json(route, 200, pageOf([row(41, "주간 회의", params.get("phase") ?? "")])));
+    const requests = await openList(page, STAFF, (params, route) => json(route, 200, pageOf([row(41, "주간 회의", params.get("phase") ?? "")], 1, 1, ["active", "ended"])));
     await expect(tabs(page)).toHaveText(["진행중", "종료"]);
     await tabs(page).filter({ hasText: "종료" }).click();
     await expect.poll(() => requests.at(-1)?.get("phase")).toBe("ended");
@@ -133,7 +136,7 @@ const DETAIL_BASE = {
 
 async function openDetail(page: Page, detail: Record<string, unknown>, extra?: (page: Page) => Promise<void>) {
   await login(page, MANAGER);
-  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, { ...DETAIL_BASE, ...detail }));
+  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, withAllowed({ ...DETAIL_BASE, ...detail }, MANAGER)));
   await page.route(/\/api\/meetings\/41\/transcript$/, (route) => json(route, 404, { detail: "전사문이 없습니다" }));
   await page.route(/\/api\/meetings\/41\/speakers$/, (route) => json(route, 200, { labels: [], speakers: [], autoAssignedItemIds: [] }));
   await page.route(/\/api\/meetings\/41\/change-requests$/, (route) => json(route, 200, []));
@@ -201,7 +204,13 @@ test.describe("v2 회의록 상세 단계 표시", () => {
     );
     await expect(phaseLabel(page)).toHaveText("삭제");
     await expect(records(page)).toContainText("사유 잘못 올린 파일");
-    // 버튼은 서버 규칙대로 두고, 거부되면 서버 문구를 보여 준다
+    // 허용 동작(allowedActions)에 확정이 없는 삭제된 회의록은 확정 버튼이 보이지 않는다
+    await expect(page.getByRole("button", { name: "회의록 확정" })).toHaveCount(0);
+    // 서버가 (표시 목록과 달리) 허용 동작에 확정을 주었는데 거부하는 경우: 버튼은 서버 목록대로, 거부되면 서버 문구를 보여 준다
+    await page.route(/\/api\/meetings\/41$/, (route) =>
+      json(route, 200, { ...DETAIL_BASE, phase: "deleted", deletedAt: "2026-10-02T03:00:00Z", allowedActions: ["confirm_meeting"], actionItems: [] }),
+    );
+    await page.reload();
     await page.getByRole("button", { name: "회의록 확정" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("button", { name: "회의록 확정" }).click();

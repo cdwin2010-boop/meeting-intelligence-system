@@ -122,9 +122,11 @@ interface ChangeRequestDialogProps {
   onCreated: () => Promise<void>;
   /** 해결 응답으로 그 요청만 바꾼다 */
   onResolved: (saved: ChangeRequest) => void;
+  /** 답변·해결 허용(resolve_change_request). 아니면 해결 버튼을 그리지 않는다 */
+  canResolve: boolean;
 }
 
-export function ChangeRequestDialog({ meetingId, target, list, onRetryList, onClose, onCreated, onResolved }: ChangeRequestDialogProps) {
+export function ChangeRequestDialog({ meetingId, target, list, onRetryList, onClose, onCreated, onResolved, canResolve }: ChangeRequestDialogProps) {
   const commentId = useId();
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
@@ -245,7 +247,7 @@ export function ChangeRequestDialog({ meetingId, target, list, onRetryList, onCl
               label="이 대상의 수정 요청 내역"
               onRetry={onRetryList}
               renderActions={(req) =>
-                req.resolution ? null : resolvingId === req.requestId ? (
+                req.resolution || !canResolve ? null : resolvingId === req.requestId ? (
                   <ResolveForm
                     key={req.requestId}
                     meetingId={meetingId}

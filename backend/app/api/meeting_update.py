@@ -15,7 +15,7 @@ from pydantic import Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.api.action_items import is_blank, item_out
-from app.api.meeting_hold import reject_if_locked
+from app.auth.locks import reject_if_locked
 from app.api.meeting_schemas import ActionItemOut
 from app.api.schemas import CamelModel
 from app.auth.access import can_confirm_meeting, get_visible_meeting

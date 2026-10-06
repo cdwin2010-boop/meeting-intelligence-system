@@ -3,6 +3,7 @@
  * 올리는 파일은 메모리에서 만든 몇 바이트짜리 가짜 파일이고, 가짜 토큰은 고정 문자열이다.
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";
 const TOKEN_KEY = "mi.v2.accessToken";
@@ -49,7 +50,7 @@ async function openUpload(page: Page, upload: (route: Route) => unknown) {
   );
   await page.route("**/api/accounts", (route) => json(route, 200, ACCOUNTS));
   await page.route("**/api/meetings/upload", (route) => upload(route) as Promise<void>);
-  await page.route(/\/api\/meetings\/\d+$/, (route) => json(route, 200, DETAIL));
+  await page.route(/\/api\/meetings\/\d+$/, (route) => json(route, 200, withAllowed(DETAIL, ACCOUNT)));
   // 이동한 상세 화면의 화자 요약용
   await page.route(/\/api\/meetings\/\d+\/speakers$/, (route) => json(route, 200, { labels: [], speakers: [], autoAssignedItemIds: [] }));
   await page.route(/\/api\/meetings\/\d+\/change-requests$/, (route) => json(route, 200, []));

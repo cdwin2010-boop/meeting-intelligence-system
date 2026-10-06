@@ -3,6 +3,7 @@
  * 데이터는 모두 가상이고, 가짜 토큰은 고정 문자열이다.
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";
 const TOKEN_KEY = "mi.v2.accessToken";
@@ -97,7 +98,7 @@ test.describe("v2 회의록 상세", () => {
   test("상세 표시: 제목·일시·상태, 업무 원장, 근거, 전사문 접고 펼치기", async ({ page }) => {
     let transcriptCalls = 0;
     await openDetail(page, "/v2/meetings/41", {
-      detail: (route) => json(route, 200, DETAIL),
+      detail: (route) => json(route, 200, withAllowed(DETAIL, ACCOUNT)),
       transcript: (route) => {
         transcriptCalls += 1;
         return json(route, 200, TRANSCRIPT);
@@ -148,7 +149,7 @@ test.describe("v2 회의록 상세", () => {
   test("오류 → 오류 문구와 다시 시도", async ({ page }) => {
     let fail = true;
     await openDetail(page, "/v2/meetings/41", {
-      detail: (route) => (fail ? json(route, 500, { detail: "서버 오류" }) : json(route, 200, DETAIL)),
+      detail: (route) => (fail ? json(route, 500, { detail: "서버 오류" }) : json(route, 200, withAllowed(DETAIL, ACCOUNT))),
     });
     const alert = page.getByRole("alert").filter({ hasText: "회의록을 불러오지 못했습니다" });
     await expect(alert).toBeVisible();
@@ -167,7 +168,7 @@ test.describe("v2 회의록 상세", () => {
   });
 
   test("목록으로 돌아가기 링크 → /v2/meetings", async ({ page }) => {
-    await openDetail(page, "/v2/meetings/41", { detail: (route) => json(route, 200, DETAIL) });
+    await openDetail(page, "/v2/meetings/41", { detail: (route) => json(route, 200, withAllowed(DETAIL, ACCOUNT)) });
     await expect(page.getByRole("heading", { level: 1, name: "주간 생산 현안 회의" })).toBeVisible();
     await page.getByRole("link", { name: "← 회의록 목록으로" }).click();
     await expect(page).toHaveURL(/\/v2\/meetings$/);

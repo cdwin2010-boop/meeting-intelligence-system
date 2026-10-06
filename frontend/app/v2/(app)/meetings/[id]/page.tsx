@@ -51,7 +51,6 @@ import { ManualItemDialog } from "@/components/v2/ManualItemDialog";
 import { MinutesDialog, MinutesPanel } from "@/components/v2/MinutesPanel";
 import { UploadUpdateDialog } from "@/components/v2/UploadUpdateDialog";
 import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
-import { useAuth } from "@/components/v2/AuthProvider";
 import { ChangeRequestDialog, type ChangeRequestTarget } from "@/components/v2/ChangeRequestDialog";
 import { useChangeRequests } from "@/components/v2/ChangeRequestHistory";
 import { MeetingActions, type MeetingActionKind } from "@/components/v2/MeetingActions";
@@ -60,7 +59,7 @@ import { ReasonDialog, type ReasonAction } from "@/components/v2/ReasonDialog";
 import { SpeakerDialog } from "@/components/v2/SpeakerDialog";
 import { ApiError, isAbortError, type MissingField } from "@/lib/v2/errors";
 import { closeActionItem, confirmActionItem, deleteActionItem } from "@/lib/v2/action-items";
-import { isManager } from "@/lib/v2/types";
+import { can, ITEM_ACTION, MEETING_ACTION } from "@/lib/v2/actions";
 import {
   deleteMeeting,
   downloadMeetingExcel,
@@ -164,18 +163,22 @@ interface SpeakerSummaryProps {
   /** 저장된 화자 매핑. null 이면(조회 전·실패·권한 없음) 요약을 보이지 않는다 */
   speakers: SpeakerMapping[] | null;
   notice: string | null;
+  /** 화자 지정 허용(edit_speakers) */
+  canEdit: boolean;
   onOpen: () => void;
 }
 
 /** 참석자 줄 아래: "화자 지정" 버튼 + 지정된 화자 이름 한 줄 요약 + 저장 결과 안내 */
-function SpeakerSummary({ speakers, notice, onOpen }: SpeakerSummaryProps) {
+function SpeakerSummary({ speakers, notice, canEdit, onOpen }: SpeakerSummaryProps) {
   const names = (speakers ?? []).map((sp) => sp.displayName).filter(Boolean);
   return (
     <span className="mt-2 flex flex-col gap-1">
       <span className="flex min-w-0 items-center gap-2">
-        <Button size="sm" onClick={onOpen} className="shrink-0">
-          화자 지정
-        </Button>
+        {canEdit ? (
+          <Button size="sm" onClick={onOpen} className="shrink-0">
+            화자 지정
+          </Button>
+        ) : null}
         {names.length > 0 ? (
           <span aria-label="지정된 화자" title={names.join(", ")} className="min-w-0 truncate text-xs text-mn-muted">
             화자 {names.join(", ")}
@@ -288,13 +291,16 @@ interface LedgerTableProps {
   onAddItem: () => void;
   onRequestChange: (item: ActionItem) => void;
   /** 관리자 이상이면 종결(확정된 업무만)·삭제 버튼을 그린다(권한 판정은 서버) */
-  manager: boolean;
+  /** 서버가 내려준 회의록 단위 허용 동작(업무 추가 버튼 판정). 업무 행은 각 업무의 allowedActions 를 쓴다 */
+  allowed: readonly string[] | undefined;
   onCloseItem: (item: ActionItem) => void;
   onDeleteItem: (item: ActionItem) => void;
 }
 
-function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, onSeek, onAddItem, onRequestChange, manager, onCloseItem, onDeleteItem }: LedgerTableProps) {
+function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, onSeek, onAddItem, onRequestChange, allowed, onCloseItem, onDeleteItem }: LedgerTableProps) {
   const needsCount = items.filter((item) => item.needsCompletion).length;
+  // 종결·삭제 버튼이 보이는 업무가 하나라도 있으면 동작 열을 넓힌다
+  const wideActions = items.some((it) => can(it.allowedActions, ITEM_ACTION.closeItem) || can(it.allowedActions, ITEM_ACTION.deleteItem));
   // 업무 확정: 한 번에 한 건. 거부되면 서버 문구(보완 필요 409·권한 403 등)를 원장 위에 보여 준다
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [notice, setNotice] = useState<{ tone: "ready" | "error"; text: string } | null>(null);
@@ -325,7 +331,7 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-base font-semibold tracking-tight">업무 원장</h2>
         <span className="flex items-center gap-3 text-sm text-mn-muted">
-          {manager ? (
+          {can(allowed, MEETING_ACTION.addItem) ? (
             <Button size="sm" onClick={onAddItem}>
               업무 추가
             </Button>
@@ -356,7 +362,7 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
             <col className="w-[210px]" />
             <col className="w-[160px]" />
             <col className="w-[240px]" />
-            <col className={manager ? "w-[320px]" : "w-[200px]"} />
+            <col className={wideActions ? "w-[320px]" : "w-[200px]"} />
           </colgroup>
           <thead>
             <tr className="h-10 border-b border-mn-border text-left text-xs text-mn-muted">
@@ -395,17 +401,19 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                     <td className="px-4">
                       <span className="flex items-center justify-between gap-2">
                         <span className="min-w-0 truncate">{item.assignee?.name ?? <span className="text-mn-muted">—</span>}</span>
-                        <Button
-                          size="sm"
-                          aria-label={`${item.title || "업무명 없음"} 담당자 ${item.assignee ? "변경" : "지정"}`}
-                          onClick={() => onEditAssignee(item)}
-                        >
-                          {item.assignee ? "변경" : "지정"}
-                        </Button>
+                        {can(item.allowedActions, ITEM_ACTION.setAssignee) ? (
+                          <Button
+                            size="sm"
+                            aria-label={`${item.title || "업무명 없음"} 담당자 ${item.assignee ? "변경" : "지정"}`}
+                            onClick={() => onEditAssignee(item)}
+                          >
+                            {item.assignee ? "변경" : "지정"}
+                          </Button>
+                        ) : null}
                       </span>
                     </td>
                     <td className="px-4">
-                      <DueEditor item={item} onSaved={onItemUpdated} />
+                      <DueEditor item={item} editable={can(item.allowedActions, ITEM_ACTION.setDue)} onSaved={onItemUpdated} />
                     </td>
                     <td className="px-4 py-3">
                       {item.needsCompletion && item.missingFields.length > 0 ? (
@@ -436,7 +444,7 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                     </td>
                     <td className="px-4">
                       <span className="flex items-center gap-2">
-                        {item.status === "pending" ? (
+                        {can(item.allowedActions, ITEM_ACTION.confirmItem) ? (
                           <Button
                             size="sm"
                             disabled={confirmingId !== null}
@@ -446,19 +454,21 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                             {confirmingId === item.id ? "확정 중…" : "확정"}
                           </Button>
                         ) : null}
-                        <Button
-                          size="sm"
-                          aria-label={`${item.title || "업무명 없음"} 수정 요청`}
-                          onClick={() => onRequestChange(item)}
-                        >
-                          수정 요청
-                        </Button>
-                        {manager && item.status === "confirmed" ? (
+                        {can(item.allowedActions, ITEM_ACTION.requestChange) ? (
+                          <Button
+                            size="sm"
+                            aria-label={`${item.title || "업무명 없음"} 수정 요청`}
+                            onClick={() => onRequestChange(item)}
+                          >
+                            수정 요청
+                          </Button>
+                        ) : null}
+                        {can(item.allowedActions, ITEM_ACTION.closeItem) ? (
                           <Button size="sm" aria-label={`${item.title || "업무명 없음"} 업무 종결`} onClick={() => onCloseItem(item)}>
                             종결
                           </Button>
                         ) : null}
-                        {manager ? (
+                        {can(item.allowedActions, ITEM_ACTION.deleteItem) ? (
                           <Button size="sm" aria-label={`${item.title || "업무명 없음"} 업무 삭제`} onClick={() => onDeleteItem(item)}>
                             삭제
                           </Button>
@@ -628,8 +638,6 @@ export default function V2MeetingDetailPage() {
   const meetingId = /^\d+$/.test(rawId) ? Number(rawId) : null;
 
   const [state, setState] = useState<LoadState>({ kind: "loading" });
-  const { account } = useAuth();
-  const manager = isManager(account?.rank);
   // 사유 입력 확인 팝업(종결·삭제·보류·재개·직권 종료 공용)
   const [reasonAction, setReasonAction] = useState<ReasonAction | null>(null);
   const [transcriptVersion, setTranscriptVersion] = useState(0);
@@ -760,14 +768,36 @@ export default function V2MeetingDetailPage() {
     [onSpeakersSaved],
   );
 
-  /** 담당자 저장 뒤: 서버가 준 업무로 그 행만 바꾼다(보완 필요 표시도 서버 값 그대로) */
-  const replaceItem = useCallback((saved: ActionItem) => {
-    setState((prev) =>
-      prev.kind === "ready"
-        ? { ...prev, meeting: { ...prev.meeting, actionItems: prev.meeting.actionItems.map((it) => (it.id === saved.id ? saved : it)) } }
-        : prev,
-    );
-  }, []);
+  /** 조용한 상세 재조회(화면을 비우지 않는다): 서버 기준의 업무 상태·허용 동작(allowedActions)·회의록 허용 동작으로 한꺼번에 바꾼다.
+   *  fallback: 재조회가 실패하면 서버가 준 업무로 그 행의 값만 바꾼다(허용 동작은 이전 값 유지, 다음 조회 때 서버 값으로 맞춰짐) */
+  const reloadDetail = useCallback(
+    async (fallback?: ActionItem) => {
+      if (meetingId === null) return;
+      controllerRef.current?.abort();
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      try {
+        setState({ kind: "ready", meeting: await getMeeting(meetingId, controller.signal) });
+      } catch (error) {
+        if (isAbortError(error) || !fallback) return;
+        setState((prev) =>
+          prev.kind === "ready"
+            ? {
+                ...prev,
+                meeting: {
+                  ...prev.meeting,
+                  actionItems: prev.meeting.actionItems.map((it) => (it.id === fallback.id ? { ...fallback, allowedActions: it.allowedActions } : it)),
+                },
+              }
+            : prev,
+        );
+      }
+    },
+    [meetingId],
+  );
+
+  /** 업무 동작(담당자·기한·확정) 뒤: 응답의 업무는 allowedActions 가 null 이므로 행을 그대로 바꾸지 않고 상세를 다시 받아 서버 기준으로 바꾼다 */
+  const replaceItem = useCallback((saved: ActionItem) => void reloadDetail(saved), [reloadDetail]);
 
   const onAssigneeSaved = useCallback(
     (saved: ActionItem) => {
@@ -793,7 +823,8 @@ export default function V2MeetingDetailPage() {
           }
         : prev,
     );
-  }, []);
+    void reloadDetail(); // 확정 뒤에는 허용 동작(회의록 확정 버튼 등)도 서버 기준으로
+  }, [reloadDetail]);
 
   const onRequestChange = useCallback((item: ActionItem) => {
     setChangeTarget({ itemId: item.id, label: item.title || "(업무명 없음)" });
@@ -907,11 +938,13 @@ export default function V2MeetingDetailPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => setChangeTarget({ itemId: null, label: "회의록 전체" })}>회의록 전체 수정 요청</Button>
-          {meeting.status === "awaiting_confirmation" ? (
+          {can(meeting.allowedActions, MEETING_ACTION.requestChange) ? (
+            <Button onClick={() => setChangeTarget({ itemId: null, label: "회의록 전체" })}>회의록 전체 수정 요청</Button>
+          ) : null}
+          {can(meeting.allowedActions, MEETING_ACTION.confirmMeeting) ? (
             <MeetingConfirmButton meetingId={meeting.id} title={meeting.title} onConfirmed={onMeetingConfirmed} />
           ) : null}
-          <MeetingActions manager={manager} phase={meeting.phase ?? "active"} status={meeting.status} onSelect={openMeetingAction} />
+          <MeetingActions allowed={meeting.allowedActions} onSelect={openMeetingAction} />
         </div>
       </header>
       <PhaseRecords meeting={meeting} />
@@ -930,7 +963,7 @@ export default function V2MeetingDetailPage() {
         minutesPanel={
           <MinutesPanel
             minutes={meeting.minutes}
-            manager={manager}
+            canEdit={can(meeting.allowedActions, MEETING_ACTION.editMinutes)}
             notice={minutesNotice}
             onEdit={() => {
               setMinutesNotice(null);
@@ -942,6 +975,7 @@ export default function V2MeetingDetailPage() {
           <SpeakerSummary
             speakers={speakers}
             notice={speakerNotice}
+            canEdit={can(meeting.allowedActions, MEETING_ACTION.editSpeakers)}
             onOpen={() => {
               setSpeakerNotice(null);
               setSpeakerOpen(true);
@@ -958,7 +992,7 @@ export default function V2MeetingDetailPage() {
         onSeek={onSeek}
         onAddItem={() => setManualOpen(true)}
         onRequestChange={onRequestChange}
-        manager={manager}
+        allowed={meeting.allowedActions}
         onCloseItem={openItemClose}
         onDeleteItem={openItemDelete}
       />
@@ -1000,6 +1034,7 @@ export default function V2MeetingDetailPage() {
         onClose={() => setChangeTarget(null)}
         onCreated={changeRequests.reload}
         onResolved={changeRequests.replace}
+        canResolve={can(meeting.allowedActions, MEETING_ACTION.resolveChangeRequest)}
       />
       <TranscriptPanel key={meeting.id} meetingId={meeting.id} version={transcriptVersion} onSeek={onSeek} />
     </>

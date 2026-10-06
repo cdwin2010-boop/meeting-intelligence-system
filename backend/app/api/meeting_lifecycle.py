@@ -12,7 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.action_schemas import ReasonBody
-from app.api.meeting_hold import ACTIVE_ITEM_STATUSES, reject_if_locked
+from app.api.meeting_hold import ACTIVE_ITEM_STATUSES
+from app.auth.locks import reject_if_locked
 from app.api.meeting_schemas import AccountRef
 from app.api.schemas import CamelModel
 from app.auth.access import can_confirm_meeting, get_visible_meeting

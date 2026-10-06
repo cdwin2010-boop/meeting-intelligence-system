@@ -4,6 +4,7 @@
  * fullText·segments 는 원본, displayText·speakers 는 이름 적용본.
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";
 const TOKEN_KEY = "mi.v2.accessToken";
@@ -64,7 +65,7 @@ async function openDetail(page: Page, mocks: Mocks) {
       ? json(route, 200, ACCOUNT)
       : json(route, 401, { detail: "인증이 필요합니다" }),
   );
-  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, (mocks.detail ?? (() => detail(null)))()));
+  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, withAllowed((mocks.detail ?? (() => detail(null)))() as never, ACCOUNT)));
   await page.route(/\/api\/meetings\/41\/transcript$/, (route) =>
     json(route, 200, (mocks.transcript ?? (() => ({ fullText: RAW_TEXT, segments: null, sttProvider: "fake", displayText: RAW_TEXT, speakers: [] })))()),
   );

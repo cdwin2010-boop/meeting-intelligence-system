@@ -35,6 +35,8 @@ export interface MeetingListPage {
   total: number;
   page: number;
   size: number;
+  /** 조회할 수 있는 단계(관리자 이상 4개, 담당자 진행중·종료). 없으면 진행중·종료만 보인다 */
+  availablePhases?: string[];
 }
 
 export const MEETINGS_PAGE_SIZE = 20;
@@ -67,6 +69,8 @@ export interface ActionItem {
   missingFields: MissingField[];
   /** 업무 출처(추가 필드): ai(AI 추출) | manual(수기·업로드 직권 등록). 없으면 ai */
   origin?: "ai" | "manual";
+  /** 이 사용자가 이 업무에서 지금 할 수 있는 동작(상세 응답에서만 채워지고 다른 응답은 null). lib/v2/actions.ts 의 can() 으로 판정 */
+  allowedActions?: string[] | null;
 }
 
 /** GET /api/meetings/{id} (권한 없음·다른 고객사·없음은 모두 404) */
@@ -89,6 +93,8 @@ export interface MeetingDetail {
   guestParticipants?: string[];
   /** 회의록 5개 항목(추가 필드). 없는 서버 응답이면 아직 생성되지 않은 것으로 본다 */
   minutes?: Minutes;
+  /** 이 사용자가 이 회의록에서 지금 할 수 있는 동작. 없으면 모든 동작 버튼을 숨긴다 */
+  allowedActions?: string[];
   actionItems: ActionItem[];
   /** reason: 처리 사유가 있는 사건(업무 종결·삭제, 회의록 보류·직권 종료·삭제)만, 그 밖에는 null */
   recentEvents: { eventType: string; actor: AccountRef | null; createdAt: string; reason?: string | null }[];
@@ -346,6 +352,10 @@ export interface HistoryEntry {
   batchId?: string | null;
   before: Record<string, unknown>;
   after: Record<string, unknown>;
+  /** 변경 전 값이 기록되지 않은 옛 사건(before 는 빈 값) */
+  beforeMissing?: boolean;
+  /** 참석자 변경 때 빠진 사람의 열람 영향(유지·열람 불가), 그 밖에는 null */
+  viewImpact?: { accountId: number; name: string; loginId: string; viewImpact: string }[] | null;
   changedBy: AccountRef | null;
   changedAt: string;
 }

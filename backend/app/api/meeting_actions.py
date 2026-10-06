@@ -18,7 +18,7 @@ from app.api.action_schemas import (
     MeetingConfirmResult,
     Resolution,
 )
-from app.api.meeting_hold import reject_if_locked
+from app.auth.locks import reject_if_locked
 from app.api.meeting_schemas import AccountRef
 from app.auth.access import can_confirm_meeting, get_visible_meeting
 from app.auth.deps import RANK_ORDER, get_current_account, require_rank

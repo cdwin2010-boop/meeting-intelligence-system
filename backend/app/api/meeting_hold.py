@@ -18,6 +18,7 @@ from app.api.action_schemas import ReasonBody
 from app.api.meeting_schemas import AccountRef
 from app.api.schemas import CamelModel
 from app.auth.access import can_confirm_meeting, get_visible_meeting
+from app.auth.locks import HOLDABLE_STATUSES, reject_if_locked
 from app.auth.deps import require_rank
 from app.db import get_session
 from app.models import Account, ActionItem, Meeting, MeetingHold, append_event
@@ -26,25 +27,8 @@ from app.services.reasons import latest_reason
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
-HOLDABLE_STATUSES = ("awaiting_confirmation", "confirmed")
 # 재개 때 기한을 비우는 업무(진행 중인 것만)
 ACTIVE_ITEM_STATUSES = ("pending", "confirmed")
-ON_HOLD_MESSAGE = "보류 중인 회의록입니다. 재개한 뒤에 다시 시도하세요"
-ENDED_MESSAGE = "종료된 회의록입니다. 수정할 수 없습니다"
-DELETED_MESSAGE = "삭제된 회의록입니다. 수정할 수 없습니다"
-
-
-def reject_if_locked(meeting: Meeting | None, *, allow_on_hold: bool = False) -> None:
-    """보류·종료·삭제된 회의록(과 그 업무)에 대한 변경 요청을 409 로 거부한다. 권한 판정(403) 뒤에 부른다.
-    allow_on_hold: 보류·재개 API 처럼 보류 상태 자체를 다루는 곳에서만 True."""
-    if meeting is None:
-        return
-    if meeting.deleted:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=DELETED_MESSAGE)
-    if meeting.on_hold and not allow_on_hold:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ON_HOLD_MESSAGE)
-    if meeting.ended:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ENDED_MESSAGE)
 
 
 class MeetingHoldResult(CamelModel):

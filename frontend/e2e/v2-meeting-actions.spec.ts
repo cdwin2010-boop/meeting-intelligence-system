@@ -3,6 +3,7 @@
  * 실제 백엔드 없이 page.route 로 v2 API 를 가로채 가짜로 응답한다(상세는 동작에 따라 바뀌는 가짜 상태). 데이터는 모두 가상이다.
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";
 const TOKEN_KEY = "mi.v2.accessToken";
@@ -41,7 +42,7 @@ async function openDetail(page: Page, account: typeof MANAGER, detail: Detail, f
   await page.route("**/api/auth/me", (route) =>
     route.request().headers()["authorization"] === `Bearer ${FAKE_TOKEN}` ? json(route, 200, account) : json(route, 401, { detail: "인증 필요" }),
   );
-  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, detail));
+  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, withAllowed(detail, account)));
   await page.route(/\/api\/meetings\/41\/transcript$/, (route) => json(route, 404, { detail: "전사문이 없습니다" }));
   await page.route(/\/api\/meetings\/41\/speakers$/, (route) => json(route, 200, { labels: [], speakers: [], autoAssignedItemIds: [] }));
   await page.route(/\/api\/meetings\/41\/change-requests$/, (route) => json(route, 200, []));
@@ -136,7 +137,7 @@ test.describe("v2 회의록 동작과 사유 팝업", () => {
     const detail = { ...baseDetail(), phase: "on_hold", onHold: true, onHoldBy: MANAGER, onHoldAt: "2026-10-02T01:00:00Z" };
     const calls = await openDetail(page, MANAGER, detail);
     await more(page).click();
-    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력", "수정 회의록 업로드", "삭제"]);
+    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력", "삭제"]);
     await page.keyboard.press("Escape");
     const resume = page.getByRole("button", { name: "재개", exact: true });
     await resume.click();
@@ -163,7 +164,7 @@ test.describe("v2 회의록 동작과 사유 팝업", () => {
     await expect(row(page, "견적서 송부")).toContainText("종결");
     expect(calls.bodies.end).toEqual([{ reason: "프로젝트 취소" }]);
     await more(page).click();
-    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력", "수정 회의록 업로드", "삭제"]);
+    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력", "삭제"]);
   });
 
   test("회의록 삭제: 상세에 남아 '삭제'로 표시, 동작 없음", async ({ page }) => {
@@ -177,7 +178,7 @@ test.describe("v2 회의록 동작과 사유 팝업", () => {
     await expect(page).toHaveURL(/\/v2\/meetings\/41$/);
     await expect(phaseLabel(page)).toHaveText("삭제");
     await more(page).click();
-    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력", "수정 회의록 업로드"]); // 삭제됨: 업로드까지만, 위험 동작 없음
+    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력"]); // 삭제됨: 서버 허용 동작은 다운로드·이력뿐
     await page.keyboard.press("Escape");
     expect(calls.bodies.delete).toEqual([{ reason: "잘못 올린 파일" }]);
   });
@@ -245,7 +246,7 @@ test.describe("v2 회의록 동작과 사유 팝업", () => {
     await page.reload();
     await expect(phaseLabel(page)).toHaveText("삭제");
     await more(page).click();
-    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력", "수정 회의록 업로드"]); // 삭제됨: 업로드까지만, 위험 동작 없음
+    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력"]); // 삭제됨: 서버 허용 동작은 다운로드·이력뿐
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "재개", exact: true })).toHaveCount(0);
   });

@@ -9,9 +9,9 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.meeting_hold import HOLDABLE_STATUSES, reject_if_locked
 from app.auth.access import VIEW_ALL_RANKS, can_confirm_meeting, can_write_item
 from app.auth.deps import has_rank
+from app.auth.locks import HOLDABLE_STATUSES, reject_if_locked
 from app.models import Account, ActionItem, Meeting
 from app.models.closure import PHASES
 

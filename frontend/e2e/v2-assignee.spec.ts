@@ -3,6 +3,7 @@
  * (/api/auth/me, /api/meetings/{id}, /transcript, /speakers, /api/accounts, PATCH /api/action-items/{id}) 데이터는 모두 가상이다.
  */
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { onJson, withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";
 const TOKEN_KEY = "mi.v2.accessToken";
@@ -55,12 +56,19 @@ async function openDetail(page: Page, mocks: Mocks) {
       ? json(route, 200, ACCOUNT)
       : json(route, 401, { detail: "인증이 필요합니다" }),
   );
-  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, detail(mocks.initial)));
+  // 서버는 쓰기 뒤 상세를 다시 받으면 바뀐 업무를 주므로, 성공한 PATCH 응답을 현재 상세에 반영한다
+  const current = detail(mocks.initial);
+  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, withAllowed(current, ACCOUNT)));
   await page.route(/\/api\/meetings\/41\/transcript$/, (route) => json(route, 404, { detail: "전사문이 없습니다" }));
   await page.route(/\/api\/meetings\/41\/speakers$/, (route) => json(route, 200, { labels: [], speakers: [], autoAssignedItemIds: [] }));
   await page.route("**/api/accounts", (route) => (mocks.accounts ?? ((r: Route) => json(r, 200, ACCOUNTS)))(route) as Promise<void>);
   await page.route(/\/api\/meetings\/41\/change-requests$/, (route) => json(route, 200, []));
-  await page.route(/\/api\/action-items\/103$/, (route) => mocks.patch(route) as Promise<void>);
+  await page.route(/\/api\/action-items\/103$/, (route) => {
+    onJson(route, (saved) => {
+      current.actionItems = current.actionItems.map((it) => (it.id === saved.id ? saved : it));
+    });
+    return mocks.patch(route) as Promise<void>;
+  });
   await page.goto("/v2/login");
   await page.evaluate(([key, token]) => window.sessionStorage.setItem(key, token), [TOKEN_KEY, FAKE_TOKEN]);
   await page.goto("/v2/meetings/41");

@@ -1,19 +1,17 @@
 "use client";
 
 /*
- * 회의록 제목 줄 동작. 더보기(⋯) 메뉴의 "엑셀 다운로드"·"변경 이력"은 열람 가능한 사람 전원에게, 나머지는 관리자 이상(manager)에게만 보인다
- * (실제 권한은 서버 판정, 거부되면 팝업이 서버 문구를 보여 준다).
- * - 관리자 이상: "수정 회의록 업로드"가 더해진다
- * - 진행중(확정 대기·확정): 더보기(⋯) 메뉴에 보류·직권 종료·삭제
- *   (처리 실패·내용 없음은 삭제만, 처리 중은 동작 없음 — 서버가 처리 중 삭제를 409 로 거부)
- * - 보류: "재개" 버튼 + 메뉴에 삭제 / 종료: 메뉴에 삭제 / 삭제됨: 동작 없음
+ * 회의록 제목 줄 동작. 어떤 버튼·메뉴가 보이는지는 서버가 내려준 허용 동작(allowedActions)으로만 정한다(직급·상태를 직접 비교하지 않음).
+ * - 더보기(⋯) 메뉴: 엑셀 다운로드(download_excel)·변경 이력(view_history)·수정 회의록 업로드(upload_update)·보류(hold_meeting)·직권 종료(end_meeting)·삭제(delete_meeting)
+ * - "재개" 버튼: resume_meeting
+ * - 허용 목록이 없으면 아무것도 그리지 않는다. 서버의 403·409 는 팝업이 서버 문구로 보여 준다
  * - 메뉴: Enter·Space 로 열기, ↑↓ 로 이동, Esc·Tab·바깥 클릭으로 닫기(Esc 는 더보기 버튼으로 포커스 복귀).
  *   항목을 고르면 더보기 버튼으로 포커스를 옮긴 뒤 팝업을 연다(팝업이 닫히면 그 버튼으로 돌아온다)
  */
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/mono";
-import type { MeetingPhase, MeetingStatus } from "@/lib/v2/meetings";
+import { can, MEETING_ACTION, type ActionName } from "@/lib/v2/actions";
 
 export type MeetingActionKind = "hold" | "end" | "delete" | "resume" | "download" | "history" | "upload";
 
@@ -28,31 +26,28 @@ const MENU_LABEL: Record<MenuKind, string> = {
   delete: "삭제",
 };
 
-/** 단계·상태별로 보이는 메뉴 항목 */
-function dangerItems(phase: MeetingPhase, status: MeetingStatus): MenuKind[] {
-  if (phase === "deleted" || status === "processing") return [];
-  if (phase === "active") return status === "awaiting_confirmation" || status === "confirmed" ? ["hold", "end", "delete"] : ["delete"];
-  return ["delete"]; // 보류·종료
-}
-
-function menuItems(phase: MeetingPhase, status: MeetingStatus, manager: boolean): MenuKind[] {
-  return manager ? ["download", "history", "upload", ...dangerItems(phase, status)] : ["download", "history"];
-}
+/** 메뉴 항목(표시 순서)과 필요한 허용 동작 */
+const MENU_ACTION: [MenuKind, ActionName][] = [
+  ["download", MEETING_ACTION.downloadExcel],
+  ["history", MEETING_ACTION.viewHistory],
+  ["upload", MEETING_ACTION.uploadUpdate],
+  ["hold", MEETING_ACTION.holdMeeting],
+  ["end", MEETING_ACTION.endMeeting],
+  ["delete", MEETING_ACTION.deleteMeeting],
+];
 
 interface MeetingActionsProps {
-  /** 관리자 이상이면 true(업로드·보류·종료·삭제·재개 표시) */
-  manager: boolean;
-  phase: MeetingPhase;
-  status: MeetingStatus;
+  /** 서버가 내려준 회의록 단위 허용 동작 */
+  allowed: readonly string[] | undefined;
   onSelect: (kind: MeetingActionKind) => void;
 }
 
-export function MeetingActions({ manager, phase, status, onSelect }: MeetingActionsProps) {
+export function MeetingActions({ allowed, onSelect }: MeetingActionsProps) {
   const menuId = useId();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const items = menuItems(phase, status, manager);
+  const items = MENU_ACTION.filter(([, name]) => can(allowed, name)).map(([kind]) => kind);
 
   // 열리면 첫 항목으로 포커스, 바깥을 누르면 닫기
   useEffect(() => {
@@ -93,7 +88,7 @@ export function MeetingActions({ manager, phase, status, onSelect }: MeetingActi
 
   return (
     <div className="flex items-center gap-2">
-      {manager && phase === "on_hold" ? <Button onClick={() => onSelect("resume")}>재개</Button> : null}
+      {can(allowed, MEETING_ACTION.resumeMeeting) ? <Button onClick={() => onSelect("resume")}>재개</Button> : null}
       {items.length > 0 ? (
         <div className="relative">
           <Button

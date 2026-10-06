@@ -4,7 +4,7 @@
  * 회의록 5개 항목(목적·주요 논의사항·결정사항·리스크·다음 안건) 표시와 직권 수정 팝업.
  * - AI 가 자동 생성하고 정보가 없으면 서버가 "내용없음"을 준다. 5개 항목이 아직 없는 기존 회의록(engine·수정 기록 모두 없음)은
  *   "아직 생성되지 않았습니다"로 안내하고, 직권 수정으로 채울 수 있다.
- * - "항목 수정"은 관리자 이상에게만 보이고(실제 권한은 서버: 지시자·총괄, 거부되면 서버 문구), 확정 이후에도 수정할 수 있다.
+ * - "항목 수정"은 허용 동작(edit_minutes)이 있을 때만 보이고(서버 판정, 거부되면 서버 문구), 확정 이후에도 수정할 수 있다.
  * - 팝업은 바뀐 항목만 보낸다. 비우면 서버가 "내용없음"으로 저장한다. 글자 수는 보여 주기만 하고 제한은 서버 판정에 맡긴다.
  *   저장 뒤 어느 항목이 바뀌었는지는 서버 응답을 저장 전 값과 비교해 알려 준다.
  */
@@ -23,26 +23,27 @@ export const minutesNotGenerated = (minutes: Minutes | undefined): boolean =>
 
 interface MinutesPanelProps {
   minutes: Minutes | undefined;
-  manager: boolean;
+  /** 항목 수정 허용(edit_minutes) */
+  canEdit: boolean;
   /** 저장 결과 안내(예: 변경된 항목 이름) */
   notice: string | null;
   onEdit: () => void;
 }
 
-export function MinutesPanel({ minutes, manager, notice, onEdit }: MinutesPanelProps) {
+export function MinutesPanel({ minutes, canEdit, notice, onEdit }: MinutesPanelProps) {
   const missing = minutesNotGenerated(minutes);
   return (
     <section aria-label="회의록 항목" className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xs text-mn-muted">회의록 항목</h2>
-        {manager ? (
+        {canEdit ? (
           <Button size="sm" onClick={onEdit}>
             항목 수정
           </Button>
         ) : null}
       </div>
       {missing ? (
-        <p className="text-sm text-mn-muted">아직 생성되지 않았습니다.{manager ? " 항목 수정으로 직접 채울 수 있습니다." : ""}</p>
+        <p className="text-sm text-mn-muted">아직 생성되지 않았습니다.{canEdit ? " 항목 수정으로 직접 채울 수 있습니다." : ""}</p>
       ) : (
         <dl className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {MINUTES_FIELDS.map((field) => {

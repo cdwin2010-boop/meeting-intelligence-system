@@ -6,7 +6,7 @@
  * - 쪽을 바꾸거나 다시 시도하면 이전 요청은 AbortController 로 취소한다
  * - 행(또는 회의명 링크)을 누르면 /v2/meetings/{id} 로 이동. 상태는 색 점과 글자 라벨을 함께 보여 준다
  * - 단계 탭(진행중 기본·종료·보류·삭제): 탭을 바꾸면 GET /api/meetings?phase=… 로 다시 조회하고 1쪽으로 돌아간다.
- *   로그인 계정 직급이 담당자로 확인되면 보류·삭제 탭은 숨긴다(서버도 403). 직급을 모르면 4개 모두 보이고 거부되면 서버 문구를 보여 준다
+ *   보이는 탭은 목록 응답의 availablePhases(관리자 이상 4개, 담당자 진행중·종료)를 따르고, 응답에 없으면 진행중·종료만 보인다
  * - 각 행에 단계 글자 라벨("단계" 열, 색 없음)
  */
 import Link from "next/link";
@@ -14,7 +14,6 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Badge, Button, StatusDot } from "@/components/mono";
-import { useAuth } from "@/components/v2/AuthProvider";
 import { detailPath, formatDateTime, meetingStatus, MEETING_PHASES, PHASE_LABEL, phaseText } from "@/components/v2/meeting-display";
 import { isAbortError } from "@/lib/v2/errors";
 import { listMeetings, type MeetingListItem, type MeetingListPage, type MeetingPhase } from "@/lib/v2/meetings";
@@ -27,8 +26,8 @@ type LoadState =
 // 처리 중·실패·내용 없음은 업무가 아직(또는 끝내) 없으므로 건수 대신 "—"
 const HAS_ITEMS = new Set(["awaiting_confirmation", "confirmed"]);
 
-// 담당자 직급이 볼 수 있는 단계(서버 규칙과 같음: 보류·삭제는 관리자 이상만)
-const STAFF_PHASES: MeetingPhase[] = ["active", "ended"];
+// 목록 응답에 availablePhases 가 없으면(조회 전·옛 응답) 진행중·종료만 보인다(안전한 쪽)
+const DEFAULT_PHASES: MeetingPhase[] = ["active", "ended"];
 
 const EMPTY_TEXT: Record<MeetingPhase, string> = {
   active: "등록된 회의록이 없습니다.",
@@ -124,9 +123,9 @@ function MeetingsTable({ items }: { items: MeetingListItem[] }) {
 }
 
 export default function V2MeetingsPage() {
-  const { account } = useAuth();
-  // 직급을 알 때 담당자면 진행중·종료만. 모르면(계정 정보 없음) 4개 모두
-  const phases = account?.rank === "staff" ? STAFF_PHASES : MEETING_PHASES;
+  // 보이는 탭은 서버가 목록 응답에 준 조회 가능 단계(availablePhases)를 따른다(직급을 직접 보지 않는다)
+  const [availablePhases, setAvailablePhases] = useState<string[] | undefined>(undefined);
+  const phases = availablePhases ? MEETING_PHASES.filter((p) => availablePhases.includes(p)) : DEFAULT_PHASES;
   const [phase, setPhase] = useState<MeetingPhase>("active");
   const [page, setPage] = useState(1);
   const [state, setState] = useState<LoadState>({ kind: "loading" });
@@ -140,6 +139,7 @@ export default function V2MeetingsPage() {
     setState({ kind: "loading" });
     try {
       const data = await listMeetings(target, controller.signal, targetPhase);
+      setAvailablePhases(data.availablePhases);
       setState({ kind: "ready", data });
     } catch (error) {
       if (isAbortError(error)) return;
