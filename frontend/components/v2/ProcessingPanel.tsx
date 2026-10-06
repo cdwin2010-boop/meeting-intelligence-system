@@ -7,7 +7,7 @@
  * - 최대 3건만 보이고 나머지는 "외 N건"(펼치기 버튼, 키보드 가능). 상태가 바뀌면 aria-live(polite)로 읽힌다.
  * - 3단계(전사·업무 추출·5개 항목) 진행 표시는 V3.0 과제라 만들지 않는다.
  */
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Button, StatusDot } from "@/components/mono";
@@ -21,10 +21,12 @@ import { formatElapsed, isActiveStatus } from "@/lib/v2/processing-status";
 const VISIBLE_LIMIT = 3;
 
 function ItemView({
-  item, now, onOpen, onReprocess, onDismiss,
+  item, now, viewing, onOpen, onReprocess, onDismiss,
 }: {
   item: TrackedItem;
   now: number;
+  /** 지금 이 회의록 상세를 보고 있음(경로의 회의록 id 가 같음) */
+  viewing: boolean;
   onOpen: () => void;
   onReprocess: () => void;
   onDismiss: () => void;
@@ -49,16 +51,22 @@ function ItemView({
         </span>
       )}
       <span className="flex flex-wrap gap-1">
-        <Button size="sm" aria-label={`${item.title} 열기`} onClick={onOpen}>
-          열기
-        </Button>
+        {viewing ? (
+          <span aria-label={`${item.title} 보는 중`} className="inline-flex h-8 items-center px-1 text-xs text-mn-muted max-md:min-h-11">
+            보는 중
+          </span>
+        ) : (
+          <Button size="sm" aria-label={`${item.title} 열기`} onClick={onOpen} className="max-md:min-h-11 max-md:min-w-11">
+            열기
+          </Button>
+        )}
         {item.status === "failed" && item.canReprocess ? (
-          <Button size="sm" aria-label={`${item.title} 다시 처리`} onClick={onReprocess}>
+          <Button size="sm" aria-label={`${item.title} 다시 처리`} onClick={onReprocess} className="max-md:min-h-11">
             다시 처리
           </Button>
         ) : null}
         {!active ? (
-          <Button size="sm" aria-label={`${item.title} 닫기`} onClick={onDismiss}>
+          <Button size="sm" aria-label={`${item.title} 닫기`} onClick={onDismiss} className="max-md:min-h-11 max-md:min-w-11">
             닫기
           </Button>
         ) : null}
@@ -69,6 +77,8 @@ function ItemView({
 
 export function ProcessingPanel() {
   const router = useRouter();
+  const pathname = usePathname();
+  const viewingId = /^\/v2\/meetings\/(\d+)$/.exec(pathname)?.[1];
   const { items, dismiss, refresh, announcement } = useProcessing();
   const [expanded, setExpanded] = useState(false);
   const [now, setNow] = useState(() => performance.now());
@@ -96,7 +106,7 @@ export function ProcessingPanel() {
     });
 
   return (
-    <section aria-label="처리 현황" aria-live="polite" className="flex flex-col gap-2">
+    <section id="processing-panel" aria-label="처리 현황" aria-live="polite" className="flex flex-col gap-2">
       <p className="sr-only" aria-label="처리 상태 변경 안내">
         {announcement}
       </p>
@@ -109,6 +119,7 @@ export function ProcessingPanel() {
                 key={item.jobId}
                 item={item}
                 now={now}
+                viewing={viewingId !== undefined && Number(viewingId) === item.meetingId}
                 onOpen={() => router.push(detailPath(item.meetingId))}
                 onReprocess={() => openReprocess(item)}
                 onDismiss={() => dismiss(item.jobId)}
@@ -116,7 +127,7 @@ export function ProcessingPanel() {
             ))}
           </ul>
           {hidden > 0 ? (
-            <Button size="sm" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
+            <Button size="sm" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)} className="max-md:min-h-11">
               {expanded ? "접기" : `외 ${hidden}건`}
             </Button>
           ) : null}

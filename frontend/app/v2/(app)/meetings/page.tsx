@@ -39,7 +39,7 @@ const EMPTY_TEXT: Record<MeetingPhase, string> = {
 /** 단계 탭. 현재 탭은 aria-selected 와 흰 밑줄·굵은 글자로 구분 */
 function PhaseTabs({ phases, current, onChange }: { phases: MeetingPhase[]; current: MeetingPhase; onChange: (p: MeetingPhase) => void }) {
   return (
-    <div role="tablist" aria-label="회의록 단계" className="flex gap-1 border-b border-mn-border">
+    <div role="tablist" aria-label="회의록 단계" className="flex gap-1 overflow-x-auto border-b border-mn-border max-md:flex-nowrap">
       {phases.map((phase) => {
         const selected = phase === current;
         return (
@@ -49,7 +49,7 @@ function PhaseTabs({ phases, current, onChange }: { phases: MeetingPhase[]; curr
             role="tab"
             aria-selected={selected}
             onClick={() => onChange(phase)}
-            className={`mn-focus -mb-px h-10 rounded-t-mn-control border-b-2 px-4 text-sm ${
+            className={`mn-focus -mb-px h-10 shrink-0 whitespace-nowrap rounded-t-mn-control border-b-2 px-4 text-sm max-md:h-11 max-md:aria-selected:before:content-['●_'] ${
               selected ? "border-mn-text font-semibold text-mn-text" : "border-transparent text-mn-muted hover:text-mn-text"
             }`}
           >
@@ -61,41 +61,47 @@ function PhaseTabs({ phases, current, onChange }: { phases: MeetingPhase[]; curr
   );
 }
 
+/** 카드 모드(768 미만)에서 셀 앞에 보이는 라벨: data-label 속성을 CSS 로 보여 준다(글자 내용·셀 순서는 그대로) */
+const CELL_LABEL =
+  "max-md:block max-md:px-0 max-md:before:mr-2 max-md:before:inline-block max-md:before:min-w-16 max-md:before:text-xs max-md:before:text-mn-muted max-md:before:content-[attr(data-label)]";
+
 function MeetingsTable({ items }: { items: MeetingListItem[] }) {
   const router = useRouter();
   return (
     <div className="overflow-x-auto rounded-mn-card border border-mn-border bg-mn-surface">
-      <table aria-label="회의록 목록" className="w-full min-w-[640px] table-fixed border-collapse text-sm">
-        <colgroup>
+      {/* 768 미만에서는 같은 table/tr/td 를 CSS 로 카드처럼 보이게 한다(DOM·셀 순서 그대로). 표 의미를 위해 role 을 명시한다 */}
+      <table role="table" aria-label="회의록 목록" className="w-full min-w-[640px] table-fixed border-collapse text-sm max-md:block max-md:min-w-0">
+        <colgroup className="max-md:hidden">
           <col className="w-[180px]" />
           <col />
           <col className="w-[160px]" />
           <col className="w-[96px]" />
           <col className="w-[160px]" />
         </colgroup>
-        <thead>
-          <tr className="h-10 border-b border-mn-border text-left text-xs text-mn-muted">
-            <th scope="col" className="px-4 font-medium">회의 일시</th>
-            <th scope="col" className="px-4 font-medium">회의명</th>
-            <th scope="col" className="px-4 font-medium">상태</th>
-            <th scope="col" className="px-4 text-right font-medium">업무</th>
-            <th scope="col" className="px-4 font-medium">단계</th>
+        <thead role="rowgroup" className="max-md:sr-only">
+          <tr role="row" className="h-10 border-b border-mn-border text-left text-xs text-mn-muted">
+            <th role="columnheader" scope="col" className="px-4 font-medium">회의 일시</th>
+            <th role="columnheader" scope="col" className="px-4 font-medium">회의명</th>
+            <th role="columnheader" scope="col" className="px-4 font-medium">상태</th>
+            <th role="columnheader" scope="col" className="px-4 text-right font-medium">업무</th>
+            <th role="columnheader" scope="col" className="px-4 font-medium">단계</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup" className="max-md:block">
           {items.map((meeting) => {
             const status = meetingStatus(meeting);
             return (
               // 행 전체 클릭으로 이동. 키보드·스크린리더는 회의명 링크로 같은 곳에 간다
               <tr
                 key={meeting.id}
+                role="row"
                 onClick={() => router.push(detailPath(meeting.id))}
-                className="h-12 cursor-pointer border-b border-mn-border last:border-b-0 hover:bg-mn-elevated"
+                className="h-12 cursor-pointer border-b border-mn-border last:border-b-0 hover:bg-mn-elevated max-md:flex max-md:h-auto max-md:flex-col max-md:gap-1 max-md:px-4 max-md:py-3"
               >
-                <td className="px-4">
+                <td role="cell" data-label="회의 일시" className={`px-4 ${CELL_LABEL}`}>
                   <span className="whitespace-nowrap font-mn-mono text-[13px]">{formatDateTime(meeting.heldAt)}</span>
                 </td>
-                <td className="truncate px-4">
+                <td role="cell" data-label="회의명" className={`truncate px-4 max-md:overflow-visible max-md:whitespace-normal max-md:break-words ${CELL_LABEL}`}>
                   <Link
                     href={detailPath(meeting.id)}
                     onClick={(event) => event.stopPropagation()}
@@ -104,13 +110,13 @@ function MeetingsTable({ items }: { items: MeetingListItem[] }) {
                     {meeting.title || "(제목 없음)"}
                   </Link>
                 </td>
-                <td className="px-4">
+                <td role="cell" data-label="상태" className={`px-4 ${CELL_LABEL}`}>
                   <StatusDot tone={status.tone} label={status.label} />
                 </td>
-                <td className="px-4 text-right font-mn-mono text-[13px]">
+                <td role="cell" data-label="업무" className={`px-4 text-right font-mn-mono text-[13px] max-md:text-left ${CELL_LABEL}`}>
                   {HAS_ITEMS.has(meeting.status) ? meeting.itemCount : <span className="text-mn-muted">—</span>}
                 </td>
-                <td className="px-4">
+                <td role="cell" data-label="단계" className={`px-4 ${CELL_LABEL}`}>
                   <Badge>{phaseText(meeting)}</Badge>
                 </td>
               </tr>
@@ -165,9 +171,9 @@ export default function V2MeetingsPage() {
   const lastIndex = data ? firstIndex + data.items.length - (data.items.length > 0 ? 1 : 0) : 0;
 
   return (
-    <>
+    <div className="flex flex-col gap-6 leading-[1.6]">
       <header>
-        <h1 className="text-[28px] font-semibold leading-9 tracking-tight text-mn-text">회의록</h1>
+        <h1 title="회의록" className="mn-page-title text-mn-text">회의록</h1>
         <p className="mt-1 text-sm text-mn-muted">등록된 회의록과 업무 현황입니다.</p>
       </header>
 
@@ -187,30 +193,42 @@ export default function V2MeetingsPage() {
           </Button>
         </div>
       ) : state.data.total === 0 ? (
-        <div role="status" className="rounded-mn-card border border-mn-border bg-mn-surface p-6 text-sm text-mn-muted">
-          {EMPTY_TEXT[phase]}
-        </div>
+        <>
+          <div role="status" className="rounded-mn-card border border-mn-border bg-mn-surface p-6 text-sm text-mn-muted">
+            {EMPTY_TEXT[phase]}
+          </div>
+          {phase === "active" ? (
+            <div>
+              <Link
+                href="/v2/upload"
+                className="mn-focus inline-flex h-10 items-center justify-center rounded-mn-control border border-mn-accent bg-mn-accent px-4 text-sm font-medium text-mn-on-accent hover:bg-mn-accent-hover max-md:h-11"
+              >
+                첫 회의 올리기
+              </Link>
+            </div>
+          ) : null}
+        </>
       ) : (
         <>
           <MeetingsTable items={state.data.items} />
-          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-mn-muted">
-            <span className="font-mn-mono text-[13px]">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-mn-muted max-md:justify-center">
+            <span className="font-mn-mono text-[13px] max-md:hidden">
               {firstIndex}–{lastIndex} / {state.data.total}
             </span>
             <div className="flex items-center gap-3">
               <span aria-live="polite" className="font-mn-mono text-[13px]">
                 {state.data.page} / {lastPage} 쪽
               </span>
-              <Button size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+              <Button size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="max-md:min-h-11 max-md:min-w-11">
                 이전
               </Button>
-              <Button size="sm" disabled={page >= lastPage} onClick={() => setPage((p) => p + 1)}>
+              <Button size="sm" disabled={page >= lastPage} onClick={() => setPage((p) => p + 1)} className="max-md:min-h-11 max-md:min-w-11">
                 다음
               </Button>
             </div>
           </div>
         </>
       )}
-    </>
+    </div>
   );
 }
