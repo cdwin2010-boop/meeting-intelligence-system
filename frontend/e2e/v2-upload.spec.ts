@@ -105,6 +105,36 @@ test.describe("v2 회의록 올리기", () => {
     expect(calls).toBe(0);
   });
 
+  test("파일 선택 표시: 고르기 전 '선택한 파일 없음', 고른 뒤 이름·크기와 '파일 다시 선택'", async ({ page }) => {
+    await openUpload(page, (route) => json(route, 202, { meetingId: 77, jobId: 5 }));
+    const form = page.locator("form");
+    await expect(form.locator("button", { hasText: "음성 파일 선택" })).toBeVisible(); // 숨긴 입력(file 입력도 button 역할)과 구분해 버튼 요소만
+    await expect(form.getByText("선택한 파일 없음")).toBeVisible();
+    // 숨긴 입력은 접근성 이름 "음성 파일 선택"으로 찾을 수 있고, 거기에 파일을 넣어도 동작한다
+    await expect(page.getByLabel("음성 파일 선택")).toHaveClass(/sr-only/);
+    await page.getByLabel("음성 파일 선택").setInputFiles(AUDIO);
+    await expect(form.getByText("선택한 파일 없음")).toHaveCount(0);
+    await expect(form.getByText("weekly_1001.m4a")).toBeVisible();
+    await expect(form.getByText("10 B")).toBeVisible();
+    await expect(form.locator("button", { hasText: "파일 다시 선택" })).toBeVisible();
+    await expect(form.locator("button", { hasText: "음성 파일 선택" })).toHaveCount(0);
+  });
+
+  test("끌어다 놓은 뒤에도 같은 표시(파일 이름·크기, 파일 다시 선택)", async ({ page }) => {
+    await openUpload(page, (route) => json(route, 202, { meetingId: 77, jobId: 5 }));
+    const form = page.locator("form");
+    const zone = form.locator("div", { has: page.getByText("음성 파일을 끌어다 놓거나 선택하세요") }).first();
+    await zone.evaluate((node) => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([new Uint8Array(2048)], "dropped_0930.m4a", { type: "audio/mp4" }));
+      node.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    });
+    await expect(form.getByText("dropped_0930.m4a")).toBeVisible();
+    await expect(form.getByText("2.0 KB")).toBeVisible();
+    await expect(form.locator("button", { hasText: "파일 다시 선택" })).toBeVisible();
+    await expect(form.getByText("선택한 파일 없음")).toHaveCount(0);
+  });
+
   test("형식 오류(415) → 서버 문구 표시, 이동 없음", async ({ page }) => {
     await openUpload(page, (route) =>
       json(route, 415, { detail: "허용하지 않는 파일 형식입니다(m4a, mp3, mp4, ogg, wav, webm)." }),

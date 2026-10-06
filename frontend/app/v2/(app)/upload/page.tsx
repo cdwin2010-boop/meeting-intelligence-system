@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type DragEvent, type FormEvent } from "react";
 
 import { Button, StatusDot } from "@/components/mono";
+import { FilePicker } from "@/components/v2/FilePicker";
 import { detailPath, V2_MEETINGS_PATH } from "@/components/v2/meeting-display";
 import { ParticipantPicker } from "@/components/v2/ParticipantPicker";
 import { isAbortError } from "@/lib/v2/errors";
@@ -37,12 +38,6 @@ function toOffsetIso(date: string, time: string): string | null {
   const sign = offsetMin >= 0 ? "+" : "-";
   const abs = Math.abs(offsetMin);
   return `${date}T${time}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
-}
-
-/** 파일 크기 → 사람이 읽는 단위 */
-function formatSize(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export default function V2UploadPage() {
@@ -135,7 +130,7 @@ export default function V2UploadPage() {
           aria-label="회의록 올리기"
           className="flex flex-col gap-5 rounded-mn-card border border-mn-border bg-mn-surface p-6"
         >
-          {/* 파일: 끌어다 놓기 영역 + 숨긴 file 입력(라벨 버튼으로 연다) */}
+          {/* 파일: 끌어다 놓기 영역 + 공용 FilePicker(버튼·상태 글자·숨긴 입력) */}
           <div
             onDragOver={(event) => {
               event.preventDefault();
@@ -152,24 +147,16 @@ export default function V2UploadPage() {
             <p id={fileHintId} className="text-xs text-mn-muted">
               허용 형식과 최대 용량은 서버 설정을 따르며, 벗어나면 올릴 때 알려 드립니다.
             </p>
-            {/* 숨긴 file 입력을 라벨 안에 넣어 키보드 포커스 링이 라벨(버튼 모양)에 보이게 한다 */}
-            <label className="inline-flex h-8 cursor-pointer items-center rounded-mn-control border border-mn-border px-3 text-[13px] font-medium hover:bg-mn-elevated has-[:focus-visible]:[box-shadow:var(--mn-focus-ring)]">
-              <input
-                type="file"
-                accept="audio/*,video/mp4,video/webm"
-                aria-describedby={fileHintId}
-                disabled={submitting}
-                onChange={(event) => pickFile(event.target.files?.[0] ?? null)}
-                className="sr-only"
-              />
-              음성 파일 선택
-            </label>
-            {file ? (
-              <p className="text-sm" aria-live="polite">
-                <span className="font-medium">{file.name}</span>{" "}
-                <span className="font-mn-mono text-[13px] text-mn-muted">{formatSize(file.size)}</span>
-              </p>
-            ) : null}
+            <FilePicker
+              file={file}
+              buttonLabel="음성 파일 선택"
+              inputLabel="음성 파일 선택"
+              accept="audio/*,video/mp4,video/webm"
+              describedBy={fileHintId}
+              disabled={submitting}
+              className="justify-center"
+              onPick={pickFile}
+            />
           </div>
 
           <div className="flex flex-col gap-2">
