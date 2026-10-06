@@ -39,6 +39,13 @@ const SNAKE_TO_CAMEL: Record<string, MinutesField> = {
   purpose: "purpose", discussion: "discussion", decisions: "decisions", risks: "risks", next_agenda: "nextAgenda", nextAgenda: "nextAgenda",
 };
 
+/** 파일 크기 표시(B·KB·MB) */
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 const where = (issue: UploadIssue) => (issue.row ? `${issue.sheet} ${issue.row}행` : issue.sheet);
 
 interface UploadUpdateDialogProps {
@@ -165,24 +172,48 @@ export function UploadUpdateDialog({ meetingId, open, onClose, onApplied }: Uplo
       panelClassName="w-full max-w-3xl"
     >
       <div className="mt-3 flex max-h-[62vh] flex-col gap-4 overflow-y-auto pr-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor={fileId} className="text-sm font-medium">
-            수정한 파일
-          </label>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* 브라우저 기본 파일 입력은 화면에서 숨기되(스크린 리더에는 "수정한 파일"로 읽힘) 아래 버튼이 같은 입력을 연다 */}
           <input
             id={fileId}
             ref={fileInputRef}
             type="file"
+            aria-label="수정한 파일"
+            tabIndex={-1}
             disabled={busy !== null}
             onChange={(event) => {
-              setFile(event.target.files?.[0] ?? null);
+              const picked = event.target.files?.[0] ?? null;
+              // 같은 파일을 고쳐 다시 골라도 변경 알림이 오도록 입력값을 비운다(고른 파일은 상태에 보관)
+              event.target.value = "";
+              if (!picked) return;
+              setFile(picked);
               setPreview(null);
               setChoices({});
               setError(null);
               setErrorList([]);
             }}
-            className="mn-focus min-w-0 text-sm text-mn-text"
+            className="sr-only"
           />
+          <Button
+            variant="secondary"
+            aria-describedby={`${fileId}-status`}
+            disabled={busy !== null}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {file ? "파일 다시 선택" : "수정할 파일 선택"}
+          </Button>
+          <span id={`${fileId}-status`} aria-live="polite" className="flex min-w-0 flex-1 items-baseline gap-2 text-sm">
+            {file ? (
+              <>
+                <span title={file.name} className="min-w-0 truncate text-mn-text">
+                  {file.name}
+                </span>
+                <span className="shrink-0 font-mn-mono text-[13px] text-mn-muted">{formatFileSize(file.size)}</span>
+              </>
+            ) : (
+              <span className="text-mn-muted">선택한 파일 없음</span>
+            )}
+          </span>
           <Button size="sm" disabled={!file || busy !== null} onClick={() => file && void runPreview(file, {})}>
             {busy === "preview" ? "확인 중…" : "미리보기"}
           </Button>

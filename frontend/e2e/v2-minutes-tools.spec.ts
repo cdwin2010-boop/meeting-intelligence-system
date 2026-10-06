@@ -371,6 +371,59 @@ test.describe("v2 수정 회의록 업로드", () => {
     await expect(dialog(page).getByRole("button", { name: "변경 적용" })).toBeDisabled();
   });
 
+  test("파일 선택 표시: 고르기 전 '선택한 파일 없음', 고른 뒤 이름·크기와 '파일 다시 선택'", async ({ page }) => {
+    await openDetail(page, MANAGER, baseDetail());
+    await chooseMenu(page, "수정 회의록 업로드");
+    const box = dialog(page);
+    const pick = box.getByRole("button", { name: "수정할 파일 선택" });
+    await expect(pick).toBeVisible();
+    await expect(box.getByText("선택한 파일 없음")).toBeVisible();
+    await expect(box.getByRole("button", { name: "미리보기" })).toBeDisabled();
+    // 브라우저 기본 입력은 화면에 보이지 않지만 접근성 이름("수정한 파일")으로 찾을 수 있고, 거기에 파일을 넣어도 동작한다
+    const input = box.getByLabel("수정한 파일");
+    await expect(input).toHaveClass(/sr-only/);
+    await input.setInputFiles({ ...XLSX, name: "아주아주아주긴파일이름".repeat(8) + ".xlsx", buffer: Buffer.alloc(2048) });
+    await expect(box.getByText("선택한 파일 없음")).toHaveCount(0);
+    await expect(box.getByText("2.0 KB")).toBeVisible();
+    await expect(box.getByTitle(/아주아주아주긴파일이름/)).toBeVisible();
+    await expect(box.getByRole("button", { name: "파일 다시 선택" })).toBeVisible();
+    await expect(box.getByRole("button", { name: "수정할 파일 선택" })).toHaveCount(0);
+    await expect(box.getByRole("button", { name: "미리보기" })).toBeEnabled();
+  });
+
+  test("파일을 다시 고르면 이전 미리보기를 비우고 처음 단계로", async ({ page }) => {
+    await openDetail(page, MANAGER, baseDetail(), { preview: ambiguous });
+    await chooseMenu(page, "수정 회의록 업로드");
+    const box = dialog(page);
+    await box.getByLabel("수정한 파일").setInputFiles(XLSX);
+    await box.getByText("4 B").waitFor();
+    await box.getByRole("button", { name: "미리보기" }).click();
+    await expect(box.getByLabel("업무 변경")).toBeVisible();
+    await box.getByLabel("수정한 파일").setInputFiles({ ...XLSX, name: "다시.xlsx" });
+    await expect(box.getByText("다시.xlsx")).toBeVisible();
+    await expect(box.getByLabel("업무 변경")).toHaveCount(0);
+    await expect(box.getByLabel("동명이인 선택")).toHaveCount(0);
+    await expect(box.getByRole("button", { name: "변경 적용" })).toBeDisabled();
+  });
+
+  test("키보드(Enter·Space)로 파일 선택 버튼을 누르면 파일 선택창이 열리고 포커스 링이 보인다", async ({ page }) => {
+    await openDetail(page, MANAGER, baseDetail());
+    await chooseMenu(page, "수정 회의록 업로드");
+    const pick = dialog(page).getByRole("button", { name: "수정할 파일 선택" });
+    await pick.focus();
+    await page.keyboard.press("Tab"); // 키보드로 이동해 와야 :focus-visible 링이 켜진다
+    await page.keyboard.press("Shift+Tab");
+    await expect(pick).toBeFocused();
+    await expect(pick).toHaveCSS("box-shadow", /rgb/); // 포커스 링(box-shadow)
+    for (const key of ["Enter", "Space"]) {
+      const chooser = page.waitForEvent("filechooser");
+      await page.keyboard.press(key);
+      await (await chooser).setFiles(XLSX);
+      await expect(dialog(page).getByText("4 B")).toBeVisible();
+      await dialog(page).getByRole("button", { name: "파일 다시 선택" }).focus();
+    }
+  });
+
   test("Esc 로 닫으면 적용 요청 없음", async ({ page }) => {
     const calls = await openDetail(page, MANAGER, baseDetail());
     await chooseMenu(page, "수정 회의록 업로드");
