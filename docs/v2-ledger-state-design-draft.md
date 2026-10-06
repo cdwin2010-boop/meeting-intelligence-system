@@ -677,3 +677,142 @@ A·B·C·D는 팀장 회신 2026-10-01로 [확정]됐다(부록 B). 각 표에�
 - E2: `backend/` 신규 구축, 검증된 stub 파이프라인(STT·추출·상태 전이)만 이식.
 - E3: 동등성 확인 전까지 stub 유지 후 폐기.
 - E4: v1 `stub.db`는 1회성 이전 스크립트로 옮기며, 복사본으로 먼저 검증.
+
+
+---
+
+## 부록 D. v2.0 구현 기준 (2026-10-06, 태그 `v2.0.0` 기준)
+
+- 이 부록은 **구현된 코드와 `CHANGELOG.md`(미배포 v2 항목)에서 사실로 확인한 내용만** 적는다. 라벨은 **[구현 기준]**이며, 앞의 본문(초안)과 다르면 이 부록이 우선한다. 본문은 고치지 않았다.
+- 관련 구현은 커밋 해시로 가리킨다. 알려진 제한사항·이후 과제는 여기서 다시 쓰지 않고 `CHANGELOG.md`의 "v2.0 기준선 마감" 항목을 본다.
+- 모든 JSON 필드는 camelCase, 동작 이름·상태값은 snake_case다. 서버 거부 코드는 401 인증·404 볼 수 없음(없음·다른 고객사·권한 없음 구분 안 함)·403 권한 없음·409 상태 충돌·400 입력 오류·422 입력 검증이다.
+
+### D-0 초안과 구현이 다른 곳 [구현 기준]
+| 초안(본문) | 구현 |
+|---|---|
+| 3.3 회의록 상태 `draft`·`in_review`·`settled`, 정정 사건 | 회의록 상태는 `processing`·`awaiting_confirmation`·`confirmed`·`failed`·`no_content`(`meetings.status`)이고, 보류·종료·삭제는 상태가 아니라 별도 "단계"(D-1)다. `draft`·`in_review`·`settled`와 정정(correction)은 구현하지 않았다. |
+| 7.2 표 스케치(`ledger_event`, `minutes`, `task_item`, `policy` 등) | 사건 원장은 `events`(entity_type·entity_id·event_type·actor_account_id·payload·created_at, 추가 전용)이고, 회의록 5개 항목은 `meeting_minutes`, 업무는 `action_items`다. 표 이름·열은 스케치와 다르다. |
+| 사건 목록의 `item_viewed` [제안] | 열람 기록은 사건이 아니라 `meeting_views` 표(D-11)다. |
+| `minutes_published` 사건과 공개(`draft`→`in_review`) 단계 | 구현하지 않았다. |
+| 9) 첫 과제 순서(인증·계정 먼저) | 인증·계정(ID 로그인, 직급 3단계)은 구현됐다. |
+
+### D-1 회의록 단계와 목록 탭, 열람 범위
+- 단계는 `active`(진행중) · `ended`(종료) · `on_hold`(보류) · `deleted`(삭제)이고, 판정 우선순위는 삭제 > 보류 > 종료 > 진행중이다(`app/models/closure.py`의 `meeting_phase`·`phase_condition`). 회의록 `status`와 별개의 축이다.
+- 보류·종료·삭제는 `meetings` 표를 고치지 않고 별도 표(`meeting_holds`, `meeting_closures`)에서 계산한다(SQLite 에서 `meetings` 표를 다시 만들면 실패한 전례).
+- 목록 `GET /api/meetings?phase=`(기본 `active`). 담당자(staff)는 `active`·`ended`만 조회하고 `on_hold`·`deleted`는 403, 관리자 이상은 4단계 모두. 응답 최상위 `availablePhases`가 이 값을 준다(관리자 이상 4개, 담당자 `active`·`ended`). 화면 탭은 이 값을 따른다.
+- 열람 범위: 같은 고객사만. 관리자·지시자는 고객사 전체, 담당자는 참석·담당 업무(삭제 제외)·등록한 회의록만이며 **담당자는 보류·삭제된 회의록을 열람할 수 없다**(404). 판정은 `app/auth/access.py`의 `get_visible_meeting` 한 곳이다.
+- 관련: 커밋 `2625c21`, `b0c0a39`.
+
+### D-2 보류·재개
+- `POST /api/meetings/{id}/hold`(사유 필수), `POST /api/meetings/{id}/resume`(사유 없음). 보류 상태는 `meeting_holds`(회의록당 1행: 보류 여부, 마지막 보류·재개한 사람·시각).
+- 권한: 회의록 확정 권한과 같은 판정(`can_confirm_meeting`: 지시자 또는 총괄 관리자). 그 밖의 관리자·담당자 직급 403, 볼 수 없으면 404. 대상 상태는 `awaiting_confirmation`·`confirmed`만(그 밖 409), 종료·삭제된 회의록 409. 이미 보류인 회의록의 보류, 보류 중이 아닌 회의록의 재개는 멱등 200(변경·사건 없음).
+- 보류 중에는 딸린 업무의 **상태를 바꾸지 않고** "보류된 회의록의 업무"로 본다: 할 일·자동 확정·메일·안내에서 빠지고, 수정·확정·종결·삭제·화자 저장·회의록 확정 등 쓰기는 409(`reject_if_locked`, 문구 "보류 중인 회의록입니다. 재개한 뒤에 다시 시도하세요").
+- 재개: 진행 중 업무(`pending`·`confirmed`)의 기한(날짜·미확정 표시)을 모두 비워 "보완 필요"로 만든다(확정된 업무도 이때만 예외). 종결·삭제 업무는 그대로. 비운 업무마다 `item.updated`(`via=meeting_resumed`)를 남긴다. 확정 대기 회의록의 `auto_confirm_at`은 보류했던 기간만큼 뒤로 미룬다(남은 기간 유지). 화면은 재개 뒤 "기한을 다시 설정해야 하는 업무 N건"을 보여 주고 업무 행에서 기한(날짜 또는 "미확정")을 다시 넣는다.
+- 사건: `meeting.on_hold`(사유 포함), `meeting.resumed`. 관련: 커밋 `84e28df`, `df28fcb`.
+
+### D-3 종료(자동·직권)
+- 자동 종료: 업무 종결 API 가 업무를 종결한 직후, 삭제되지 않은 업무가 1건 이상이고 **모두 종결**이면 회의록을 종료한다(구분 `auto`, 처리자 없음, 사유 없음). 업무가 하나도 없으면 종료하지 않는다(`app/services/lifecycle.py`).
+- 직권 종료: `POST /api/meetings/{id}/end`(사유 필수). 권한은 `can_confirm_meeting`. 대상은 `awaiting_confirmation`·`confirmed`만(그 밖 409), 보류·삭제 중 409. 이미 종료면 멱등 200. 진행 중 업무(확정 대기·확정)를 **확정 전 업무도 함께 모두 종결**(업무마다 `item.closed`, `via=meeting_ended`)한 뒤 종료(구분 `manager`).
+- 기록: `meeting_closures`(종료 구분 `auto`|`manager`·처리자·시각)와 사건 `meeting.ended`(payload 에 `endKind`, 직권 종료는 `reason`). 종료된 회의록의 쓰기는 409("종료된 회의록입니다. 수정할 수 없습니다").
+- 관련: 커밋 `2625c21`.
+
+### D-4 삭제
+- 업무: `POST /api/action-items/{id}/delete`(사유 필수, 지시자·총괄만). 회의록: `POST /api/meetings/{id}/delete`(사유 필수, 지시자·총괄만, 처리 중 회의록은 409). 이미 삭제면 멱등 200.
+- 행은 지우지 않고 **"삭제됨"으로 표시**한다: 업무는 `action_items.status=deleted`(+삭제자·시각), 회의록은 `meeting_closures.deleted_by/at`. 사건(`item.deleted`·`meeting.deleted`)에 사유와 처리자를 남긴다(흔적 보관).
+- 회의록이 삭제되면 딸린 업무·수정 요청은 행을 그대로 두되 회의록 단계(`deleted`)로 목록·할 일·자동 확정·메일에서 빠진다. 업무가 삭제되면 그 업무에 남은 수정 요청(사건)은 수정 요청 조회·해결·할 일 "수정 요청 대기"에서 숨긴다(사건 행은 지우지 않는다). 삭제된 회의록은 관리자 이상이 상세·"삭제" 탭에서 볼 수 있다.
+- 관련: 커밋 `b921e61`, `121400e`, `2625c21`.
+
+### D-5 처리 사유
+- **사유 필수 동작 5개**: 업무 삭제, 업무 종결, 회의록 보류, 회의록 삭제, 회의록 직권 종료. 직권 종료로 함께 종결되는 업무에도 같은 사유가 남는다.
+- **사유 없는 동작**: 자동 종료, 재개(누가·언제만 기록), 5개 항목·참석자 직권 수정, 수기 업무 등록.
+- 요청 본문 `{ "reason": 글자 }`: 앞뒤 공백을 지운 뒤 비어 있거나 2000자를 넘으면 422. 내용의 옳고 그름은 판단하지 않는다(비어 있는지만 확인).
+- 저장 위치: 사건 `events.payload.reason`(처리자는 `actor_account_id`, 시각은 `created_at`). 사유 도입 전 사건에는 사유가 없고 소급하지 않는다. 조회: 회의록 상세의 `onHoldReason`·`endReason`·`deleteReason`. 화면은 사유 입력 확인 팝업을 쓴다.
+- 관련: 커밋 `9237877`, `42cefc4`.
+
+### D-6 허용 동작(allowedActions)
+- **원칙**: 화면 버튼은 직급·상태를 직접 비교하지 않고 서버가 내려준 `allowedActions`로만 보이거나 숨긴다. 목록이 없거나 null 이면 모든 동작 버튼을 숨긴다. **목록은 화면 표시용이며, 서버의 거부(403·409)가 최종 안전장치다.** 판정 규칙은 새로 만들지 않고 기존 함수(`can_confirm_meeting`·`can_write_item`·`has_rank`·`reject_if_locked`)를 `app/auth/actions.py`가 그대로 부른다.
+- 회의록 상세 응답 `allowedActions`(회의록 단위) 이름: `confirm_meeting`, `hold_meeting`, `resume_meeting`, `end_meeting`, `delete_meeting`, `edit_minutes`, `upload_update`, `add_item`, `edit_speakers`, `resolve_change_request`, `request_change`, `download_excel`, `view_history`.
+- 상세의 각 업무 `allowedActions`(업무 단위; 다른 응답에서는 null) 이름: `confirm_item`, `close_item`, `delete_item`, `set_assignee`, `set_due`, `request_change`.
+- 회의록 단위 조건(역할: 총괄 = 등록 관리자 또는 담당자 등록 회의록의 참석 관리자, 또는 지시자):
+
+| 동작 | 누가 | 상태 조건 |
+|---|---|---|
+| `request_change`·`download_excel`·`view_history` | 열람 가능한 전원 | 항상 |
+| `resolve_change_request` | 관리자 이상 | 항상(잠금 상태와 무관) |
+| `edit_minutes`·`upload_update`·`add_item`·`edit_speakers` | 총괄·지시자 | 보류·종료·삭제가 아닐 때 |
+| `confirm_meeting` | 총괄·지시자 | 잠기지 않았고 `awaiting_confirmation` |
+| `hold_meeting` | 총괄·지시자 | 잠기지 않았고 `awaiting_confirmation`·`confirmed` |
+| `end_meeting` | 총괄·지시자 | 잠기지 않았고 `awaiting_confirmation`·`confirmed` |
+| `resume_meeting` | 총괄·지시자 | 보류 중(종료·삭제 아님), 상태 `awaiting_confirmation`·`confirmed` |
+| `delete_meeting` | 총괄·지시자 | 삭제되지 않았고 처리 중(`processing`)이 아닐 때 |
+
+- 업무 단위 조건: `request_change`는 삭제되지 않은 모든 업무(전원). 회의록이 잠기지 않았을 때만: `confirm_item`(`pending`)·`close_item`(`confirmed`)·`set_assignee`·`set_due`(`pending`·`confirmed`)는 업무 수정 권한이 있는 사람(지시자, 또는 총괄이거나 그 업무의 담당자인 관리자)에게, `delete_item`은 총괄·지시자에게. 삭제된 업무는 목록에 없다.
+- 요약(관리자 이상 총괄 기준): 보류·종료·삭제 회의록에서는 쓰기 동작이 빠지고(보류는 `resume_meeting`·`delete_meeting`만 남음, 종료는 `delete_meeting`, 삭제는 읽기 동작만), 총괄이 아닌 관리자는 읽기 동작과 `resolve_change_request`·본인 담당 업무의 수정·확정·종결만, 담당자는 읽기 동작과 `request_change`만 갖는다.
+- 업무 확정 버튼(`confirm_item`)은 보완 필요 업무에도 포함된다. 누르면 서버가 보완 필요 409 문구를 돌려준다(허용 목록은 보완 필요 여부를 보지 않는다).
+- 참고: 홈(할 일)의 관리자 전용 카드는 아직 직급으로 판단한다(제한사항은 `CHANGELOG.md`).
+- 관련: 커밋 `068240a`(서버), `10b3163`(화면, `reject_if_locked`를 `app/auth/locks.py`로 이동).
+
+### D-7 회의록 5개 항목
+- 항목: 목적(`purpose`), 주요 논의사항(`discussion`), 결정사항(`decisions`), 리스크(`risks`), 다음 안건(`next_agenda`; 응답은 `nextAgenda`). 저장은 별도 표 `meeting_minutes`(회의록당 1행; 항목 5개, `engine`·`extract_model`·`prompt_version`·생성 시각, 마지막 직권 수정자·시각).
+- 생성: 음성 처리 때 AI 가 자동 작성한다. **업무 추출과 별도의 호출**(5개 항목 전용 프롬프트·고정 출력 형식)이라 5개 항목 응답이 없거나 형식이 틀려도 업무 추출 결과는 그대로 저장되고 5개 항목만 "내용없음"이 된다. 추출된 정보가 없는 항목도 "내용없음". 처리 엔진 기록은 전사 엔진 이름(`engine`, 운영 `gemini`)이다. 5개 항목이 아직 없는 회의록은 응답에 모두 "내용없음"과 `engine=null`로 오고 화면은 "아직 생성되지 않았습니다"로 안내한다.
+- 기존 `summary`·`decisions` 칸은 예전 그대로 두고(값이 저장되지 않음), 상세 응답에 `minutes` 객체를 추가했다. 참석자는 새 칸 없이 기존 `meeting_participants`를 쓰고, 계정 없는 참석자는 `meeting_guest_participants`(D-9)에 둔다.
+- 직권 수정 `PATCH /api/meetings/{id}/minutes`(보낸 항목만, 항목당 5000자 초과 422): 권한은 `can_confirm_meeting`(총괄·지시자), **확정 이후에도 가능**, 사유는 받지 않는다. 보류·종료·삭제 409. 비우면 "내용없음"으로 저장하고, 바뀐 항목만 변경 이력(구분 "직권 수정")에 남기며 바뀐 것이 없으면 이력도 없다.
+- 관련: 커밋 `108b6bc`.
+
+### D-8 공통 변경 이력
+- 별도 이력 표를 만들지 않고 **사건 원장 `events`를 재사용**한다. 공통 구조: 대상 종류(`entity_type`)·대상 ID(`entity_id`)·구분(`event_type`)·변경자(`actor_account_id`)·시각(`created_at`)·변경 전/후(`payload.before`·`payload.after`, 바뀐 칸만). 기록은 `app/services/history.py`의 `record_change`로만 한다.
+- 이력으로 보이는 구분(`HISTORY_KINDS`, 코드 → 화면 표시 이름): `minutes.overridden` → "직권 수정", `participants.overridden` → "직권 수정", `item.upload_updated` → "업무 갱신", `item.manual_added` → "직권 등록", `item.updated` → "업무 수정".
+- 조회 `GET /api/meetings/{id}/history`: 열람 가능한 사람, 최신순 최대 200건(쪽 인자 없음). 응답 필드: `id`, `targetType`, `targetId`, `kind`(표시 이름), `kindCode`, `batchId`, `before`, `after`, `beforeMissing`, `viewImpact`, `changedBy`, `changedAt`.
+- `beforeMissing`: `payload`에 변경 전 값이 없는 옛 사건이면 true(`before`는 빈 값, 화면은 "변경 전 기록 없음"). `viewImpact`: 참석자 변경 사건에만 있고, 참석자에서 빠진 사람이 그 회의록을 계속 볼 수 있는지(예: "열람 유지(담당 업무)", "열람 불가(참석자에서 빠져 볼 수 없게 됨)")를 담는다. `batchId`: 같은 업로드 갱신으로 생긴 이력의 묶음 식별자.
+- **이력에 보이지 않는 기존 사건 종류**(원장에는 있음): `item.created`, `item.confirmed`, `item.auto_confirmed`, `item.closed`, `item.deleted`, `meeting.created`, `meeting.awaiting_confirmation`, `meeting.confirmed`, `meeting.auto_confirmed`, `meeting.on_hold`, `meeting.resumed`, `meeting.ended`, `meeting.deleted`, `meeting.speakers_updated`, `meeting.no_content`, `meeting.failed`, `job.queued`·`job.started`·`job.completed`·`job.failed`·`job.no_content`, `transcript.saved`, `change_request.created`, `change_request.resolved`.
+- `item.updated`는 업무 수정 API 외에 재개로 비워진 기한(`via=meeting_resumed`)과 화자 매핑 자동 채움(`via=speaker_mapping`)도 같은 구분 "업무 수정"으로 보인다.
+- 관련: 커밋 `108b6bc`, `f15427e`, `068240a`.
+
+### D-9 엑셀 다운로드와 수정 회의록 업로드 갱신
+- 다운로드 `GET /api/meetings/{id}/export`: 열람 가능한 전원, 읽기 전용 `.xlsx`. 시트·열 이름은 `app/services/export_sheets.py` 상수 한 곳에서만 정한다.
+  - 시트 "회의 정보": 머리줄 `항목`·`내용`, 행 순서 `제목`·`일시`·`상태`·`등록자`·`확정 정보`·`참석자`(이름(계정 ID), 계정이 없으면 이름(미등록))·`목적`·`주요 논의사항`·`결정사항`·`리스크`·`다음 안건`.
+  - 시트 "업무": 열 `업무 ID`·`업무명`·`담당자`·`담당자 계정 ID`·`기한`(날짜 또는 "미확정")·`상태`·`근거 타임스탬프`·`근거 인용문`. 삭제된 업무는 제외. 셀은 모두 글자로 저장한다(수식 실행 방지).
+  - 한글 파일명은 `Content-Disposition: filename*=UTF-8''…`로 주고, 화면은 서버 헤더에 의존하지 않고 "{회의명}_회의록.xlsx"로 직접 저장한다.
+- 업로드 갱신: 권한은 `can_confirm_meeting`(총괄·지시자), 보류·종료·삭제 409, 다른 고객사 404. **서버에 상태를 저장하지 않는 2단계**다.
+  1. `POST /api/meetings/{id}/update-upload/preview`(multipart `file`, `choices`): 파일을 검증하고 변경 예정(업무별 변경 전·후, 건너뜀과 사유, 새 행, 참석자 변경과 열람 영향, 5개 항목 변경, 경고, 동명이인 후보)만 돌려준다. 아무것도 저장하지 않는다. 오류가 있어도 200이고 `canApply=false`.
+  2. `POST /api/meetings/{id}/update-upload/apply`: 같은 파일·`choices`(`{"row:3": 계정ID, "participant:이름": 계정ID}`)로 한 번에 전부 또는 아무것도 적용하지 않는다. 오류가 있거나 동명이인 선택이 빠지면 400(목록만).
+- 갱신 규칙: **확정 대기(`pending`) 업무만** 업무명·담당자·기한을 파일 내용으로 갱신한다. 확정·종결·삭제된 업무는 바꾸지 않고 사유와 함께 건너뛴다. 업무 ID 가 빈 행은 새 업무로 **목록 맨 아래에 추가**(근거 "등록자 직권 지정", D-10). **파일에 없는 업무는 삭제하지 않는다**(삭제는 사유 필수인 삭제 기능으로만). 빈 셀은 기존 값을 지우지 않는다(새 행의 빈 칸은 빈 상태 → 보완 필요). `상태`·`근거` 열은 읽기 전용이라 무시한다. 다른 회의록·없는 업무 ID 는 행 오류. 수식 셀은 계산하지 않고 무시한다(경고).
+- 담당자·참석자 찾기: 계정 ID(`login_id`) 우선, 없으면 이름으로 찾는다(같은 고객사 활성 계정만). 같은 이름의 계정이 둘 이상이면 **동명이인** — 적용 전에 총괄이 선택해야 한다. 계정이 없는 이름은 업무 담당자가 될 수 없어 담당자 미지정(보완 필요)+경고(기존 업무는 기존 담당자 유지). 참석자는 계정이 없는 이름을 `meeting_guest_participants`(회의록별 이름 글자, 표시 "이름(미등록)", 열람 권한·담당자·알림과 무관)에 둔다. 참석자에서 빠지는 사람의 열람 영향은 미리보기와 이력(`viewImpact`)에 남는다.
+- 회의록 5개 항목·참석자는 확정 이후에도 업로드로 바꾼다(구분 "직권 수정"). 이력은 같은 업로드를 `batchId`로 묶는다. 용량·행 수 상한은 설정값 `UPDATE_MAX_FILE_KB`(기본 2048)·`UPDATE_MAX_ROWS`(기본 1000)이며 초과·형식 오류는 서버가 판정한다(413·400).
+- 관련: 커밋 `108b6bc`, `f15427e`, `febf678`.
+
+### D-10 수기 업무 등록과 "등록자 직권 지정"
+- `POST /api/meetings/{id}/action-items`(201): 총괄·지시자(`can_confirm_meeting`), 보류·종료·삭제 409, 다른 고객사 404. 전사·추출이 실패한 회의록(`failed`·`no_content`)에도 쓸 수 있다.
+- 입력: 업무명(필수, 비면 422, 500자 초과 422), 담당자 계정(같은 고객사 활성 계정, 아니면 400), 기한 날짜 또는 "미확정"(날짜와 미확정을 함께 주면 400). 업로드 갱신의 새 행도 같은 방식으로 만든다.
+- 근거는 **"등록자 직권 지정"**(`evidence_quote`)이고 근거 시각은 없다. 수기 업무는 AI 추출 업무와 `extract_model="manual"`로 구분하며 응답 `origin`이 `manual`(AI 는 `ai`)이다. 화면은 "수기" 글자 배지와 직권 지정 근거를 보여 준다. 등록자·시각은 변경 이력(구분 "직권 등록", `item.manual_added`)의 변경자·시각이다.
+- 필수 항목 규칙과 확정 절차는 AI 업무와 같다: 담당자·기한이 비면 "보완 필요"이고 확정할 수 없다.
+- 관련: 커밋 `f15427e`, `febf678`.
+
+### D-11 열람 기록
+- 저장: `meeting_views`(회의록 ID·계정 ID 복합 키, 고객사 ID, 첫 열람 시각, 마지막 열람 시각). 같은 사용자의 반복 열람은 행을 늘리지 않고 마지막 열람 시각만 갱신한다.
+- 기록 시점: 회의록 **상세 조회가 성공했을 때만**(목록·전사문·404·타 고객사는 기록하지 않음). 기록이 실패해도 조회는 정상으로 응답한다(`app/services/history.py`의 `record_meeting_view`). 담당자의 열람 확인은 열람 기록일 뿐 확정을 유예하지 않는다(부록 C-3).
+- 읽는 곳: ① 할 일의 "자동 확정됨(미열람)" — 확정 시각 이후 열람이 없으면 표시(`app/api/me.py`). ② 일일 메일 — 담당자별 "아직 열어 보지 않은 담당 회의록 수"(`app/jobs/daily_mail.py`). 열람해도 확정 대기·보완 필요 안내(관리자 대상)와 자동 확정 대상 선정은 바뀌지 않는다.
+- 관련: 마이그레이션 `a1cba09b5031`(`meeting_views`·`notices`), 커밋 `068240a`.
+
+### D-12 오디오 재생
+- 원본은 `UPLOAD_DIR/{고객사 ID}/{uuid}.{확장자}`에 저장되고 `source_documents.file_path`(UPLOAD_DIR 기준 상대 경로)로 회의록과 연결된다. 경로는 DB 값만 쓰고 사용자 입력 경로는 받지 않으며 저장 폴더 밖은 404.
+- 재생 주소 발급 `GET /api/meetings/{id}/audio-url`(로그인 필요): 회의록 열람 가능한 전원(전사문 조회와 같은 `get_visible_meeting`, 새 권한 규칙 없음), 음성이 없으면 404 "음성 파일이 없습니다". 응답 `{ url, expiresInSec }`: `url`은 API 기본 주소 뒤에 붙이는 경로 `/meetings/{id}/audio?token=…`, **유효 시간 약 10분(600초)**.
+- 토큰: 로그인 토큰과 같은 서명 방식(HS256)·비밀값(`SECRET_KEY`)을 쓰되 `sub` 없이 `typ=audio`로 구분해 서로 통하지 않는다. 로그인 토큰을 주소에 넣지 않는다.
+- 스트리밍 `GET /api/meetings/{id}/audio?token=`: 서명 주소로만 접근(위조·만료·다른 회의록 토큰 401). 단일 `Range`를 지원해 206 부분 전송, 잘못된 범위 416, 파일 형식에 맞는 Content-Type. **재생할 때마다 계정 활성 여부와 열람 권한을 다시 판정**한다(발급 뒤 보류·삭제·권한 변경이 즉시 반영, 볼 수 없으면 404). 근거 타임스탬프·전사문 구간 시각을 누르면 그 위치부터 재생한다.
+- 관련: 커밋 `fb5c1cf`.
+
+### D-13 수정 요청 흐름
+- 수정 요청은 상태가 아니라 사건이다(`change_request.created`; payload `comment`(1~2000자)·`itemId`(없으면 회의록 전체)). 회의록·업무 상태와 자동 확정 시계에 영향을 주지 않는다(부록 C-4). 작성은 **열람 가능한 전원**이 할 수 있다(`POST /api/meetings/{id}/change-requests`, 대상 업무는 같은 회의록의 삭제되지 않은 업무만, 아니면 400).
+- 해결(수락·반려): `POST /api/meetings/{id}/change-requests/{requestId}/resolve`(`decision` = `accepted`|`rejected`, 답변 `reason` 선택 2000자 이하). 권한은 관리자 이상(`manager` 이상)이며 허용 동작 `resolve_change_request`. 결정은 사건 `change_request.resolved`로 남고(처리자·시각·직급), **상위 직급 우선**: 이미 결정된 요청을 더 낮은 직급이 다시 결정하면 409, 같거나 높은 직급은 덮어쓴다(이전 결정 사건은 지우지 않음).
+- 할 일의 "수정 요청 대기": 해결 API 와 같은 판정(관리자 이상 + 열람 가능)으로 처리할 수 있는 **미해결** 요청만, **본인이 남긴 요청은 제외**한다(`app/api/me.py`). 보류·종료·삭제 회의록의 요청은 모든 할 일에서 빠진다. 삭제된 업무의 요청은 조회·해결·할 일에서 숨긴다(D-4).
+- **결정 (2026-10-06)**: 수정 요청 남기기·해결은 보류·종료·삭제 회의록에서도 허용하는 현행을 유지한다(`request_change`·`resolve_change_request`는 잠금 상태와 무관, 서버가 거부하지 않음).
+- 관련: 커밋 `ea1e7c8`, `e35003e`, `4f0be59`, `121400e`.
+
+### D-14 화자 매핑
+- 저장: `meeting_speakers`(회의록·화자 표기 `label`당 1행; 계정 `account_id` 또는 미등록 이름 `display_name` 중 정확히 하나). 미등록 이름은 전사문 표시용 글자일 뿐 계정·담당자로 쓰지 않으며 표시는 **"이름(미등록)"**이다. 전사 원문(`fullText`·구간)은 그대로, `displayText`와 `speakers`가 이름 적용본이다.
+- 조회 `GET /api/meetings/{id}/speakers`: 열람 가능하고 (관리자 이상 또는 그 회의록의 등록자)여야 한다(아니면 403). 저장 `PUT`(전체 교체): 위에 더해 `can_confirm_meeting`(지시자·총괄)이 있어야 하고(아니면 403), 보류·종료·삭제 409. 화자 표기는 그 회의록 전사문에 나오는 것만, 각 표기는 같은 고객사 활성 계정 또는 미등록 이름 중 정확히 하나(어긋나면 400, 아무것도 저장하지 않음). **직급 우선**: 지금 매핑을 저장한 사람보다 직급이 낮으면 409.
+- 저장 뒤 **담당자 자동 채움**: 계정으로 매핑된 화자 표기·계정 이름이 업무 추출 때 기록된 담당자 글자(`item.created`의 `assignee_name`)와 정확히 하나의 계정으로 맞는, 담당자가 빈 확정 대기 업무를 채운다(같은 글자에 계정이 둘 이상이면 채우지 않음). 채운 업무는 `item.updated`(`via=speaker_mapping`)로 남고 응답 `autoAssignedItemIds`에 담긴다. 사건 `meeting.speakers_updated`.
+- 관련: 커밋 `1eced8f`, `7eea74e`.
+
+### D-15 알려진 제한사항·이후 과제
+- 이 문서에 새로 쓰지 않는다. `CHANGELOG.md`의 "v2.0 기준선 마감"(알려진 제한사항, 이후 과제)을 본다.
