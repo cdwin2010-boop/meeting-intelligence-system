@@ -65,6 +65,8 @@ export interface ActionItem {
   evidenceQuote: string | null;
   needsCompletion: boolean;
   missingFields: MissingField[];
+  /** 업무 출처(추가 필드): ai(AI 추출) | manual(수기·업로드 직권 등록). 없으면 ai */
+  origin?: "ai" | "manual";
 }
 
 /** GET /api/meetings/{id} (권한 없음·다른 고객사·없음은 모두 404) */
@@ -83,6 +85,10 @@ export interface MeetingDetail {
   registeredBy: AccountRef;
   origin: string;
   participants: AccountRef[];
+  /** 계정이 없는 참석자 이름(추가 필드, 화면에는 "이름(미등록)"). 없는 서버 응답이면 빈 목록 */
+  guestParticipants?: string[];
+  /** 회의록 5개 항목(추가 필드). 없는 서버 응답이면 아직 생성되지 않은 것으로 본다 */
+  minutes?: Minutes;
   actionItems: ActionItem[];
   /** reason: 처리 사유가 있는 사건(업무 종결·삭제, 회의록 보류·직권 종료·삭제)만, 그 밖에는 null */
   recentEvents: { eventType: string; actor: AccountRef | null; createdAt: string; reason?: string | null }[];
@@ -297,4 +303,150 @@ export interface AudioUrl {
 
 export function getAudioUrl(meetingId: number, signal?: AbortSignal): Promise<AudioUrl> {
   return request<AudioUrl>(`/meetings/${encodeURIComponent(String(meetingId))}/audio-url`, { signal });
+}
+
+/** 회의록 5개 항목(MinutesOut). 정보가 없는 항목은 서버가 "내용없음"을 준다 */
+export const MINUTES_EMPTY = "내용없음";
+export const MINUTES_FIELDS = ["purpose", "discussion", "decisions", "risks", "nextAgenda"] as const;
+export type MinutesField = (typeof MINUTES_FIELDS)[number];
+export const MINUTES_LABEL: Record<MinutesField, string> = {
+  purpose: "목적",
+  discussion: "주요 논의사항",
+  decisions: "결정사항",
+  risks: "리스크",
+  nextAgenda: "다음 안건",
+};
+
+export interface Minutes {
+  purpose: string;
+  discussion: string;
+  decisions: string;
+  risks: string;
+  nextAgenda: string;
+  /** 만든 처리 엔진. null 이면 5개 항목이 아직 생성되지 않은 회의록 */
+  engine: string | null;
+  updatedBy: AccountRef | null;
+  updatedAt: string | null;
+}
+
+/** PATCH /api/meetings/{id}/minutes: 보낸 항목만 바꾸고(비우면 "내용없음"), 바뀐 항목만 이력에 남는다. 지시자·총괄만(서버 판정), 보류·종료·삭제는 409 */
+export function updateMinutes(id: number, fields: Partial<Record<MinutesField, string>>, signal?: AbortSignal): Promise<Minutes> {
+  return request<Minutes>(`/meetings/${encodeURIComponent(String(id))}/minutes`, { method: "PATCH", body: fields, signal });
+}
+
+/** GET /api/meetings/{id}/history 의 한 줄(쪽 인자 없음, 최신순 최대 200건) */
+export interface HistoryEntry {
+  id: number;
+  targetType: string;
+  targetId: number;
+  /** 화면 구분: 직권 수정 | 업무 갱신 | 직권 등록 */
+  kind: string;
+  kindCode?: string;
+  /** 같은 업로드 묶음 식별자(업로드로 생긴 이력만) */
+  batchId?: string | null;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  changedBy: AccountRef | null;
+  changedAt: string;
+}
+
+export function getHistory(id: number, signal?: AbortSignal): Promise<HistoryEntry[]> {
+  return request<HistoryEntry[]>(`/meetings/${encodeURIComponent(String(id))}/history`, { signal });
+}
+
+/** GET /api/meetings/{id}/export: 엑셀(.xlsx) 파일. 인증 헤더가 필요해 fetch 로 받는다(파일명은 화면에서 만든다) */
+export function downloadMeetingExcel(id: number, signal?: AbortSignal): Promise<Blob> {
+  return request<Blob>(`/meetings/${encodeURIComponent(String(id))}/export`, { asBlob: true, signal });
+}
+
+/** 업로드 미리보기·적용의 항목 변경 칸(업무 PATCH 사건과 같은 키) */
+export interface ItemChange {
+  title?: string;
+  assigneeId?: number | null;
+  dueDate?: string | null;
+  dueUndetermined?: boolean;
+}
+
+export interface UploadIssue {
+  sheet: string;
+  row: number | null;
+  message: string;
+}
+
+export interface UploadAmbiguity {
+  /** choices 의 키(예: "row:3", "participant:박동명") */
+  key: string;
+  name: string;
+  sheet: string;
+  row: number | null;
+  candidates: { id: number; name: string; loginId: string }[];
+}
+
+export interface UploadPreview {
+  canApply: boolean;
+  errors: UploadIssue[];
+  warnings: UploadIssue[];
+  ambiguities: UploadAmbiguity[];
+  items: {
+    updates: { itemId: number; row: number; title: string; before: ItemChange; after: ItemChange }[];
+    unchanged: number[];
+    skipped: { itemId: number; row: number; title: string; status: string; reason: string }[];
+    added: { row: number; title: string; assigneeId: number | null; dueDate: string | null; dueUndetermined: boolean; evidence: string }[];
+  };
+  participants: {
+    before: string[];
+    after: string[];
+    added: string[];
+    removed: { accountId: number; name: string; loginId: string; viewImpact: string }[];
+  } | null;
+  /** 5개 항목 변경. 키는 서버 칸 이름(purpose·discussion·decisions·risks·next_agenda) */
+  minutes: Record<string, { before: string; after: string }>;
+}
+
+export interface UploadApplyResult {
+  batchId: string;
+  updatedItemIds: number[];
+  addedItemIds: number[];
+  skipped: { itemId: number; reason: string }[];
+  unchangedItemIds: number[];
+  participantsChanged: boolean;
+  minutesChanged: string[];
+  warnings: UploadIssue[];
+}
+
+function uploadForm(file: File, choices: Record<string, number>): FormData {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("choices", JSON.stringify(choices));
+  return form;
+}
+
+/** POST /api/meetings/{id}/update-upload/preview: 아무것도 저장하지 않고 변경 예정만 돌려준다(오류가 있어도 200, canApply=false) */
+export function previewUpload(id: number, file: File, choices: Record<string, number>, signal?: AbortSignal): Promise<UploadPreview> {
+  return request<UploadPreview>(`/meetings/${encodeURIComponent(String(id))}/update-upload/preview`, {
+    method: "POST",
+    body: uploadForm(file, choices),
+    signal,
+  });
+}
+
+/** POST /api/meetings/{id}/update-upload/apply: 같은 파일·선택값으로 한 번에 적용(오류·동명이인 선택 누락은 400 으로 아무것도 적용하지 않음) */
+export function applyUpload(id: number, file: File, choices: Record<string, number>, signal?: AbortSignal): Promise<UploadApplyResult> {
+  return request<UploadApplyResult>(`/meetings/${encodeURIComponent(String(id))}/update-upload/apply`, {
+    method: "POST",
+    body: uploadForm(file, choices),
+    signal,
+  });
+}
+
+export interface ManualItemInput {
+  title: string;
+  assigneeId?: number;
+  dueDate?: string;
+  dueUndetermined?: boolean;
+}
+
+/** POST /api/meetings/{id}/action-items: 수기 업무 등록(근거는 서버가 "등록자 직권 지정"으로 둔다). 지시자·총괄만(서버 판정) */
+export function createManualItem(id: number, input: ManualItemInput, signal?: AbortSignal): Promise<ActionItem> {
+  return request<ActionItem>(`/meetings/${encodeURIComponent(String(id))}/action-items`, { method: "POST", body: input, signal });
 }

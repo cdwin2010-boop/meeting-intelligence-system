@@ -109,7 +109,8 @@ test.describe("v2 회의록 상세", () => {
     await expect(header).toContainText("확정 대기");
     await expect(header).toContainText("2026-10-01 10:00"); // Asia/Seoul
     await expect(page.getByRole("region", { name: "회의 개요" })).toContainText("자동 확정 예정");
-    await expect(page.getByRole("region", { name: "회의 개요" })).toContainText("3호기 납기를 10월 24일로 조정합니다.");
+    // 요약·결정사항 자리는 5개 항목으로 대체(이 응답엔 minutes 가 없어 생성 전 안내)
+    await expect(page.getByRole("region", { name: "회의 개요" })).toContainText("아직 생성되지 않았습니다");
 
     const rows = page.getByRole("table", { name: "업무 원장" }).locator("tbody tr");
     await expect(rows).toHaveCount(3);

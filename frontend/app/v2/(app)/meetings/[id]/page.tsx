@@ -25,6 +25,8 @@
  *   실제 권한(지시자·총괄 등)은 서버 판정, 거부(403·409·422)는 팝업 안에 서버 문구
  * - 음성 재생: 개요 아래 한 줄 재생기(AudioPlayer). 근거 타임스탬프·전사문 구간 시각을 누르면 그 위치부터 재생(SeekTime).
  *   재생 주소는 약 10분 유효 서명 주소(GET /meetings/{id}/audio-url), 음성이 없거나 발급이 거부되면 서버 문구와 "음성 파일이 없습니다"
+ * - 회의록 5개 항목(MinutesPanel): 요약·결정사항 자리를 대체. "항목 수정"(관리자 이상)은 MinutesDialog. 제목 줄 ⋯ 메뉴: 엑셀 다운로드·변경 이력(전원),
+ *   수정 회의록 업로드(관리자 이상, UploadUpdateDialog). 업무 원장 머리 "업무 추가"(관리자 이상, ManualItemDialog), 수기 업무는 "수기" 배지·직권 지정 근거
  * - 다른 회의록으로 바뀌거나 화면을 떠나면 이전 요청은 AbortController 로 취소한다
  */
 import Link from "next/link";
@@ -44,6 +46,10 @@ import {
 } from "@/components/v2/meeting-display";
 import { DueEditor } from "@/components/v2/DueEditor";
 import { AudioPlayer, type SeekRequest } from "@/components/v2/AudioPlayer";
+import { HistoryDialog } from "@/components/v2/HistoryDialog";
+import { ManualItemDialog } from "@/components/v2/ManualItemDialog";
+import { MinutesDialog, MinutesPanel } from "@/components/v2/MinutesPanel";
+import { UploadUpdateDialog } from "@/components/v2/UploadUpdateDialog";
 import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
 import { useAuth } from "@/components/v2/AuthProvider";
 import { ChangeRequestDialog, type ChangeRequestTarget } from "@/components/v2/ChangeRequestDialog";
@@ -57,6 +63,7 @@ import { closeActionItem, confirmActionItem, deleteActionItem } from "@/lib/v2/a
 import { isManager } from "@/lib/v2/types";
 import {
   deleteMeeting,
+  downloadMeetingExcel,
   endMeeting,
   getMeeting,
   getSpeakers,
@@ -64,6 +71,7 @@ import {
   resumeMeeting,
   getTranscript,
   type ActionItem,
+  type Minutes,
   type MeetingConfirmResult,
   type MeetingDetail,
   type SpeakerMapping,
@@ -101,16 +109,16 @@ function itemStatus(item: ActionItem): { tone: StatusDotTone; label: string } {
 }
 
 /** 결정사항은 형식이 정해지지 않은 JSON 목록이라 글자로 읽을 수 있는 것만 보여 준다 */
-function decisionText(value: unknown): string | null {
-  if (typeof value === "string") return value.trim() || null;
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    for (const key of ["text", "title", "content", "decision"]) {
-      const v = record[key];
-      if (typeof v === "string" && v.trim()) return v.trim();
-    }
-  }
-  return null;
+/** 내려받는 엑셀 파일명 "{회의명}_회의록.xlsx": 파일명에 쓸 수 없는 문자(경로·제어 문자 등)는 지운다 */
+function excelFileName(title: string): string {
+  // eslint-disable-next-line no-control-regex
+  const safe = title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").replace(/\s+/g, " ").trim().replace(/^\.+|\.+$/g, "");
+  return `${safe || "회의록"}_회의록.xlsx`;
+}
+
+/** 참석자 이름 한 줄: 계정 참석자 + 계정이 없는 참석자는 "이름(미등록)" */
+function participantNames(meeting: MeetingDetail): string {
+  return [...meeting.participants.map((p) => p.name), ...(meeting.guestParticipants ?? []).map((g) => `${g}(미등록)`)].join(", ");
 }
 
 const notFoundStatus = (error: unknown) => error instanceof ApiError && error.status === 404;
@@ -183,8 +191,7 @@ function SpeakerSummary({ speakers, notice, onOpen }: SpeakerSummaryProps) {
   );
 }
 
-function Overview({ meeting, speakerSummary }: { meeting: MeetingDetail; speakerSummary: ReactNode }) {
-  const decisions = meeting.decisions.map(decisionText).filter((v): v is string => v !== null);
+function Overview({ meeting, speakerSummary, minutesPanel }: { meeting: MeetingDetail; speakerSummary: ReactNode; minutesPanel: ReactNode }) {
   const confirmed = meeting.status === "confirmed";
   return (
     <section aria-label="회의 개요" className="flex flex-col gap-5 rounded-mn-card border border-mn-border bg-mn-surface p-5">
@@ -196,7 +203,7 @@ function Overview({ meeting, speakerSummary }: { meeting: MeetingDetail; speaker
           {meeting.registeredBy.name} · {ORIGIN_LABEL[meeting.origin] ?? meeting.origin}
         </Field>
         <Field label="참석자">
-          <span className="block">{meeting.participants.length > 0 ? meeting.participants.map((p) => p.name).join(", ") : "—"}</span>
+          <span className="block">{participantNames(meeting) || "—"}</span>
           {speakerSummary}
         </Field>
         {confirmed ? (
@@ -210,22 +217,7 @@ function Overview({ meeting, speakerSummary }: { meeting: MeetingDetail; speaker
           </Field>
         )}
       </dl>
-      <div>
-        <h2 className="text-xs text-mn-muted">요약</h2>
-        <p className="mt-2 whitespace-pre-line text-sm">{meeting.summary.trim() || <span className="text-mn-muted">요약이 없습니다.</span>}</p>
-      </div>
-      <div>
-        <h2 className="text-xs text-mn-muted">결정사항</h2>
-        {decisions.length > 0 ? (
-          <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm">
-            {decisions.map((text, index) => (
-              <li key={index}>{text}</li>
-            ))}
-          </ol>
-        ) : (
-          <p className="mt-2 text-sm text-mn-muted">결정사항이 없습니다.</p>
-        )}
-      </div>
+      {minutesPanel}
     </section>
   );
 }
@@ -292,6 +284,8 @@ interface LedgerTableProps {
   onItemUpdated: (item: ActionItem) => void;
   /** 근거 타임스탬프를 누르면 그 위치부터 재생 */
   onSeek: (sec: number) => void;
+  /** 관리자 이상이면 머리의 "업무 추가"(수기 등록) */
+  onAddItem: () => void;
   onRequestChange: (item: ActionItem) => void;
   /** 관리자 이상이면 종결(확정된 업무만)·삭제 버튼을 그린다(권한 판정은 서버) */
   manager: boolean;
@@ -299,7 +293,7 @@ interface LedgerTableProps {
   onDeleteItem: (item: ActionItem) => void;
 }
 
-function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, onSeek, onRequestChange, manager, onCloseItem, onDeleteItem }: LedgerTableProps) {
+function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, onSeek, onAddItem, onRequestChange, manager, onCloseItem, onDeleteItem }: LedgerTableProps) {
   const needsCount = items.filter((item) => item.needsCompletion).length;
   // 업무 확정: 한 번에 한 건. 거부되면 서버 문구(보완 필요 409·권한 403 등)를 원장 위에 보여 준다
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
@@ -331,6 +325,11 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-base font-semibold tracking-tight">업무 원장</h2>
         <span className="flex items-center gap-3 text-sm text-mn-muted">
+          {manager ? (
+            <Button size="sm" onClick={onAddItem}>
+              업무 추가
+            </Button>
+          ) : null}
           <span>
             <span className="font-mn-mono">{items.length}</span>건
           </span>
@@ -385,7 +384,14 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                     <td className="px-4">
                       <StatusDot tone={status.tone} label={status.label} />
                     </td>
-                    <td className="px-4 py-3">{item.title || <span className="text-mn-muted">(업무명 없음)</span>}</td>
+                    <td className="px-4 py-3">
+                      {item.origin === "manual" ? (
+                        <span className="mr-2 inline-block align-middle">
+                          <Badge>수기</Badge>
+                        </span>
+                      ) : null}
+                      {item.title || <span className="text-mn-muted">(업무명 없음)</span>}
+                    </td>
                     <td className="px-4">
                       <span className="flex items-center justify-between gap-2">
                         <span className="min-w-0 truncate">{item.assignee?.name ?? <span className="text-mn-muted">—</span>}</span>
@@ -416,7 +422,13 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                       {item.evidenceStartSec !== null || item.evidenceQuote ? (
                         <span className="flex flex-col gap-1">
                           {item.evidenceStartSec !== null ? <SeekTime sec={item.evidenceStartSec} onSeek={onSeek} /> : null}
-                          {item.evidenceQuote ? <q className="text-xs text-mn-muted">{item.evidenceQuote}</q> : null}
+                          {item.evidenceQuote ? (
+                            item.origin === "manual" ? (
+                              <span className="text-xs text-mn-muted">{item.evidenceQuote}</span>
+                            ) : (
+                              <q className="text-xs text-mn-muted">{item.evidenceQuote}</q>
+                            )
+                          ) : null}
                         </span>
                       ) : (
                         <span className="text-mn-muted">—</span>
@@ -627,6 +639,13 @@ export default function V2MeetingDetailPage() {
   const [assigneeTarget, setAssigneeTarget] = useState<ActionItem | null>(null);
   const [changeTarget, setChangeTarget] = useState<ChangeRequestTarget | null>(null);
   const [seek, setSeek] = useState<SeekRequest | null>(null);
+  // 5개 항목 수정·변경 이력·업로드 갱신·업무 추가 팝업, 그 결과 안내
+  const [minutesOpen, setMinutesOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [minutesNotice, setMinutesNotice] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<{ tone: "ready" | "error"; text: string } | null>(null);
   const onSeek = useCallback((sec: number) => setSeek((prev) => ({ sec, nonce: (prev?.nonce ?? 0) + 1 })), []);
   const controllerRef = useRef<AbortController | null>(null);
   const changeRequests = useChangeRequests(meetingId);
@@ -698,6 +717,37 @@ export default function V2MeetingDetailPage() {
       throw error;
     }
   }, [meetingId, changeRequests]);
+
+  /** 5개 항목 저장 뒤: 서버가 돌려준 항목으로 그 칸만 바꾸고, 바뀐 항목(서버 응답 기준)을 안내한다 */
+  const onMinutesSaved = useCallback((saved: Minutes, changedLabels: string[]) => {
+    setMinutesOpen(false);
+    setState((prev) => (prev.kind === "ready" ? { ...prev, meeting: { ...prev.meeting, minutes: saved } } : prev));
+    setMinutesNotice(changedLabels.length > 0 ? `저장했습니다 · 바뀐 항목 ${changedLabels.join(", ")}` : "저장했습니다 · 바뀐 항목이 없습니다");
+  }, []);
+
+  /** 엑셀 다운로드: 인증 헤더가 필요해 fetch 로 받아 저장한다(파일명은 여기서 만든다) */
+  const downloadRef = useRef<AbortController | null>(null);
+  const runDownload = useCallback(async (id: number, title: string) => {
+    downloadRef.current?.abort();
+    const controller = new AbortController();
+    downloadRef.current = controller;
+    setActionNotice(null);
+    try {
+      const blob = await downloadMeetingExcel(id, controller.signal);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = excelFileName(title);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      if (isAbortError(error)) return;
+      setActionNotice({ tone: "error", text: `엑셀을 내려받지 못했습니다 · ${errorMessage(error, "서버 오류")}` });
+    }
+  }, []);
+  useEffect(() => () => downloadRef.current?.abort(), []);
 
   /** 화자 팝업 저장 성공: 요약·안내를 저장 응답으로 바꾸고 상세·전사문을 새로 받는다(실패하면 팝업이 안내) */
   const onSpeakerDialogSaved = useCallback(
@@ -797,7 +847,10 @@ export default function V2MeetingDetailPage() {
   /** 제목 줄 동작 → 팝업 내용 */
   const openMeetingAction = (kind: MeetingActionKind) => {
     const id = meeting.id;
-    const actions: Record<MeetingActionKind, ReasonAction> = {
+    if (kind === "download") return void runDownload(id, meeting.title);
+    if (kind === "history") return setHistoryOpen(true);
+    if (kind === "upload") return setUploadOpen(true);
+    const actions: Record<"hold" | "end" | "delete" | "resume", ReasonAction> = {
       hold: {
         title: "회의록 보류", target: meetingName, confirmLabel: "보류하기", requireReason: true,
         notice: "보류하면 딸린 업무도 모두 보류되어 할 일·자동 확정에서 빠집니다.",
@@ -858,12 +911,15 @@ export default function V2MeetingDetailPage() {
           {meeting.status === "awaiting_confirmation" ? (
             <MeetingConfirmButton meetingId={meeting.id} title={meeting.title} onConfirmed={onMeetingConfirmed} />
           ) : null}
-          {manager ? (
-            <MeetingActions phase={meeting.phase ?? "active"} status={meeting.status} onSelect={openMeetingAction} />
-          ) : null}
+          <MeetingActions manager={manager} phase={meeting.phase ?? "active"} status={meeting.status} onSelect={openMeetingAction} />
         </div>
       </header>
       <PhaseRecords meeting={meeting} />
+      {actionNotice ? (
+        <p role={actionNotice.tone === "error" ? "alert" : "status"} className="text-sm">
+          <StatusDot tone={actionNotice.tone} label={actionNotice.text} />
+        </p>
+      ) : null}
       {dueNeededCount > 0 ? (
         <p role="status" className="text-sm">
           <StatusDot tone="error" label={`기한을 다시 설정해야 하는 업무 ${dueNeededCount}건`} />
@@ -871,6 +927,17 @@ export default function V2MeetingDetailPage() {
       ) : null}
       <Overview
         meeting={meeting}
+        minutesPanel={
+          <MinutesPanel
+            minutes={meeting.minutes}
+            manager={manager}
+            notice={minutesNotice}
+            onEdit={() => {
+              setMinutesNotice(null);
+              setMinutesOpen(true);
+            }}
+          />
+        }
         speakerSummary={
           <SpeakerSummary
             speakers={speakers}
@@ -889,10 +956,33 @@ export default function V2MeetingDetailPage() {
         onItemConfirmed={replaceItem}
         onItemUpdated={replaceItem}
         onSeek={onSeek}
+        onAddItem={() => setManualOpen(true)}
         onRequestChange={onRequestChange}
         manager={manager}
         onCloseItem={openItemClose}
         onDeleteItem={openItemDelete}
+      />
+      <MinutesDialog meetingId={meeting.id} open={minutesOpen} minutes={meeting.minutes} onClose={() => setMinutesOpen(false)} onSaved={onMinutesSaved} />
+      <HistoryDialog meetingId={meeting.id} open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <UploadUpdateDialog
+        meetingId={meeting.id}
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onApplied={async (result) => {
+          setActionNotice({
+            tone: "ready",
+            text: `수정 회의록을 적용했습니다 · 업무 ${result.updatedItemIds.length}건 갱신, ${result.addedItemIds.length}건 추가, ${result.skipped.length}건 건너뜀`,
+          });
+          await refreshAfterAction();
+        }}
+      />
+      <ManualItemDialog
+        meetingId={meeting.id}
+        open={manualOpen}
+        onClose={() => setManualOpen(false)}
+        onCreated={async () => {
+          await refreshAfterAction();
+        }}
       />
       <ReasonDialog action={reasonAction} onClose={() => setReasonAction(null)} onDone={refreshAfterAction} />
       <AssigneeDialog item={assigneeTarget} onClose={() => setAssigneeTarget(null)} onSaved={onAssigneeSaved} />

@@ -102,13 +102,14 @@ test.describe("v2 회의록 동작과 사유 팝업", () => {
     // 키보드로 메뉴 열기·이동·선택
     await more(page).focus();
     await page.keyboard.press("Enter");
-    await expect(menuItems(page)).toHaveText(["보류", "직권 종료", "삭제"]);
+    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력", "수정 회의록 업로드", "보류", "직권 종료", "삭제"]);
     await expect(menuItems(page).first()).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("menu")).toHaveCount(0);
     await expect(more(page)).toBeFocused();
     await page.keyboard.press("Enter");
-    await page.keyboard.press("Enter"); // 첫 항목(보류)
+    for (let i = 0; i < 3; i += 1) await page.keyboard.press("ArrowDown"); // 엑셀 다운로드·변경 이력·업로드 다음의 보류
+    await page.keyboard.press("Enter");
 
     const box = dialog(page);
     await expect(box).toContainText("회의록 보류");
@@ -135,7 +136,7 @@ test.describe("v2 회의록 동작과 사유 팝업", () => {
     const detail = { ...baseDetail(), phase: "on_hold", onHold: true, onHoldBy: MANAGER, onHoldAt: "2026-10-02T01:00:00Z" };
     const calls = await openDetail(page, MANAGER, detail);
     await more(page).click();
-    await expect(menuItems(page)).toHaveText(["삭제"]);
+    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력", "수정 회의록 업로드", "삭제"]);
     await page.keyboard.press("Escape");
     const resume = page.getByRole("button", { name: "재개", exact: true });
     await resume.click();
@@ -162,7 +163,7 @@ test.describe("v2 회의록 동작과 사유 팝업", () => {
     await expect(row(page, "견적서 송부")).toContainText("종결");
     expect(calls.bodies.end).toEqual([{ reason: "프로젝트 취소" }]);
     await more(page).click();
-    await expect(menuItems(page)).toHaveText(["삭제"]);
+    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력", "수정 회의록 업로드", "삭제"]);
   });
 
   test("회의록 삭제: 상세에 남아 '삭제'로 표시, 동작 없음", async ({ page }) => {
@@ -175,7 +176,9 @@ test.describe("v2 회의록 동작과 사유 팝업", () => {
     await expect(box).toBeHidden();
     await expect(page).toHaveURL(/\/v2\/meetings\/41$/);
     await expect(phaseLabel(page)).toHaveText("삭제");
-    await expect(more(page)).toHaveCount(0);
+    await more(page).click();
+    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력", "수정 회의록 업로드"]); // 삭제됨: 업로드까지만, 위험 동작 없음
+    await page.keyboard.press("Escape");
     expect(calls.bodies.delete).toEqual([{ reason: "잘못 올린 파일" }]);
   });
 
@@ -216,10 +219,12 @@ test.describe("v2 회의록 동작과 사유 팝업", () => {
     expect(calls.bodies["item-delete"]).toEqual([{ reason: "중복 등록" }, { reason: "중복 등록" }]);
   });
 
-  test("담당자에게는 회의록·업무 동작 버튼이 없다", async ({ page }) => {
+  test("담당자에게는 회의록·업무 관리자 동작 버튼이 없다", async ({ page }) => {
     await openDetail(page, STAFF, baseDetail());
-    await expect(more(page)).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /업무 종결|업무 삭제/ })).toHaveCount(0);
+    await more(page).click(); // 담당자에게도 열람 가능자용 메뉴(엑셀 다운로드·변경 이력)는 보이고, 관리자용 항목은 없다
+    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력"]);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: /업무 종결|업무 삭제|업무 추가|항목 수정/ })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "재개", exact: true })).toHaveCount(0);
   });
 
@@ -227,17 +232,21 @@ test.describe("v2 회의록 동작과 사유 팝업", () => {
     const detail = baseDetail();
     await openDetail(page, MANAGER, Object.assign(detail, { status: "failed" }));
     await more(page).click();
-    await expect(menuItems(page)).toHaveText(["삭제"]);
+    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력", "수정 회의록 업로드", "삭제"]);
 
     Object.assign(detail, { status: "processing" });
     await page.reload();
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(more(page)).toHaveCount(0);
+    await more(page).click();
+    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력", "수정 회의록 업로드"]); // 처리 중: 위험 동작 없음
+    await page.keyboard.press("Escape");
 
     Object.assign(detail, { status: "confirmed", phase: "deleted", deletedAt: "2026-10-02T04:00:00Z" });
     await page.reload();
     await expect(phaseLabel(page)).toHaveText("삭제");
-    await expect(more(page)).toHaveCount(0);
+    await more(page).click();
+    await expect(menuItems(page)).toHaveText(["엑셀 다운로드", "변경 이력", "수정 회의록 업로드"]); // 삭제됨: 업로드까지만, 위험 동작 없음
+    await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "재개", exact: true })).toHaveCount(0);
   });
 });

@@ -1,7 +1,9 @@
 "use client";
 
 /*
- * 회의록 제목 줄 동작(관리자 이상에게만 화면이 그린다. 실제 권한은 서버 판정, 거부되면 팝업이 서버 문구를 보여 준다).
+ * 회의록 제목 줄 동작. 더보기(⋯) 메뉴의 "엑셀 다운로드"·"변경 이력"은 열람 가능한 사람 전원에게, 나머지는 관리자 이상(manager)에게만 보인다
+ * (실제 권한은 서버 판정, 거부되면 팝업이 서버 문구를 보여 준다).
+ * - 관리자 이상: "수정 회의록 업로드"가 더해진다
  * - 진행중(확정 대기·확정): 더보기(⋯) 메뉴에 보류·직권 종료·삭제
  *   (처리 실패·내용 없음은 삭제만, 처리 중은 동작 없음 — 서버가 처리 중 삭제를 409 로 거부)
  * - 보류: "재개" 버튼 + 메뉴에 삭제 / 종료: 메뉴에 삭제 / 삭제됨: 동작 없음
@@ -13,33 +15,44 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/mono";
 import type { MeetingPhase, MeetingStatus } from "@/lib/v2/meetings";
 
-export type MeetingActionKind = "hold" | "end" | "delete" | "resume";
+export type MeetingActionKind = "hold" | "end" | "delete" | "resume" | "download" | "history" | "upload";
 
-const MENU_LABEL: Record<Exclude<MeetingActionKind, "resume">, string> = {
+type MenuKind = Exclude<MeetingActionKind, "resume">;
+
+const MENU_LABEL: Record<MenuKind, string> = {
+  download: "엑셀 다운로드",
+  history: "변경 이력",
+  upload: "수정 회의록 업로드",
   hold: "보류",
   end: "직권 종료",
   delete: "삭제",
 };
 
 /** 단계·상태별로 보이는 메뉴 항목 */
-function menuItems(phase: MeetingPhase, status: MeetingStatus): Exclude<MeetingActionKind, "resume">[] {
+function dangerItems(phase: MeetingPhase, status: MeetingStatus): MenuKind[] {
   if (phase === "deleted" || status === "processing") return [];
   if (phase === "active") return status === "awaiting_confirmation" || status === "confirmed" ? ["hold", "end", "delete"] : ["delete"];
   return ["delete"]; // 보류·종료
 }
 
+function menuItems(phase: MeetingPhase, status: MeetingStatus, manager: boolean): MenuKind[] {
+  return manager ? ["download", "history", "upload", ...dangerItems(phase, status)] : ["download", "history"];
+}
+
 interface MeetingActionsProps {
+  /** 관리자 이상이면 true(업로드·보류·종료·삭제·재개 표시) */
+  manager: boolean;
   phase: MeetingPhase;
   status: MeetingStatus;
   onSelect: (kind: MeetingActionKind) => void;
 }
 
-export function MeetingActions({ phase, status, onSelect }: MeetingActionsProps) {
+export function MeetingActions({ manager, phase, status, onSelect }: MeetingActionsProps) {
   const menuId = useId();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const items = menuItems(phase, status);
+  const items = menuItems(phase, status, manager);
 
   // 열리면 첫 항목으로 포커스, 바깥을 누르면 닫기
   useEffect(() => {
@@ -53,7 +66,7 @@ export function MeetingActions({ phase, status, onSelect }: MeetingActionsProps)
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  function choose(kind: MeetingActionKind) {
+  function choose(kind: MenuKind) {
     setOpen(false);
     triggerRef.current?.focus();
     onSelect(kind);
@@ -80,7 +93,7 @@ export function MeetingActions({ phase, status, onSelect }: MeetingActionsProps)
 
   return (
     <div className="flex items-center gap-2">
-      {phase === "on_hold" ? <Button onClick={() => onSelect("resume")}>재개</Button> : null}
+      {manager && phase === "on_hold" ? <Button onClick={() => onSelect("resume")}>재개</Button> : null}
       {items.length > 0 ? (
         <div className="relative">
           <Button

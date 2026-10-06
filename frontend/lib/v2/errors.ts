@@ -16,6 +16,8 @@ export class ApiError extends Error {
     public readonly status: number,
     message: string,
     public readonly missingFields?: MissingField[],
+    /** 서버 오류 본문 그대로(오류 목록·동명이인 목록처럼 message 밖의 값을 읽을 때) */
+    public readonly body?: unknown,
   ) {
     super(message);
     this.name = "ApiError";

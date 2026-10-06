@@ -22,6 +22,8 @@ export interface RequestOptions {
   timeoutMs?: number;
   /** true 면 401 이어도 토큰 삭제·만료 이벤트를 하지 않는다(로그인 요청용) */
   skipAuthExpiry?: boolean;
+  /** true 면 성공 응답을 JSON 이 아니라 파일(Blob)로 받는다(엑셀 내려받기) */
+  asBlob?: boolean;
 }
 
 function notifyAuthExpired(): void {
@@ -38,7 +40,7 @@ async function readJson(response: Response): Promise<unknown> {
 }
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, signal: outer, timeoutMs = DEFAULT_TIMEOUT_MS, skipAuthExpiry = false } = options;
+  const { method = "GET", body, signal: outer, timeoutMs = DEFAULT_TIMEOUT_MS, skipAuthExpiry = false, asBlob = false } = options;
 
   // 우리 쪽 취소 장치: 화면의 signal 이 취소되면 함께 취소, 기한이 지나면 스스로 취소
   const controller = new AbortController();
@@ -81,10 +83,12 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
 
   if (!response.ok) {
-    const { message, missingFields } = parseErrorBody(response.status, await readJson(response));
+    const errorBody = await readJson(response);
+    const { message, missingFields } = parseErrorBody(response.status, errorBody);
     if (response.status === 401 && !skipAuthExpiry) notifyAuthExpired();
-    throw new ApiError(response.status, message, missingFields);
+    throw new ApiError(response.status, message, missingFields, errorBody);
   }
   if (response.status === 204) return undefined as T;
+  if (asBlob) return (await response.blob()) as T;
   return (await readJson(response)) as T;
 }
