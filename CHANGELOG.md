@@ -53,6 +53,20 @@
 - v2 `backend/` 열람 기록 보강·업무 수정 이력·허용 동작 목록(화면은 작업 57): (1) 열람 기록 함수 `record_meeting_view`를 `services/history.py`로 옮기고(`services/views.py` 삭제) 기록이 실패해도 조회가 막히지 않게 함(예외는 삼키고 롤백, 로그에 예외 종류만). 기존 `meeting_views`(첫 열람 유지·마지막 열람 갱신, 사용자별 1행)와 읽는 쪽(할 일 "자동 확정됨(미열람)"·일일 메일 미열람 집계)은 그대로, 메일·자동 확정 대상 선정 규칙 변경 없음. (2) 업무 수정 API(PATCH)가 공통 이력 함수 `record_change`로 `item.updated`를 남기고(payload·사건 종류 그대로) `HISTORY_KINDS`에 `item.updated`="업무 수정" 추가(재개로 비워진 기한·화자 매핑 자동 채움 사건도 같은 구분으로 보임). 변경 이력 응답에 `viewImpact`(참석자 변경 사건)와 `beforeMissing`(변경 전 값이 없는 옛 사건) 추가, 기존 필드 불변. (3) `app/auth/actions.py` — 동작 이름 상수와 "동작 → 기존 판정(can_confirm_meeting·can_write_item·has_rank·reject_if_locked) + 상태 조건" 대응. 회의록 상세 응답에 `allowedActions`(confirm_meeting·hold_meeting·resume_meeting·end_meeting·delete_meeting·edit_minutes·upload_update·add_item·edit_speakers·resolve_change_request·request_change·download_excel·view_history), 상세의 각 업무에 `allowedActions`(confirm_item·close_item·delete_item·set_assignee·set_due·request_change, 상세 응답에서만 채우고 그 밖의 응답은 null) 추가. 목록 응답 최상위에 `availablePhases`(관리자 이상 active·ended·on_hold·deleted, 담당자 active·ended) 추가하고 목록 API의 담당자 보류·삭제 403 판정이 같은 함수(`phase_allowed`)를 씀. 목록은 화면 표시용이고 서버의 403·409 거부 판정은 그대로 최종 안전장치. pytest 54건 추가(backend 472건), 기존 테스트 1건 수정(`test_write_apis` 이벤트 실패 롤백 테스트가 이력 함수를 가로채도록). 마이그레이션·frontend·v1 변경 없음.
 - v2 `frontend/` 화면 권한 제어를 서버 허용 동작(allowedActions)으로 교체 + 변경 이력 표시 보강: (1) `lib/v2/actions.ts` — 동작 이름 상수(backend `app/auth/actions.py`와 같은 값)와 판정 함수 `can(actions, 이름)` 한 곳. 목록이 없거나 null 이면 모든 동작이 막힌 것으로 본다(안전한 쪽). (2) 회의록 상세: 제목 줄 ⋯ 메뉴(download_excel·view_history·upload_update·hold_meeting·end_meeting·delete_meeting)·재개(resume_meeting)·회의록 확정(confirm_meeting)·회의록 전체 수정 요청(request_change)·항목 수정(edit_minutes)·화자 지정(edit_speakers)·업무 추가(add_item)·수정 요청 해결(resolve_change_request)과 업무 행의 확정·종결·삭제·담당자·기한 입력·수정 요청(업무별 allowedActions)을 모두 can() 으로 교체, 직급·상태 직접 비교 코드 제거(읽기 전용 표시는 그대로). 업무 동작(담당자·기한·확정) 뒤에는 응답의 업무(allowedActions 가 null)로 행을 바꾸지 않고 상세를 조용히 다시 받아 서버 기준으로 바꾼다(재조회 실패 시에만 값만 반영, 허용 동작은 이전 값 유지). 회의록 확정 뒤에도 같은 방식으로 재조회. (3) 목록 탭은 응답의 `availablePhases`를 따르고(직급을 보지 않음) 없으면 진행중·종료만. (4) 변경 이력 팝업: 서버 구분 "업무 수정" 표시, `beforeMissing`이면 "변경 전 기록 없음", `viewImpact`(유지·열람 불가)를 글자로 표시. (5) backend 정리 1건(동작·응답 불변): `reject_if_locked`·`HOLDABLE_STATUSES`·잠금 문구를 `app/api/meeting_hold.py`에서 `app/auth/locks.py`로 옮기고 import 만 수정해 auth 가 api 를 가져오지 않게 함. E2E 헬퍼 `e2e/helpers/allowed-actions.ts`(서버 표를 따르는 허용 동작 계산기, 성공 응답을 상세에 반영하는 `onJson`)로 기존 가로채기 응답을 일괄 보강하고 `e2e/v2-allowed-actions.spec.ts` 16건 추가(전체 136건). 홈(할 일)의 관리자 전용 카드 표시는 이번 범위 밖이라 직급 판단이 남아 있음. v1 변경 없음.
 
+### v2.0 기준선 마감 (2026-10-06, 코드 변경 없음)
+- 결정 기록(2026-10-06): 수정 요청 남기기·해결은 보류·종료·삭제 회의록에서도 허용하는 현행을 유지한다(`request_change`·`resolve_change_request`는 잠금 상태와 무관).
+- 알려진 제한사항(이후 과제):
+  - 회의록 목록 열 정렬 없음(서버 정렬 인자와 함께 처리).
+  - 업무 담당자 해제 기능 없음.
+  - 처리된 수정 요청의 재결정 기능 없음.
+  - 홈(할 일) 화면의 관리자 전용 카드가 직급으로 판단됨(allowedActions 미적용).
+  - E2E 의 허용 동작 헬퍼(`e2e/helpers/allowed-actions.ts`)가 서버 표(`app/auth/actions.py`)의 복제본이라 서버 표를 바꾸면 함께 고쳐야 함.
+  - 수정 회의록 업로드의 참석자 칸은 쉼표·줄바꿈·세미콜론으로 구분하므로 이름에 쉼표가 있으면 잘못 나뉨.
+  - 변경 이력에 보이지 않는 기존 사건 종류: item.created·item.confirmed·item.auto_confirmed·item.closed·item.deleted, meeting.created·awaiting_confirmation·confirmed·auto_confirmed·on_hold·resumed·ended·deleted·speakers_updated·no_content·failed, job.queued·started·completed·failed·no_content, transcript.saved, change_request.created·resolved.
+  - 변경 이력 조회는 최신순 최대 200건.
+  - 업무 원장의 줄바꿈·겹침 개선과 반응형 화면은 UI 개선 때 처리.
+- 이후 과제(v2.0 이후): 회의록 수정 요청 게시판 방식, 시스템 관리자·영구 삭제·감사 기록, 그룹(부서) 계층, 고객 상담 확장, 재추출, 로컬 엔진(V3.0).
+
 ## v1.10.1 — 2026-10-01 (추출 결과 출처 기록, 문서 보완)
 - API 응답·계약서(`docs/API-CONTRACT.md`)·프론트 변경 없음. 스텁 내부 DB 기록만 추가.
 ### 추가
