@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.api import action_items as action_items_api
+from app.services import history as history_service
 from app.main import app
 from app.models import ActionItem, Event, Meeting
 from tests.test_meeting_queries import make_meeting
@@ -331,7 +332,7 @@ def test_change_and_event_roll_back_together(env, team, monkeypatch):
     def broken_append_event(*args, **kwargs):
         raise RuntimeError("event store unavailable")
 
-    monkeypatch.setattr(action_items_api, "append_event", broken_append_event)
+    monkeypatch.setattr(history_service, "append_event", broken_append_event)  # 업무 수정 이력은 공통 이력 함수(services/history.py)가 남긴다
     client = TestClient(app, raise_server_exceptions=False)
     res = client.patch(f"/api/action-items/{item_id}", headers=auth(team["mgr"]),
                        json={"title": "바뀐 업무", "assigneeId": team["lee"].id})

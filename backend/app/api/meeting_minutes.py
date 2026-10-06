@@ -24,7 +24,7 @@ from app.db import get_session
 from app.models import Account, ActionItem, Event, Meeting, MeetingGuestParticipant, MeetingParticipant, SourceDocument
 from app.models.minutes import MINUTES_FIELDS
 from app.services import export_sheets as sheets
-from app.services.history import HISTORY_KINDS
+from app.services.history import HISTORY_KINDS, history_fields
 from app.services.minutes_update import apply_minutes_changes
 
 router = APIRouter(prefix="/api/meetings", tags=["meeting-minutes"])
@@ -51,6 +51,10 @@ class HistoryOut(CamelModel):
     batch_id: str | None = None
     before: dict[str, Any]
     after: dict[str, Any]
+    # 변경 전 값이 기록되지 않은 옛 사건(before 는 빈 값)
+    before_missing: bool = False
+    # 참석자 변경 때 빠진 사람의 열람 영향([{accountId, name, loginId, viewImpact}]), 그 밖에는 None
+    view_impact: list[dict[str, Any]] | None = None
     changed_by: AccountRef | None
     changed_at: datetime
 
@@ -117,9 +121,7 @@ def get_history(
             target_id=row.Event.entity_id,
             kind=HISTORY_KINDS[row.Event.event_type],
             kind_code=row.Event.event_type,
-            batch_id=(row.Event.payload or {}).get("batchId"),
-            before=(row.Event.payload or {}).get("before", {}),
-            after=(row.Event.payload or {}).get("after", {}),
+            **history_fields(row.Event),
             changed_by=AccountRef(id=row.actor_id, name=row.actor_name) if row.actor_id is not None else None,
             changed_at=row.Event.created_at,
         )

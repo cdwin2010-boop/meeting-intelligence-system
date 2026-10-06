@@ -30,6 +30,8 @@ class MeetingListPage(CamelModel):
     total: int
     page: int
     size: int
+    # 조회할 수 있는 단계(추가 필드): 관리자 이상 active·ended·on_hold·deleted, 담당자 active·ended
+    available_phases: list[str] = []
 
 
 class ActionItemOut(CamelModel):
@@ -46,6 +48,8 @@ class ActionItemOut(CamelModel):
     missing_fields: list[str]
     # 업무 출처(추가 필드): ai(AI 추출) | manual(수기·업로드 직권 등록, 근거는 "등록자 직권 지정")
     origin: str = "ai"
+    # 이 사용자가 이 업무에서 지금 할 수 있는 동작(추가 필드, 회의록 상세 응답에서만 채움·그 밖의 응답은 None). 화면 표시용이며 거부 판정은 각 API 가 한다
+    allowed_actions: list[str] | None = None
 
     @classmethod
     def from_item(cls, item: Any, assignee: "AccountRef | None") -> "ActionItemOut":
@@ -127,6 +131,8 @@ class MeetingDetail(CamelModel):
     delete_reason: str | None = None
     # 회의록 5개 항목(추가 필드). summary·decisions 는 예전부터 있던 칸 그대로(이번에 바꾸지 않음)
     minutes: MinutesOut = MinutesOut()
+    # 이 사용자가 이 회의록에서 지금 할 수 있는 동작(추가 필드, app/auth/actions.py). 화면 표시용이며 거부 판정은 각 API 가 한다
+    allowed_actions: list[str] = []
 
 
 class SpeakerOut(CamelModel):

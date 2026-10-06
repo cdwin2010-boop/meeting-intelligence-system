@@ -17,6 +17,7 @@ from app.auth.scope import scoped
 from app.db import get_session
 from app.models import Account, ActionItem, Meeting, append_event
 from app.models.common import utcnow
+from app.services.history import KIND_ITEM_UPDATE, record_change
 from app.services.lifecycle import auto_end_if_all_closed
 from app.services.notices import create_confirm_notices
 
@@ -151,10 +152,10 @@ def update_action_item(
     after = _snapshot(item)
     changed = {k for k in before if before[k] != after[k]}
     if changed:
-        append_event(
-            session, tenant_id=item.tenant_id, entity_type="action_item", entity_id=item.id,
-            event_type="item.updated", actor_account_id=account.id,
-            payload={"before": {k: before[k] for k in changed}, "after": {k: after[k] for k in changed}},
+        # 바뀐 칸의 변경 전·후를 공통 변경 이력(구분 "업무 수정")에 남긴다
+        record_change(
+            session, tenant_id=item.tenant_id, target_type="action_item", target_id=item.id, kind=KIND_ITEM_UPDATE,
+            actor_id=account.id, before={k: before[k] for k in changed}, after={k: after[k] for k in changed},
         )
     session.commit()
     return item_out(session, item)

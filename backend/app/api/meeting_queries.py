@@ -18,7 +18,8 @@ from app.api.meeting_schemas import (
     SpeakerOut,
     TranscriptOut,
 )
-from app.auth.access import VIEW_ALL_RANKS, get_visible_meeting, has_assigned_item, meeting_visibility
+from app.auth.actions import available_phases, item_allowed_actions, meeting_allowed_actions, phase_allowed
+from app.auth.access import VIEW_ALL_RANKS, can_confirm_meeting, get_visible_meeting, has_assigned_item, meeting_visibility
 from app.auth.deps import get_current_account
 from app.auth.scope import scoped
 from app.db import get_session
@@ -31,7 +32,7 @@ from app.models.closure import meeting_phase, phase_condition
 from app.models.common import MEETING_STATUSES
 from app.services.reasons import event_reason, latest_reason
 from app.services.speakers import SpeakerView, display_text, load_speakers
-from app.services.views import record_meeting_view
+from app.services.history import record_meeting_view
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
@@ -69,7 +70,7 @@ def list_meetings(
     account: Account = Depends(get_current_account),
     session: Session = Depends(get_session),
 ) -> MeetingListPage:
-    if phase in ("on_hold", "deleted") and account.rank not in VIEW_ALL_RANKS:
+    if not phase_allowed(account, phase):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="보류·삭제된 회의록은 관리자 이상만 볼 수 있습니다")
     counts = _item_counts()
     registrant = aliased(Account)
@@ -122,7 +123,7 @@ def list_meetings(
         )
         for row in rows
     ]
-    return MeetingListPage(items=items, total=total, page=page, size=size)
+    return MeetingListPage(items=items, total=total, page=page, size=size, available_phases=available_phases(account))
 
 
 def _account_ref(session: Session, account_id: int | None) -> AccountRef | None:
@@ -209,6 +210,10 @@ def get_meeting(
         )
         for row in item_rows
     ]
+    # 허용 동작(화면 표시용): 회의록 단위 한 번 + 업무마다. 판정 규칙은 app/auth/actions.py 가 기존 함수로 계산한다
+    lead = can_confirm_meeting(session, account, meeting)
+    for out, row in zip(action_items, item_rows):
+        out.allowed_actions = item_allowed_actions(session, account, row.ActionItem, meeting, lead=lead)
 
     hold = session.get(MeetingHold, meeting.id)
     closure = session.get(MeetingClosure, meeting.id)
@@ -247,6 +252,7 @@ def get_meeting(
         end_reason=latest_reason(session, meeting, "meeting.ended") if closure and closure.ended_at else None,
         delete_reason=latest_reason(session, meeting, "meeting.deleted") if closure and closure.deleted_at else None,
         minutes=minutes_out(session, meeting),
+        allowed_actions=meeting_allowed_actions(session, account, meeting),
     )
     # 상세 조회가 성공한 경우에만 열람 기록(첫 열람 유지, 마지막 열람 갱신)
     record_meeting_view(session, account, meeting)
