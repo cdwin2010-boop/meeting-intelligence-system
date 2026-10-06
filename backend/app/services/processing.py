@@ -18,12 +18,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
 from app.db import SessionLocal
-from app.models import Account, ActionItem, Job, Meeting, SourceDocument, Tenant, Transcript, append_event
+from app.models import Account, ActionItem, Job, Meeting, MeetingMinutes, SourceDocument, Tenant, Transcript, append_event
+from app.models.minutes import MINUTES_FIELDS, NO_CONTENT
 from app.models.common import utcnow
 from app.pipeline.errors import error_code
 from app.services.mail import queue_immediate_new_minutes
 from app.services.notices import create_confirm_notices
-from app.pipeline.extractor import ActionItemCandidate, Extractor, FakeExtractor, make_gemini_extractor
+from app.pipeline.extractor import ActionItemCandidate, ExtractionResult, Extractor, FakeExtractor, make_gemini_extractor
 from app.pipeline.stt import FakeStt, SttEngine, TranscriptResult, as_transcript_result, is_no_speech, make_gemini_stt
 
 log = logging.getLogger("app.processing")
@@ -133,7 +134,28 @@ def _finish_no_content(factory: sessionmaker, job_id: int) -> None:
         session.commit()
 
 
-def _finish_completed(factory: sessionmaker, job_id: int, candidates: list[ActionItemCandidate], provenance: dict) -> None:
+def _save_minutes(session: Session, job: Job, meeting: Meeting, result: ExtractionResult | None, engine: str) -> None:
+    """회의록 5개 항목 저장(업무와 같은 트랜잭션). 항목이 없거나 응답이 없으면 "내용없음"(업무 저장에는 영향 없음).
+    같은 회의록을 다시 처리하면 새 결과로 바꾼다(직권 수정 이력은 events 에 남아 있다).
+    생성 사건은 따로 남기지 않는다(엔진·모델·생성 시각은 meeting_minutes 행에 있고, 기존 사건 순서도 바뀌지 않는다)."""
+    drafted = result.minutes if result is not None and result.minutes else {}
+    values = {key: (drafted.get(key) or NO_CONTENT) for key in MINUTES_FIELDS}
+    row = session.get(MeetingMinutes, meeting.id)
+    if row is None:
+        row = MeetingMinutes(meeting_id=meeting.id, tenant_id=job.tenant_id)
+        session.add(row)
+    for key, value in values.items():
+        setattr(row, key, value)
+    row.engine = engine
+    row.extract_model = result.extract_model if result is not None else ""
+    row.prompt_version = result.minutes_prompt_version if result is not None else ""
+    row.generated_at = utcnow()
+
+
+def _finish_completed(
+    factory: sessionmaker, job_id: int, candidates: list[ActionItemCandidate], provenance: dict,
+    minutes: ExtractionResult | None = None, engine: str = "",
+) -> None:
     """업무 생성 + 회의록 상태 결정 + 작업 완료를 한 트랜잭션으로 기록한다."""
     with factory() as session:
         job = session.get(Job, job_id)
@@ -157,6 +179,8 @@ def _finish_completed(factory: sessionmaker, job_id: int, candidates: list[Actio
             session.add(item)
             session.flush()
             _event(session, job, "action_item", item.id, "item.created", assignee_name=candidate.assignee)
+
+        _save_minutes(session, job, meeting, minutes, engine)
 
         now = utcnow()
         if registrant is not None and registrant.rank in CONFIRM_ON_REGISTRATION_RANKS:
@@ -236,7 +260,7 @@ def process_meeting(
             "prompt_version": result.prompt_version,
             "extracted_at": result.extracted_at,
         }
-        _finish_completed(factory, job_id, result.items, provenance)
+        _finish_completed(factory, job_id, result.items, provenance, minutes=result, engine=provider)
         return "completed"
     except Exception as exc:  # noqa: BLE001 — 백그라운드 작업은 예외를 밖으로 던지지 않고 failed 로 기록한다
         code = error_code(exc)

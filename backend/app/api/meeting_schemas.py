@@ -71,6 +71,21 @@ class EventOut(CamelModel):
     reason: str | None = None
 
 
+class MinutesOut(CamelModel):
+    """회의록 5개 항목(상세 응답의 minutes). 정보가 없으면 "내용없음"."""
+
+    purpose: str = "내용없음"
+    discussion: str = "내용없음"
+    decisions: str = "내용없음"
+    risks: str = "내용없음"
+    next_agenda: str = "내용없음"
+    # 이 회의록을 만든 처리 엔진(전사 엔진 이름). 5개 항목이 아직 만들어지지 않았으면 None
+    engine: str | None = None
+    # 마지막 직권 수정(없으면 None)
+    updated_by: AccountRef | None = None
+    updated_at: datetime | None = None
+
+
 class MeetingDetail(CamelModel):
     id: int
     title: str
@@ -105,6 +120,8 @@ class MeetingDetail(CamelModel):
     on_hold_reason: str | None = None
     end_reason: str | None = None
     delete_reason: str | None = None
+    # 회의록 5개 항목(추가 필드). summary·decisions 는 예전부터 있던 칸 그대로(이번에 바꾸지 않음)
+    minutes: MinutesOut = MinutesOut()
 
 
 class SpeakerOut(CamelModel):

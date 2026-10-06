@@ -7,6 +7,7 @@ from app.models.hold import MeetingHold
 from app.models.job import Job
 from app.models.mail import MailOutbox
 from app.models.meeting import Meeting, MeetingParticipant
+from app.models.minutes import MeetingMinutes
 from app.models.notice import MeetingView, Notice
 from app.models.source_document import SourceDocument
 from app.models.speaker import MeetingSpeaker
@@ -22,6 +23,7 @@ __all__ = [
     "Meeting",
     "MeetingClosure",
     "MeetingHold",
+    "MeetingMinutes",
     "MeetingParticipant",
     "MeetingSpeaker",
     "MeetingView",

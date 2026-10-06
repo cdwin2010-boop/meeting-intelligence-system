@@ -27,3 +27,14 @@ def fake_items_raw(held_at: datetime) -> list[dict]:
         {"task": "디자인 시안 확정", "assignee": "정민수", "due_date": this_thursday.isoformat(),
          "quote": {"speaker": s2[1], "timestamp": s2[0], "text": s2[2]}},
     ]
+
+
+def fake_minutes_raw() -> dict:
+    """회의록 5개 항목 가짜 응답(LLM 응답과 같은 모양). 리스크는 일부러 비워 "내용없음" 처리를 확인할 수 있게 한다."""
+    return {
+        "purpose": "STT 화자 분리 정확도 개선과 디자인 시안 확정 일정 점검",
+        "discussion": "화자 분리 오류 개선안 논의\n디자인 시안 확정 일정 논의",
+        "decisions": "개선안은 다음 주 금요일까지 정리\n시안은 이번 주 목요일까지 확정",
+        "risks": "",
+        "next_agenda": "점심 메뉴 선정",
+    }

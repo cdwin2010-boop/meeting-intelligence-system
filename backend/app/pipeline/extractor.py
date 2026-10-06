@@ -8,6 +8,8 @@ held_at 은 회의 현지 시각(시간대 포함)으로 넘긴다. 날짜·요�
 """
 import copy
 import hashlib
+import json
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -17,8 +19,10 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app.config import settings
 from app.pipeline.dates import WEEKDAYS_KO, resolve_due_date
-from app.pipeline.fakes import fake_items_raw
+from app.models.minutes import MINUTES_FIELDS, NO_CONTENT
+from app.pipeline.fakes import fake_items_raw, fake_minutes_raw
 
+log = logging.getLogger("app.extractor")
 _TIMESTAMP_RE = re.compile(r"^(\d{1,2}):([0-5]\d):([0-5]\d)$")
 
 
@@ -57,6 +61,16 @@ class ActionItemList(_EmptyStringModel):
         return [] if value is None or value == "" else value
 
 
+class MeetingMinutesDraft(_EmptyStringModel):
+    """회의록 5개 항목 출력 형식(엔진과 무관하게 고정). 정보가 없으면 빈 문자열(서버가 "내용없음"으로 저장)."""
+
+    purpose: str = Field("", description="회의 목적")
+    discussion: str = Field("", description="주요 논의사항")
+    decisions: str = Field("", description="결정사항")
+    risks: str = Field("", description="리스크")
+    next_agenda: str = Field("", description="다음 안건")
+
+
 class ExtractionError(RuntimeError):
     """LLM 응답이 스키마에 맞지 않음"""
 
@@ -80,6 +94,9 @@ class ExtractionResult:
     extract_model: str = ""
     prompt_version: str = ""
     extracted_at: datetime | None = None
+    # 회의록 5개 항목(MINUTES_FIELDS 키 -> 글자). 응답이 없거나 형식이 틀려 만들지 못했으면 None(저장 때 모두 "내용없음")
+    minutes: dict[str, str] | None = None
+    minutes_prompt_version: str = ""
 
 
 def response_json_schema() -> dict:
@@ -133,6 +150,22 @@ def postprocess(result: ActionItemList, held_at: datetime) -> list[ActionItemCan
             )
         )
     return items
+
+
+def parse_minutes(text: str) -> dict[str, str]:
+    """5개 항목 응답 JSON 문자열 -> {칸: 글자}. 앞뒤 공백을 지우고 빈 항목은 "내용없음". 형식이 틀리면 ExtractionError."""
+    try:
+        draft = MeetingMinutesDraft.model_validate_json(text or "")
+    except ValidationError as exc:
+        raise ExtractionError("LLM response did not match MeetingMinutesDraft") from exc
+    return {key: (getattr(draft, key).strip() or NO_CONTENT) for key in MINUTES_FIELDS}
+
+
+def minutes_json_schema() -> dict:
+    """Gemini 에 줄 5개 항목 JSON Schema(모든 칸 required, 문자열)."""
+    raw = MeetingMinutesDraft.model_json_schema()
+    properties = {k: {kk: vv for kk, vv in v.items() if kk not in ("title", "default")} for k, v in raw["properties"].items()}
+    return {"type": "object", "properties": properties, "required": list(properties)}
 
 
 def parse_response(text: str, held_at: datetime) -> list[ActionItemCandidate]:
@@ -208,6 +241,24 @@ e) 같은 화자는 회의 전체에서 항상 같은 표기를 씁니다.
 전사문:
 {transcript}"""
 
+# 회의록 5개 항목 프롬프트. 업무 추출 프롬프트와는 따로 부른다(업무 추출 규칙·결과에 영향이 없도록).
+MINUTES_PROMPT_TEMPLATE = """다음은 한국어 회의 전사문입니다. 회의록의 5개 항목을 작성하세요.
+
+회의 일시: {started_at} ({weekday}요일)
+
+작성 규칙:
+- purpose: 이 회의의 목적을 한두 문장으로 씁니다.
+- discussion: 주요 논의사항을 핵심만 줄 단위(항목마다 한 줄)로 씁니다.
+- decisions: 회의에서 합의·결정된 사항을 줄 단위로 씁니다.
+- risks: 언급된 위험·우려·지연 요인을 줄 단위로 씁니다.
+- next_agenda: 다음 회의에서 다룰 안건이나 후속 논의를 줄 단위로 씁니다.
+- 전사문에 근거가 없는 내용은 지어내지 않습니다. 정보가 없는 항목은 null 이 아니라 빈 문자열("")로 둡니다.
+- 전사문에 나온 이름·업체명은 표기 그대로 씁니다.
+
+전사문:
+{transcript}"""
+MINUTES_PROMPT_VERSION = hashlib.sha256(MINUTES_PROMPT_TEMPLATE.encode("utf-8")).hexdigest()[:12]
+
 # 프롬프트 버전: 고정 템플릿(전사문·회의 일시 제외)의 SHA-256 앞 12자. 템플릿 글자가 바뀌면 자동으로 바뀐다(수동 관리 없음).
 PROMPT_VERSION = hashlib.sha256(PROMPT_TEMPLATE.encode("utf-8")).hexdigest()[:12]
 
@@ -218,6 +269,11 @@ FAKE_PROVENANCE = "fake"
 def build_prompt(transcript: str, held_at: datetime) -> str:
     weekday = WEEKDAYS_KO[held_at.weekday()]
     return PROMPT_TEMPLATE.format(started_at=held_at.isoformat(), weekday=weekday, transcript=transcript)
+
+
+def build_minutes_prompt(transcript: str, held_at: datetime) -> str:
+    weekday = WEEKDAYS_KO[held_at.weekday()]
+    return MINUTES_PROMPT_TEMPLATE.format(started_at=held_at.isoformat(), weekday=weekday, transcript=transcript)
 
 
 class Extractor(Protocol):
@@ -234,6 +290,8 @@ class FakeExtractor:
             extract_model=FAKE_PROVENANCE,
             prompt_version=FAKE_PROVENANCE,
             extracted_at=datetime.now(timezone.utc),
+            minutes=parse_minutes(json.dumps(fake_minutes_raw())),
+            minutes_prompt_version=FAKE_PROVENANCE,
         )
 
 
@@ -255,12 +313,36 @@ class GeminiExtractor:
                 temperature=0,
             ),
         )
+        items = parse_response(response.text or "", held_at)
+        minutes = self._minutes(transcript, held_at)
         return ExtractionResult(
-            items=parse_response(response.text or "", held_at),
+            items=items,
             extract_model=self._model,
             prompt_version=PROMPT_VERSION,
             extracted_at=datetime.now(timezone.utc),
+            minutes=minutes,
+            minutes_prompt_version=MINUTES_PROMPT_VERSION if minutes is not None else "",
         )
+
+    def _minutes(self, transcript: str, held_at: datetime) -> dict[str, str] | None:
+        """5개 항목은 업무 추출과 따로 부른다. 호출·응답 형식이 어떻게 틀려도 업무 추출 결과에는 영향이 없도록 None 으로 돌려준다
+        (저장 때 5개 항목만 "내용없음"). 로그에는 예외 종류만 남긴다."""
+        from google.genai import types
+
+        try:
+            response = self._client.models.generate_content(
+                model=self._model,
+                contents=build_minutes_prompt(transcript, held_at),
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_json_schema=minutes_json_schema(),
+                    temperature=0,
+                ),
+            )
+            return parse_minutes(response.text or "")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("minutes generation failed: %s", type(exc).__name__)
+            return None
 
 
 def make_gemini_extractor(client: Any | None = None) -> GeminiExtractor:

@@ -14,6 +14,7 @@ from app.api.meeting_schemas import (
     MeetingDetail,
     MeetingListItem,
     MeetingListPage,
+    MinutesOut,
     SpeakerOut,
     TranscriptOut,
 )
@@ -22,8 +23,10 @@ from app.auth.deps import get_current_account
 from app.auth.scope import scoped
 from app.db import get_session
 from app.models import (
-    Account, ActionItem, Event, Job, Meeting, MeetingClosure, MeetingHold, MeetingParticipant, SourceDocument, Transcript,
+    Account, ActionItem, Event, Job, Meeting, MeetingClosure, MeetingHold, MeetingMinutes, MeetingParticipant, SourceDocument,
+    Transcript,
 )
+from app.models.minutes import MINUTES_FIELDS
 from app.models.closure import meeting_phase, phase_condition
 from app.models.common import MEETING_STATUSES
 from app.services.reasons import event_reason, latest_reason
@@ -129,6 +132,19 @@ def _account_ref(session: Session, account_id: int | None) -> AccountRef | None:
     return AccountRef(id=found.id, name=found.name) if found else None
 
 
+def minutes_out(session: Session, meeting: Meeting) -> MinutesOut:
+    """저장된 5개 항목. 아직 없으면(처리 전·실패·이 기능 이전 회의록) 모두 "내용없음"."""
+    row = session.get(MeetingMinutes, meeting.id)
+    if row is None:
+        return MinutesOut()
+    return MinutesOut(
+        **{key: getattr(row, key) for key in MINUTES_FIELDS},
+        engine=row.engine or None,
+        updated_by=_account_ref(session, row.updated_by),
+        updated_at=row.updated_at,
+    )
+
+
 def _recent_events(session: Session, meeting: Meeting) -> list[EventOut]:
     """이 회의록과 그 작업·업무·전사문에 기록된 사건 최근 20건(최신순). payload 는 내보내지 않고 처리 사유만 꺼내 준다."""
     job_ids = select(Job.id).where(Job.meeting_id == meeting.id).scalar_subquery()
@@ -227,6 +243,7 @@ def get_meeting(
         on_hold_reason=latest_reason(session, meeting, "meeting.on_hold") if hold else None,
         end_reason=latest_reason(session, meeting, "meeting.ended") if closure and closure.ended_at else None,
         delete_reason=latest_reason(session, meeting, "meeting.deleted") if closure and closure.deleted_at else None,
+        minutes=minutes_out(session, meeting),
     )
     # 상세 조회가 성공한 경우에만 열람 기록(첫 열람 유지, 마지막 열람 갱신)
     record_meeting_view(session, account, meeting)
