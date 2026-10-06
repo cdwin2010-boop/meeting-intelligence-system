@@ -23,7 +23,7 @@ from app.auth.deps import get_current_account
 from app.auth.scope import scoped
 from app.db import get_session
 from app.models import (
-    Account, ActionItem, Event, Job, Meeting, MeetingClosure, MeetingHold, MeetingMinutes, MeetingParticipant, SourceDocument,
+    Account, ActionItem, Event, Job, Meeting, MeetingClosure, MeetingGuestParticipant, MeetingHold, MeetingMinutes, MeetingParticipant, SourceDocument,
     Transcript,
 )
 from app.models.minutes import MINUTES_FIELDS
@@ -227,6 +227,9 @@ def get_meeting(
         registered_by=_account_ref(session, document.registered_by),
         origin=document.origin,
         participants=[AccountRef(id=p.id, name=p.name) for p in participants],
+        guest_participants=list(session.scalars(
+            select(MeetingGuestParticipant.name).where(MeetingGuestParticipant.meeting_id == meeting.id).order_by(MeetingGuestParticipant.id)
+        )),
         action_items=action_items,
         recent_events=_recent_events(session, meeting),
         on_hold=bool(hold and hold.on_hold),

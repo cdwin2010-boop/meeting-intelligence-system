@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     max_upload_mb: int = 200
     # 허용 확장자(쉼표 구분, 점 없이)
     allowed_audio_ext: str = "m4a,mp3,wav,mp4,webm,ogg"
+    # 수정 회의록 업로드(엑셀) 상한: 파일 크기(KB)와 업무 행 수
+    update_max_file_kb: int = 2048
+    update_max_rows: int = 1000
     # 회의 일시를 현지 시각으로 바꿀 때 쓰는 시간대(추출기의 날짜·요일 기준)
     app_timezone: str = "Asia/Seoul"
 

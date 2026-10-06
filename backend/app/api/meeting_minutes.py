@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import Field
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.api.meeting_hold import reject_if_locked
@@ -21,11 +21,11 @@ from app.api.schemas import CamelModel
 from app.auth.access import can_confirm_meeting, get_visible_meeting
 from app.auth.deps import get_current_account
 from app.db import get_session
-from app.models import Account, ActionItem, Event, Meeting, MeetingMinutes, MeetingParticipant, SourceDocument
-from app.models.common import utcnow
-from app.models.minutes import MINUTES_FIELDS, NO_CONTENT
+from app.models import Account, ActionItem, Event, Meeting, MeetingGuestParticipant, MeetingParticipant, SourceDocument
+from app.models.minutes import MINUTES_FIELDS
 from app.services import export_sheets as sheets
-from app.services.history import HISTORY_KINDS, KIND_MINUTES_OVERRIDE, record_change
+from app.services.history import HISTORY_KINDS
+from app.services.minutes_update import apply_minutes_changes
 
 router = APIRouter(prefix="/api/meetings", tags=["meeting-minutes"])
 
@@ -46,6 +46,9 @@ class HistoryOut(CamelModel):
     target_type: str
     target_id: int
     kind: str
+    # 구분 코드(예: minutes.overridden)와 같은 업로드 묶음 식별자(업로드로 생긴 이력만)
+    kind_code: str = ""
+    batch_id: str | None = None
     before: dict[str, Any]
     after: dict[str, Any]
     changed_by: AccountRef | None
@@ -79,28 +82,7 @@ def override_minutes(
     if not sent or any(value is None for value in sent.values()):
         raise _http(status.HTTP_400_BAD_REQUEST, "수정할 항목을 글자로 보내세요")
 
-    row = session.get(MeetingMinutes, meeting.id)
-    if row is None:
-        # 5개 항목이 아직 없던 회의록: 모두 "내용없음"인 행을 만든 뒤 수정한다(엔진 기록은 비움)
-        row = MeetingMinutes(meeting_id=meeting.id, tenant_id=meeting.tenant_id, generated_at=utcnow())
-        session.add(row)
-        for key in MINUTES_FIELDS:
-            setattr(row, key, NO_CONTENT)
-
-    before: dict[str, str] = {}
-    after: dict[str, str] = {}
-    for key, value in sent.items():
-        new = value.strip() or NO_CONTENT
-        old = getattr(row, key) or NO_CONTENT
-        if new != old:
-            before[key], after[key] = old, new
-            setattr(row, key, new)
-    if after:
-        row.updated_by, row.updated_at = account.id, utcnow()
-        record_change(
-            session, tenant_id=meeting.tenant_id, target_type="meeting", target_id=meeting.id,
-            kind=KIND_MINUTES_OVERRIDE, actor_id=account.id, before=before, after=after,
-        )
+    apply_minutes_changes(session, meeting, account, sent)
     session.commit()
     return minutes_out(session, meeting)
 
@@ -111,7 +93,7 @@ def get_history(
     account: Account = Depends(get_current_account),
     session: Session = Depends(get_session),
 ) -> list[HistoryOut]:
-    """이 회의록의 변경 이력(최신순, 최대 200건). 지금은 5개 항목 직권 수정만 기록된다."""
+    """이 회의록의 변경 이력(최신순, 최대 200건): 5개 항목·참석자 직권 수정, 업로드 업무 갱신, 직권 등록 업무. 업무 대상 이력은 targetType=action_item."""
     meeting = _visible(session, account, meeting_id)
     actor = aliased(Account)
     rows = session.execute(
@@ -119,7 +101,10 @@ def get_history(
         .outerjoin(actor, actor.id == Event.actor_account_id)
         .where(
             Event.tenant_id == meeting.tenant_id,
-            and_(Event.entity_type == "meeting", Event.entity_id == meeting.id),
+            or_(
+                and_(Event.entity_type == "meeting", Event.entity_id == meeting.id),
+                and_(Event.entity_type == "action_item", Event.entity_id.in_(select(ActionItem.id).where(ActionItem.meeting_id == meeting.id))),
+            ),
             Event.event_type.in_(list(HISTORY_KINDS)),
         )
         .order_by(Event.id.desc())
@@ -131,6 +116,8 @@ def get_history(
             target_type=row.Event.entity_type,
             target_id=row.Event.entity_id,
             kind=HISTORY_KINDS[row.Event.event_type],
+            kind_code=row.Event.event_type,
+            batch_id=(row.Event.payload or {}).get("batchId"),
             before=(row.Event.payload or {}).get("before", {}),
             after=(row.Event.payload or {}).get("after", {}),
             changed_by=AccountRef(id=row.actor_id, name=row.actor_name) if row.actor_id is not None else None,
@@ -166,6 +153,9 @@ def export_meeting(
         .order_by(Account.id)
     ).all()
 
+    guests = session.scalars(
+        select(MeetingGuestParticipant.name).where(MeetingGuestParticipant.meeting_id == meeting.id).order_by(MeetingGuestParticipant.id)
+    ).all()
     minutes = minutes_out(session, meeting)
     confirm_parts = []
     if meeting.status == "confirmed":
@@ -180,7 +170,7 @@ def export_meeting(
         sheets.INFO_STATUS: sheets.MEETING_STATUS_LABEL.get(meeting.status, meeting.status),
         sheets.INFO_REGISTRANT: f"{registrant.name}({registrant.login_id})" if registrant else "",
         sheets.INFO_CONFIRM: " · ".join(confirm_parts),
-        sheets.INFO_PARTICIPANTS: ", ".join(f"{p.name}({p.login_id})" for p in participants),
+        sheets.INFO_PARTICIPANTS: ", ".join([f"{p.name}({p.login_id})" for p in participants] + [f"{g}({sheets.UNREGISTERED})" for g in guests]),
         **{label: getattr(minutes, key) for key, label in MINUTES_FIELDS.items()},
     }
 

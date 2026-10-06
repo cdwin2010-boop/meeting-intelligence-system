@@ -10,8 +10,14 @@ from app.models import Event, append_event
 
 # 사건 종류 → 화면에 보이는 구분
 KIND_MINUTES_OVERRIDE = "minutes.overridden"
+KIND_PARTICIPANTS_OVERRIDE = "participants.overridden"
+KIND_ITEM_UPLOAD_UPDATE = "item.upload_updated"
+KIND_ITEM_MANUAL_ADD = "item.manual_added"
 HISTORY_KINDS: dict[str, str] = {
     KIND_MINUTES_OVERRIDE: "직권 수정",
+    KIND_PARTICIPANTS_OVERRIDE: "직권 수정",
+    KIND_ITEM_UPLOAD_UPDATE: "업무 갱신",
+    KIND_ITEM_MANUAL_ADD: "직권 등록",
 }
 
 
@@ -25,6 +31,7 @@ def record_change(
     actor_id: int | None,
     before: dict[str, Any],
     after: dict[str, Any],
+    extra: dict[str, Any] | None = None,
 ) -> Event:
     """변경 이력 1건을 남긴다(커밋은 호출부: 변경과 같은 트랜잭션). kind 는 HISTORY_KINDS 에 있어야 한다."""
     if kind not in HISTORY_KINDS:
@@ -36,5 +43,6 @@ def record_change(
         entity_id=target_id,
         event_type=kind,
         actor_account_id=actor_id,
-        payload={"before": before, "after": after},
+        # extra: 같은 업로드 묶음(batchId)·출처(source)·열람 영향 같은 덧붙임. before/after 와 같은 층에 둔다
+        payload={"before": before, "after": after, **(extra or {})},
     )

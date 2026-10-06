@@ -36,6 +36,8 @@ COL_EVIDENCE_QUOTE = "근거 인용문"
 TASK_COLUMNS = (COL_ID, COL_TITLE, COL_ASSIGNEE, COL_ASSIGNEE_LOGIN, COL_DUE, COL_STATUS, COL_EVIDENCE_TIME, COL_EVIDENCE_QUOTE)
 
 DUE_UNDETERMINED = "미확정"
+# 계정이 없는 참석자 표시: "이름(미등록)"
+UNREGISTERED = "미등록"
 MEETING_STATUS_LABEL = {
     "processing": "처리 중", "awaiting_confirmation": "확정 대기", "confirmed": "확정", "failed": "처리 실패", "no_content": "내용 없음",
 }

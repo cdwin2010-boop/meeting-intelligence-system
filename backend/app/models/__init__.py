@@ -3,6 +3,7 @@ from app.models.account import Account
 from app.models.action_item import ActionItem
 from app.models.closure import MeetingClosure
 from app.models.event import Event, append_event
+from app.models.guest import MeetingGuestParticipant
 from app.models.hold import MeetingHold
 from app.models.job import Job
 from app.models.mail import MailOutbox
@@ -22,6 +23,7 @@ __all__ = [
     "MailOutbox",
     "Meeting",
     "MeetingClosure",
+    "MeetingGuestParticipant",
     "MeetingHold",
     "MeetingMinutes",
     "MeetingParticipant",

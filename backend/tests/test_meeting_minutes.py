@@ -209,7 +209,7 @@ def test_history_listing_and_visibility(env, team, meeting_id):
     rows = res.json()
     assert [r["after"] for r in rows] == [{"purpose": "P2", "risks": "R"}, {"purpose": "P1"}]  # 최신순
     first = rows[0]
-    assert set(first) == {"id", "targetType", "targetId", "kind", "before", "after", "changedBy", "changedAt"}
+    assert {"id", "targetType", "targetId", "kind", "before", "after", "changedBy", "changedAt"} <= set(first)  # 작업 51 이 kindCode·batchId 를 추가
     assert first["kind"] == "직권 수정" and first["targetType"] == "meeting" and first["targetId"] == meeting_id
     assert first["changedBy"] == {"id": team["exe"].id, "name": "최임원"} and first["before"] == {"purpose": "P1", "risks": NO_CONTENT}
     assert call(env, "GET", team["outsider"], f"/api/meetings/{meeting_id}/history").status_code == 404
@@ -304,7 +304,7 @@ def test_migration_up_down_and_refuses_downgrade_with_rows(tmp_path):
     url = f"sqlite:///{(tmp_path / 'mig.db').as_posix()}"
     command.upgrade(_alembic(url), "head")
     assert "meeting_minutes" in _tables(url)
-    command.downgrade(_alembic(url), "-1")  # 비어 있으면 되돌려진다
+    command.downgrade(_alembic(url), "0f82186010dc")  # 비어 있으면 되돌려진다(이 뒤 마이그레이션 포함)
     assert "meeting_minutes" not in _tables(url)
     command.upgrade(_alembic(url), "head")
 
@@ -319,5 +319,5 @@ def test_migration_up_down_and_refuses_downgrade_with_rows(tmp_path):
         s.commit()
     engine.dispose()
     with pytest.raises(RuntimeError, match="downgrade 거부"):
-        command.downgrade(_alembic(url), "-1")
+        command.downgrade(_alembic(url), "0f82186010dc")
     assert "meeting_minutes" in _tables(url)

@@ -44,6 +44,8 @@ class ActionItemOut(CamelModel):
     evidence_quote: str | None
     needs_completion: bool
     missing_fields: list[str]
+    # 업무 출처(추가 필드): ai(AI 추출) | manual(수기·업로드 직권 등록, 근거는 "등록자 직권 지정")
+    origin: str = "ai"
 
     @classmethod
     def from_item(cls, item: Any, assignee: "AccountRef | None") -> "ActionItemOut":
@@ -60,6 +62,7 @@ class ActionItemOut(CamelModel):
             evidence_quote=item.evidence_quote,
             needs_completion=item.needs_supplement,
             missing_fields=item.missing_fields,
+            origin="manual" if item.extract_model == "manual" else "ai",
         )
 
 
@@ -101,6 +104,8 @@ class MeetingDetail(CamelModel):
     registered_by: AccountRef
     origin: str
     participants: list[AccountRef]
+    # 계정이 없는 참석자 이름(추가 필드, 화면에는 "이름(미등록)"). 열람 권한과 무관
+    guest_participants: list[str] = []
     action_items: list[ActionItemOut]
     recent_events: list[EventOut]
     # 보류(추가 필드): 보류 중이면 딸린 업무도 모두 보류. 마지막 보류·재개 기록

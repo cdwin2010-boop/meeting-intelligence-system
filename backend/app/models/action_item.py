@@ -8,6 +8,11 @@ from app.db import Base
 from app.models.common import ACTION_ITEM_STATUSES, CONFIRM_KINDS, UTCDateTime, enum_check, utcnow
 
 
+# 수기(직권) 등록 업무 구분: 추출 출처(extract_model)에 이 값을 둔다(AI 추출 업무는 모델 이름). 근거 인용문 칸에는 아래 글자를 둔다
+MANUAL_ORIGIN = "manual"
+MANUAL_EVIDENCE = "등록자 직권 지정"
+
+
 class ActionItem(Base):
     """업무(회의록 안의 할 일 1건).
 
