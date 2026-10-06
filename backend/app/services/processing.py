@@ -22,6 +22,7 @@ from app.models import Account, ActionItem, Job, Meeting, MeetingMinutes, Source
 from app.models.minutes import MINUTES_FIELDS, NO_CONTENT
 from app.models.common import utcnow
 from app.pipeline.errors import error_code
+from app.pipeline.evidence_time import apply_evidence_times
 from app.services.mail import queue_immediate_new_minutes
 from app.services.notices import create_confirm_notices
 from app.services.reprocess import recompute_auto_confirm_after_reprocess
@@ -257,12 +258,14 @@ def process_meeting(
         # 추출기에는 회의 일시를 현지 시각(APP_TIMEZONE)으로 넘긴다. UTC 그대로면 날짜·요일이 하루 어긋날 수 있다
         local_held_at = started["held_at"].astimezone(ZoneInfo(settings.app_timezone))
         result = (extractor_factory or default_extractor)().extract(transcript, local_held_at)
+        # 근거 시각은 Gemini 응답이 아니라 저장된 전사문과 인용문을 서버가 대조해 정한다(실패한 업무도 시각만 비우고 그대로 저장)
+        items = apply_evidence_times(result.items, stt_result.text, stt_result.segments)
         provenance = {
             "extract_model": result.extract_model,
             "prompt_version": result.prompt_version,
             "extracted_at": result.extracted_at,
         }
-        _finish_completed(factory, job_id, result.items, provenance, minutes=result, engine=provider)
+        _finish_completed(factory, job_id, items, provenance, minutes=result, engine=provider)
         return "completed"
     except Exception as exc:  # noqa: BLE001 — 백그라운드 작업은 예외를 밖으로 던지지 않고 failed 로 기록한다
         code = error_code(exc)

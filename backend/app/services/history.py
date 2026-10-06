@@ -22,6 +22,8 @@ KIND_ITEM_MANUAL_ADD = "item.manual_added"
 KIND_ITEM_UPDATE = "item.updated"
 # 실패한 회의록 재처리(실행자·시각·이전 오류 코드)
 KIND_MEETING_REPROCESS = "meeting.reprocessed"
+# 기존 업무의 빈 근거 시각을 전사문과 대조해 채운 보정(app/jobs/backfill_evidence_time.py)
+KIND_EVIDENCE_BACKFILL = "evidence.backfilled"
 HISTORY_KINDS: dict[str, str] = {
     KIND_MINUTES_OVERRIDE: "직권 수정",
     KIND_PARTICIPANTS_OVERRIDE: "직권 수정",
@@ -29,6 +31,7 @@ HISTORY_KINDS: dict[str, str] = {
     KIND_ITEM_MANUAL_ADD: "직권 등록",
     KIND_ITEM_UPDATE: "업무 수정",
     KIND_MEETING_REPROCESS: "재처리",
+    KIND_EVIDENCE_BACKFILL: "근거 시각 보정",
 }
 
 

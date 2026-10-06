@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     processing_track_hours: int = Field(24, ge=1)
     # 허용 확장자(쉼표 구분, 점 없이)
     allowed_audio_ext: str = "m4a,mp3,wav,mp4,webm,ogg"
+    # 근거 시각 대조 기준(0~100): 근거 인용문이 전사문 구간과 이 비율(%) 이상 맞아야 서버 대조 성공으로 본다. 완전 일치는 항상 성공
+    evidence_match_min: int = Field(80, ge=0, le=100)
     # 수정 회의록 업로드(엑셀) 상한: 파일 크기(KB)와 업무 행 수
     update_max_file_kb: int = 2048
     update_max_rows: int = 1000
