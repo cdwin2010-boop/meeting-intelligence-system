@@ -288,3 +288,13 @@ export async function endMeeting(id: number, reason: string, signal?: AbortSigna
 export async function deleteMeeting(id: number, reason: string, signal?: AbortSignal): Promise<void> {
   await request<unknown>(meetingPath(id, "delete"), { method: "POST", body: { reason }, signal });
 }
+
+/** GET /api/meetings/{id}/audio-url: 약 10분 유효한 재생 주소. url 은 API 기본 주소 뒤에 붙이는 경로(서명 토큰 포함). 음성 없음·열람 불가는 404 */
+export interface AudioUrl {
+  url: string;
+  expiresInSec: number;
+}
+
+export function getAudioUrl(meetingId: number, signal?: AbortSignal): Promise<AudioUrl> {
+  return request<AudioUrl>(`/meetings/${encodeURIComponent(String(meetingId))}/audio-url`, { signal });
+}

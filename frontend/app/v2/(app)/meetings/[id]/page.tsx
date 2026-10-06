@@ -23,6 +23,8 @@
  * - 관리자 이상(로그인 계정 직급)에게만: 제목 줄 MeetingActions(보류·직권 종료·삭제 메뉴, 보류 중 재개)와 업무 행 "종결"(확정된 업무만)·"삭제".
  *   모두 사유 입력 확인 팝업(ReasonDialog, 재개는 사유 없음)을 거치고, 성공하면 상세·수정 요청을 다시 받아 새 상태로 바꾼다.
  *   실제 권한(지시자·총괄 등)은 서버 판정, 거부(403·409·422)는 팝업 안에 서버 문구
+ * - 음성 재생: 개요 아래 한 줄 재생기(AudioPlayer). 근거 타임스탬프·전사문 구간 시각을 누르면 그 위치부터 재생(SeekTime).
+ *   재생 주소는 약 10분 유효 서명 주소(GET /meetings/{id}/audio-url), 음성이 없거나 발급이 거부되면 서버 문구와 "음성 파일이 없습니다"
  * - 다른 회의록으로 바뀌거나 화면을 떠나면 이전 요청은 AbortController 로 취소한다
  */
 import Link from "next/link";
@@ -41,6 +43,7 @@ import {
   V2_MEETINGS_PATH,
 } from "@/components/v2/meeting-display";
 import { DueEditor } from "@/components/v2/DueEditor";
+import { AudioPlayer, type SeekRequest } from "@/components/v2/AudioPlayer";
 import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
 import { useAuth } from "@/components/v2/AuthProvider";
 import { ChangeRequestDialog, type ChangeRequestTarget } from "@/components/v2/ChangeRequestDialog";
@@ -115,6 +118,21 @@ const errorMessage = (error: unknown, fallback: string) => (error instanceof Err
 
 function Mono({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
   return <span className={`whitespace-nowrap font-mn-mono text-[13px] ${muted ? "text-mn-muted" : ""}`}>{children}</span>;
+}
+
+/** 누르면 그 위치부터 재생하는 시각(Geist Mono). 시각 값이 없으면 "—" */
+function SeekTime({ sec, onSeek }: { sec: number | null | undefined; onSeek: (sec: number) => void }) {
+  if (sec === null || sec === undefined || !Number.isFinite(sec) || sec < 0) return <Mono muted>—</Mono>;
+  return (
+    <button
+      type="button"
+      aria-label={`${formatOffset(sec)}부터 재생`}
+      onClick={() => onSeek(sec)}
+      className="mn-focus whitespace-nowrap rounded-mn-control font-mn-mono text-[13px] text-mn-muted underline decoration-dotted underline-offset-4 hover:text-mn-text"
+    >
+      {formatOffset(sec)}
+    </button>
+  );
 }
 
 function BackLink() {
@@ -272,6 +290,8 @@ interface LedgerTableProps {
   onItemConfirmed: (item: ActionItem) => void;
   /** 기한 저장 응답으로 그 행만 바꾼다 */
   onItemUpdated: (item: ActionItem) => void;
+  /** 근거 타임스탬프를 누르면 그 위치부터 재생 */
+  onSeek: (sec: number) => void;
   onRequestChange: (item: ActionItem) => void;
   /** 관리자 이상이면 종결(확정된 업무만)·삭제 버튼을 그린다(권한 판정은 서버) */
   manager: boolean;
@@ -279,7 +299,7 @@ interface LedgerTableProps {
   onDeleteItem: (item: ActionItem) => void;
 }
 
-function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, onRequestChange, manager, onCloseItem, onDeleteItem }: LedgerTableProps) {
+function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, onSeek, onRequestChange, manager, onCloseItem, onDeleteItem }: LedgerTableProps) {
   const needsCount = items.filter((item) => item.needsCompletion).length;
   // 업무 확정: 한 번에 한 건. 거부되면 서버 문구(보완 필요 409·권한 403 등)를 원장 위에 보여 준다
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
@@ -395,7 +415,7 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                     <td className="px-4 py-3">
                       {item.evidenceStartSec !== null || item.evidenceQuote ? (
                         <span className="flex flex-col gap-1">
-                          {item.evidenceStartSec !== null ? <Mono muted>{formatOffset(item.evidenceStartSec)}</Mono> : null}
+                          {item.evidenceStartSec !== null ? <SeekTime sec={item.evidenceStartSec} onSeek={onSeek} /> : null}
                           {item.evidenceQuote ? <q className="text-xs text-mn-muted">{item.evidenceQuote}</q> : null}
                         </span>
                       ) : (
@@ -449,7 +469,7 @@ type TranscriptView = "applied" | "original";
 /** 지정된 화자가 있어야 이름 적용본이 의미가 있다 */
 const hasSpeakers = (transcript: Transcript) => (transcript.speakers ?? []).length > 0;
 
-function TranscriptBody({ state, view, onRetry }: { state: TranscriptState; view: TranscriptView; onRetry: () => void }) {
+function TranscriptBody({ state, view, onRetry, onSeek }: { state: TranscriptState; view: TranscriptView; onRetry: () => void; onSeek: (sec: number) => void }) {
   switch (state.kind) {
     case "idle":
     case "loading":
@@ -489,7 +509,7 @@ function TranscriptBody({ state, view, onRetry }: { state: TranscriptState; view
         <ol className="flex flex-col gap-3">
           {segments.map((segment, index) => (
             <li key={index} className="flex gap-4 text-sm">
-              <Mono muted>{formatOffset(segment.start_sec)}</Mono>
+              <SeekTime sec={segment.start_sec} onSeek={onSeek} />
               <div className="min-w-0">
                 {segment.speaker ? <p className="text-xs text-mn-muted">{names.get(segment.speaker) ?? segment.speaker}</p> : null}
                 <p className="leading-6">{segment.text}</p>
@@ -503,7 +523,7 @@ function TranscriptBody({ state, view, onRetry }: { state: TranscriptState; view
 }
 
 /** 전사문 접고 펼치기. 처음 펼칠 때만 불러온다. version 이 바뀌면(화자 저장 등) 펼쳐져 있으면 다시, 접혀 있으면 다음에 펼칠 때 불러온다 */
-function TranscriptPanel({ meetingId, version }: { meetingId: number; version: number }) {
+function TranscriptPanel({ meetingId, version, onSeek }: { meetingId: number; version: number; onSeek: (sec: number) => void }) {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<TranscriptState>({ kind: "idle" });
   // 원하는 보기. 지정된 화자가 없으면 아래에서 원본으로 고정한다
@@ -581,7 +601,7 @@ function TranscriptPanel({ meetingId, version }: { meetingId: number; version: n
             </div>
           ) : null}
           <div className="max-h-[480px] overflow-y-auto px-5 py-4">
-            <TranscriptBody state={state} view={shownView} onRetry={() => void load()} />
+            <TranscriptBody state={state} view={shownView} onRetry={() => void load()} onSeek={onSeek} />
           </div>
         </div>
       ) : null}
@@ -606,6 +626,8 @@ export default function V2MeetingDetailPage() {
   const [speakerNotice, setSpeakerNotice] = useState<string | null>(null);
   const [assigneeTarget, setAssigneeTarget] = useState<ActionItem | null>(null);
   const [changeTarget, setChangeTarget] = useState<ChangeRequestTarget | null>(null);
+  const [seek, setSeek] = useState<SeekRequest | null>(null);
+  const onSeek = useCallback((sec: number) => setSeek((prev) => ({ sec, nonce: (prev?.nonce ?? 0) + 1 })), []);
   const controllerRef = useRef<AbortController | null>(null);
   const changeRequests = useChangeRequests(meetingId);
 
@@ -860,11 +882,13 @@ export default function V2MeetingDetailPage() {
           />
         }
       />
+      <AudioPlayer key={`audio-${meeting.id}`} meetingId={meeting.id} seek={seek} />
       <LedgerTable
         items={meeting.actionItems}
         onEditAssignee={setAssigneeTarget}
         onItemConfirmed={replaceItem}
         onItemUpdated={replaceItem}
+        onSeek={onSeek}
         onRequestChange={onRequestChange}
         manager={manager}
         onCloseItem={openItemClose}
@@ -887,7 +911,7 @@ export default function V2MeetingDetailPage() {
         onCreated={changeRequests.reload}
         onResolved={changeRequests.replace}
       />
-      <TranscriptPanel key={meeting.id} meetingId={meeting.id} version={transcriptVersion} />
+      <TranscriptPanel key={meeting.id} meetingId={meeting.id} version={transcriptVersion} onSeek={onSeek} />
     </>
   );
 }

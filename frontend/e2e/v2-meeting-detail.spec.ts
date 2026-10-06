@@ -124,8 +124,8 @@ test.describe("v2 회의록 상세", () => {
     await expect(rows.nth(2)).toContainText("담당자 필요");
     await expect(rows.nth(2)).toContainText("기한 필요");
 
-    // 재생 버튼 없음(오디오 재생 API 가 아직 없음). 확정·수정 요청 버튼은 e2e/v2-confirm.spec.ts 에서 확인
-    await expect(page.getByRole("button", { name: /재생/ })).toHaveCount(0);
+    // 근거 타임스탬프는 누르면 그 위치부터 재생하는 버튼(재생기 동작은 e2e/v2-audio-player.spec.ts). 확정·수정 요청 버튼은 e2e/v2-confirm.spec.ts 에서 확인
+    await expect(rows.nth(0).getByRole("button", { name: "00:12:40부터 재생" })).toBeVisible();
 
     // 전사문: 처음엔 접혀 있고 요청도 없음 → 펼치면 1회 조회 → 접었다 다시 펼쳐도 재조회 없음
     const toggle = page.getByRole("button", { name: /전사문/ });
