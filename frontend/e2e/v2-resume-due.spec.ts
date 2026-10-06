@@ -2,7 +2,7 @@
  * v2 회의록 상세 · 재개 뒤 업무 기한 재입력 E2E.
  * 실제 백엔드 없이 page.route 로 v2 API 를 가로챈다(PATCH 에 따라 바뀌는 가짜 상태). 데이터는 모두 가상이다.
  */
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "./helpers/test";
 import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";

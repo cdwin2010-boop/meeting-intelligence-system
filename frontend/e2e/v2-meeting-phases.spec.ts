@@ -2,7 +2,7 @@
  * v2 회의록 단계(진행중·종료·보류·삭제) 탭과 상태 표시 E2E. 실제 백엔드 없이 page.route 로 v2 API 를 가로채 가짜로 응답한다.
  * (/api/auth/me, /api/meetings?phase=…, /api/meetings/{id} 와 상세 하위 자원) 데이터는 모두 가상이다.
  */
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "./helpers/test";
 import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";

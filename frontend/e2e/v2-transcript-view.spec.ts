@@ -3,7 +3,7 @@
  * (/api/auth/me, /api/meetings/{id}, /transcript, /speakers, /change-requests, /api/accounts) 데이터는 모두 가상이다.
  * fullText·segments 는 원본, displayText·speakers 는 이름 적용본.
  */
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "./helpers/test";
 import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";

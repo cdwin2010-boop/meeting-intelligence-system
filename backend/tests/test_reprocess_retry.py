@@ -315,26 +315,6 @@ def test_reprocess_leaves_common_history_with_actor_and_previous_code(env, team)
         assert "reason" not in event.payload
 
 
-def test_reprocess_auto_confirm_effect_when_clock_already_passed(env, team):
-    """재처리 결과 업무는 자동 확정 시각이 이미 지났으면 다음 자동 확정 작업에서 바로 확정 대상이 된다(시각은 바꾸지 않는 기존 정책)."""
-    from datetime import timedelta
-
-    from app.jobs.auto_confirm import run_auto_confirm
-    from app.models.common import utcnow
-
-    f = env["factory"]
-    mid = failed_meeting(env, team["staff"], participants=[str(team["lead"].id)])
-    with f() as s:
-        s.get(Meeting, mid).auto_confirm_at = utcnow() - timedelta(days=1)  # 실패한 채 방치돼 기한이 지남
-        s.commit()
-    process_meeting(reprocess(env, team["lead"], mid).json()["jobId"], session_factory=f, extractor_factory=FakeExtractor)
-    with f() as s:
-        run_auto_confirm(s)
-        s.commit()
-    with f() as s:
-        assert s.get(Meeting, mid).status == "confirmed" and s.get(Meeting, mid).confirm_kind == "period_elapsed"
-
-
 # ---------------- 서버 시작 복구 ----------------
 def test_recover_marks_running_and_queued_failed_and_leaves_completed(env, team):
     f = env["factory"]

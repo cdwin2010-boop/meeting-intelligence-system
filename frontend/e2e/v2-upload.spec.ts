@@ -2,7 +2,7 @@
  * v2 회의록 올리기 E2E. 실제 백엔드 없이 page.route 로 v2 API(/api/auth/me, /api/meetings/*)를 가로채 가짜로 응답한다.
  * 올리는 파일은 메모리에서 만든 몇 바이트짜리 가짜 파일이고, 가짜 토큰은 고정 문자열이다.
  */
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "./helpers/test";
 import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";

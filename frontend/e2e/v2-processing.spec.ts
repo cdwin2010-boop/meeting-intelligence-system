@@ -2,7 +2,7 @@
  * v2 처리 상태 안내·재처리·처리 엔진 표시 E2E. 실제 백엔드 없이 page.route 로 가로챈다(데이터는 모두 가상).
  * 자동 새로고침 주기는 playwright 설정이 NEXT_PUBLIC_PROCESSING_REFRESH_SEC=1 로 줄여 둔다.
  */
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "./helpers/test";
 
 import { withAllowed } from "./helpers/allowed-actions";
 
@@ -66,7 +66,7 @@ async function openDetail(page: Page, account: typeof LEAD, detailFor: (call: nu
   return state;
 }
 
-const banner = (page: Page) => page.getByLabel("처리 상태");
+const banner = (page: Page) => page.getByLabel("처리 상태", { exact: true });
 
 test.describe("처리 중 안내와 자동 새로고침", () => {
   test("처리 중 배너 → 자동 새로고침 → 완료되면 업무가 보이고 새로고침이 멈춘다", async ({ page }) => {

@@ -2,7 +2,7 @@
  * v2 회의록 상세 · 보류·재개·직권 종료·삭제와 업무 종결·삭제(사유 입력 확인 팝업) E2E.
  * 실제 백엔드 없이 page.route 로 v2 API 를 가로채 가짜로 응답한다(상세는 동작에 따라 바뀌는 가짜 상태). 데이터는 모두 가상이다.
  */
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "./helpers/test";
 import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";

@@ -2,7 +2,7 @@
  * v2 화면 권한 제어 E2E: 버튼 노출은 직급·상태를 직접 비교하지 않고 서버가 내려준 allowedActions 로만 정한다.
  * 실제 백엔드 없이 page.route 로 가로챈다. 상세 응답의 allowedActions 는 e2e/helpers/allowed-actions.ts 가 서버 표대로 계산해 붙인다.
  */
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "./helpers/test";
 
 import { onJson, withAllowed } from "./helpers/allowed-actions";
 

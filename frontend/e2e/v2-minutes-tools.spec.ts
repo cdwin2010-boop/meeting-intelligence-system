@@ -2,7 +2,7 @@
  * v2 회의록 상세 · 5개 항목·변경 이력·엑셀 다운로드·수정 회의록 업로드·수기 업무 등록 E2E.
  * 실제 백엔드 없이 page.route 로 v2 API 를 가로챈다(상세는 동작에 따라 바뀌는 가짜 상태). 데이터는 모두 가상이다.
  */
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "./helpers/test";
 import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";

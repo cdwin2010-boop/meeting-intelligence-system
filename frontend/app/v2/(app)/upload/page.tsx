@@ -16,6 +16,7 @@ import { FakeEngineNotice, useEngineIsFake } from "@/components/v2/EngineNotice"
 import { FilePicker } from "@/components/v2/FilePicker";
 import { detailPath, V2_MEETINGS_PATH } from "@/components/v2/meeting-display";
 import { ParticipantPicker } from "@/components/v2/ParticipantPicker";
+import { useProcessing } from "@/components/v2/ProcessingProvider";
 import { isAbortError } from "@/lib/v2/errors";
 import { uploadMeeting } from "@/lib/v2/meetings";
 
@@ -44,6 +45,7 @@ function toOffsetIso(date: string, time: string): string | null {
 export default function V2UploadPage() {
   const router = useRouter();
   const engineIsFake = useEngineIsFake(true);
+  const { refresh: refreshProcessing } = useProcessing();
   const titleId = useId();
   const dateId = useId();
   const timeId = useId();
@@ -104,6 +106,7 @@ export default function V2UploadPage() {
     controllerRef.current = controller;
     try {
       const accepted = await uploadMeeting({ file, title: title.trim(), heldAt, participantIds }, controller.signal);
+      refreshProcessing(); // 왼쪽 메뉴 처리 현황에 바로 나타나게 한다(같은 상태 저장소)
       router.push(detailPath(accepted.meetingId));
     } catch (err) {
       if (isAbortError(err)) return;

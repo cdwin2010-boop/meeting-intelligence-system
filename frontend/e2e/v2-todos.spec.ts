@@ -2,7 +2,7 @@
  * v2 앱 틀 + 할 일 화면 E2E. 실제 백엔드 없이 page.route 로 v2 API(/api/auth/*, /api/me/*)를 가로채 가짜로 응답한다.
  * 데이터는 모두 가상이고, 가짜 토큰은 고정 문자열이다.
  */
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "./helpers/test";
 
 const FAKE_TOKEN = "e2e-fake-token";
 const ACCOUNT = { id: 7, name: "한팀장", rank: "manager", tenantId: 1 };

@@ -3,6 +3,7 @@
 import { Suspense } from "react";
 
 import { AppShell } from "@/components/v2/AppShell";
+import { ProcessingProvider } from "@/components/v2/ProcessingProvider";
 import { RequireAuth } from "@/components/v2/AuthProvider";
 
 export default function V2AppLayout({ children }: { children: React.ReactNode }) {
@@ -10,7 +11,9 @@ export default function V2AppLayout({ children }: { children: React.ReactNode })
     // RequireAuth 가 useSearchParams 를 쓰므로 Suspense 경계가 필요하다(Next 15)
     <Suspense fallback={null}>
       <RequireAuth>
-        <AppShell>{children}</AppShell>
+        <ProcessingProvider>
+          <AppShell>{children}</AppShell>
+        </ProcessingProvider>
       </RequireAuth>
     </Suspense>
   );

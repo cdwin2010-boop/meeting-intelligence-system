@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 import { Badge, Button } from "@/components/mono";
 import { useAuth } from "@/components/v2/AuthProvider";
 import { FakeEngineNotice, useEngineIsFake } from "@/components/v2/EngineNotice";
+import { ProcessingPanel } from "@/components/v2/ProcessingPanel";
 import { V2_HOME, V2_LOGIN } from "@/lib/v2/next-path";
 import { RANK_LABEL } from "@/lib/v2/types";
 
@@ -72,6 +73,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
+        <ProcessingPanel />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

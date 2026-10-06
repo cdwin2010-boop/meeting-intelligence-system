@@ -35,7 +35,7 @@ from app.models.common import MEETING_STATUSES
 from app.services.reasons import event_reason, latest_reason
 from app.services.speakers import SpeakerView, display_text, load_speakers
 from app.services.history import record_meeting_view
-from app.services.reprocess import latest_job
+from app.services.reprocess import latest_job, safe_error_code
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
@@ -136,17 +136,12 @@ def _account_ref(session: Session, account_id: int | None) -> AccountRef | None:
     return AccountRef(id=found.id, name=found.name) if found else None
 
 
-_SAFE_CODE = re.compile(r"^[a-z0-9_]{1,50}$")
-
-
 def processing_out(session: Session, meeting: Meeting) -> ProcessingOut | None:
     """가장 최근 처리 작업(상태·분류된 오류 코드·시작·종료 시각). 코드가 분류 코드 모양이 아니면 internal_error 로 바꿔 내려준다."""
     job = latest_job(session, meeting.id)
     if job is None:
         return None
-    code = job.error_code
-    if code is not None and not _SAFE_CODE.match(code):
-        code = "internal_error"
+    code = safe_error_code(job.error_code)
     return ProcessingOut(status=job.status, error_code=code, started_at=job.started_at, finished_at=job.finished_at)
 
 

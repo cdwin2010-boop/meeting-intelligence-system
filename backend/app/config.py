@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     # 업로드 음성 보관 폴더(실행 위치 기준 상대 경로 가능, data/ 는 커밋 제외). 하위에 {tenant_id}/{uuid}.{ext}
     upload_dir: Path = Path("data/uploads")
     max_upload_mb: int = 200
+    # 왼쪽 메뉴 "처리 현황"이 따라가는 기간(시간): 내가 올린 회의록 중 이 시간 안에 처리가 시작된 것
+    processing_track_hours: int = Field(24, ge=1)
     # 허용 확장자(쉼표 구분, 점 없이)
     allowed_audio_ext: str = "m4a,mp3,wav,mp4,webm,ogg"
     # 수정 회의록 업로드(엑셀) 상한: 파일 크기(KB)와 업무 행 수

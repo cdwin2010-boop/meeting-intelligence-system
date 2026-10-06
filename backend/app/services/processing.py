@@ -24,6 +24,7 @@ from app.models.common import utcnow
 from app.pipeline.errors import error_code
 from app.services.mail import queue_immediate_new_minutes
 from app.services.notices import create_confirm_notices
+from app.services.reprocess import recompute_auto_confirm_after_reprocess
 from app.pipeline.extractor import ActionItemCandidate, ExtractionResult, Extractor, FakeExtractor, make_gemini_extractor
 from app.pipeline.stt import FakeStt, SttEngine, TranscriptResult, as_transcript_result, is_no_speech, make_gemini_stt
 
@@ -198,6 +199,7 @@ def _finish_completed(
             _event(session, job, "meeting", meeting.id, "meeting.awaiting_confirmation")
         # 즉시 메일: 확정 대기/확정이 된 지금, 같은 트랜잭션에서 발송함에 쌓는다(재처리해도 dedupe_key 로 1회)
         queue_immediate_new_minutes(session, meeting)
+        recompute_auto_confirm_after_reprocess(session, job, meeting, now)  # 재처리 성공이면 자동 확정 기간을 이 시각부터 다시(첫 처리·확정된 회의록은 불변)
         if meeting.auto_confirm_at is None:
             tenant = session.get(Tenant, job.tenant_id)
             meeting.auto_confirm_at = auto_confirm_at(meeting.first_created_at, tenant.auto_confirm_days)

@@ -2,7 +2,7 @@
  * v2 회의록 상세(조회 전용) E2E. 실제 백엔드 없이 page.route 로 v2 API(/api/auth/me, /api/meetings/*)를 가로채 가짜로 응답한다.
  * 데이터는 모두 가상이고, 가짜 토큰은 고정 문자열이다.
  */
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "./helpers/test";
 import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";

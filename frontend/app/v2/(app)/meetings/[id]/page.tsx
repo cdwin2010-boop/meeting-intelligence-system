@@ -49,6 +49,7 @@ import { AudioPlayer, type SeekRequest } from "@/components/v2/AudioPlayer";
 import { HistoryDialog } from "@/components/v2/HistoryDialog";
 import { ManualItemDialog } from "@/components/v2/ManualItemDialog";
 import { ProcessingBanner } from "@/components/v2/ProcessingBanner";
+import { useProcessingFinished } from "@/components/v2/ProcessingProvider";
 import { MinutesDialog, MinutesPanel } from "@/components/v2/MinutesPanel";
 import { UploadUpdateDialog } from "@/components/v2/UploadUpdateDialog";
 import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
@@ -816,6 +817,10 @@ export default function V2MeetingDetailPage() {
     const timer = setInterval(() => void reloadDetail(), PROCESSING_REFRESH_MS);
     return () => clearInterval(timer);
   }, [processingNow, reloadDetail]);
+
+  // 왼쪽 메뉴 처리 현황이 이 회의록의 완료·실패 전환을 알리면 상세를 조용히 다시 받는다(팝업·입력값·스크롤·전사문 펼침은 그대로).
+  // 상세 자체의 자동 새로고침(위)은 올린 사람이 아닌 열람자에게도 필요해서 합치지 않고 둔다. 같은 요청이 겹치면 reloadDetail 이 앞 요청을 취소한다
+  useProcessingFinished(meetingId, () => void reloadDetail());
 
   /** 업무 동작(담당자·기한·확정) 뒤: 응답의 업무는 allowedActions 가 null 이므로 행을 그대로 바꾸지 않고 상세를 다시 받아 서버 기준으로 바꾼다 */
   const replaceItem = useCallback((saved: ActionItem) => void reloadDetail(saved), [reloadDetail]);

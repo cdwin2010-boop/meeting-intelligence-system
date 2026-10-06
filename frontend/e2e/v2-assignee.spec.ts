@@ -2,7 +2,7 @@
  * v2 회의록 상세 · 업무 담당자 지정/변경 E2E. 실제 백엔드 없이 page.route 로 v2 API 를 가로채 가짜로 응답한다.
  * (/api/auth/me, /api/meetings/{id}, /transcript, /speakers, /api/accounts, PATCH /api/action-items/{id}) 데이터는 모두 가상이다.
  */
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "./helpers/test";
 import { onJson, withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";

@@ -10,15 +10,52 @@
 서버 시작 복구(recover_interrupted_jobs)
 - 서버가 멈추면 백그라운드 작업도 사라지므로 queued·running 으로 남은 작업과 그 회의록(processing)을 failed(server_restarted)로 바꾼다. 자동 재실행은 하지 않는다.
 """
-from sqlalchemy import select
+import re
+from datetime import datetime
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models import Account, Job, Meeting, append_event
+from app.models import Account, Job, Meeting, Tenant, append_event
 from app.models.common import utcnow
 from app.services.history import KIND_MEETING_REPROCESS, record_change
 
 SERVER_RESTARTED = "server_restarted"
+_SAFE_CODE = re.compile(r"^[a-z0-9_]{1,50}$")
 ACTIVE_JOB_STATUSES = ("queued", "running")
+
+
+def safe_error_code(code: str | None) -> str | None:
+    """분류 코드 모양([a-z0-9_]{1,50})이 아닌 값은 internal_error 로 바꿔 내려준다(원본 문구·키가 새지 않게)."""
+    if code is None:
+        return None
+    return code if _SAFE_CODE.match(code) else "internal_error"
+
+
+def recompute_auto_confirm_after_reprocess(session: Session, job: Job, meeting: Meeting, now: datetime) -> bool:
+    """재처리가 성공(completed)했을 때 확정 대기 회의록의 자동 확정 시각을 재처리 성공 시각 기준으로 다시 계산해 저장한다(커밋은 호출부).
+    - 정책(2026-10-06 승인): 기준일 + 고객사 기간(tenants.auto_confirm_days). 계산은 첫 처리와 같은 함수(services/processing.auto_confirm_at)를 쓴다.
+      업무 마감일이 더 빠른 업무는 기존 자동 확정 작업이 마감일 규칙(due_reached)으로 따로 처리한다(회의록 시각에는 마감일을 넣지 않는다).
+    - 첫 처리(회의록의 첫 작업)와 이미 확정된 회의록(등록 시 확정 등)은 바꾸지 않는다. 보류·종료·삭제 회의록은 재처리 대상이 아니다.
+    - 이전 값과 새 값은 공통 변경 이력(구분 "재처리")에 남긴다. 바뀌었으면 True."""
+    from app.services.processing import auto_confirm_at  # 순환 import 방지(processing 이 이 모듈을 부른다)
+
+    if meeting.status != "awaiting_confirmation":
+        return False
+    first_job_id = session.scalar(select(func.min(Job.id)).where(Job.meeting_id == meeting.id))
+    if first_job_id is None or first_job_id == job.id:
+        return False
+    tenant = session.get(Tenant, meeting.tenant_id)
+    before = meeting.auto_confirm_at
+    after = auto_confirm_at(now, tenant.auto_confirm_days)
+    meeting.auto_confirm_at = after
+    record_change(
+        session, tenant_id=meeting.tenant_id, target_type="meeting", target_id=meeting.id, kind=KIND_MEETING_REPROCESS, actor_id=None,
+        before={"autoConfirmAt": before.isoformat() if before else None},
+        after={"autoConfirmAt": after.isoformat(), "status": meeting.status},
+        extra={"jobId": job.id, "stage": "completed"},
+    )
+    return True
 
 
 def active_job_exists(session: Session, meeting_id: int) -> bool:

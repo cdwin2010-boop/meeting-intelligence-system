@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
     accounts, action_items, auth, me, meeting_actions, meeting_hold, meeting_lifecycle, meeting_queries, meeting_speakers,
-    meeting_audio, meeting_minutes, meeting_reprocess, meeting_update, meetings, probe, system,
+    meeting_audio, meeting_minutes, me_processing, meeting_reprocess, meeting_update, meetings, probe, system,
 )
 from app.config import settings
 from app.db import SessionLocal
@@ -46,6 +46,7 @@ app.include_router(meeting_minutes.router)
 app.include_router(meeting_update.router)
 app.include_router(meeting_reprocess.router)
 app.include_router(system.router)
+app.include_router(me_processing.router)
 app.include_router(meeting_actions.router)
 app.include_router(meeting_hold.router)
 app.include_router(meeting_lifecycle.router)

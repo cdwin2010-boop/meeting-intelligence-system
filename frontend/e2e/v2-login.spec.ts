@@ -3,7 +3,7 @@
  * /v2 홈은 할 일 화면이라 /api/me/todos·notices 도 빈 목록으로 가로챈다.
  * 가짜 토큰은 고정 문자열이고 실제 비밀번호·토큰은 쓰지 않는다.
  */
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "./helpers/test";
 
 const FAKE_TOKEN = "e2e-fake-token";
 const GOOD = { loginId: "kim", password: "correct-password" };

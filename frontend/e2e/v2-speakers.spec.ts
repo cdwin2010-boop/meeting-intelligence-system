@@ -2,7 +2,7 @@
  * v2 회의록 상세 · 화자 지정 팝업 E2E(참석자 줄의 "화자 지정" 버튼). 실제 백엔드 없이 page.route 로 v2 API 를 가로채 가짜로 응답한다.
  * (/api/auth/me, /api/meetings/{id}, /transcript, /speakers, /api/accounts) 데이터는 모두 가상이다.
  */
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "./helpers/test";
 import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";
