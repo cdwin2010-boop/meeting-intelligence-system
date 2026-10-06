@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from app.config import settings
+from app.pipeline.retry import generate_with_retry
 from app.pipeline.fakes import fake_transcript
 
 log = logging.getLogger("app.pipeline")
@@ -109,7 +110,8 @@ class GeminiStt:
                 file=str(audio_path), config=types.UploadFileConfig(mime_type=mime_type)
             )
             uploaded = self._wait_until_active(uploaded)
-            response = self._client.models.generate_content(
+            response = generate_with_retry(
+                self._client,
                 model=self._model,
                 contents=[uploaded, TRANSCRIBE_PROMPT],
                 config=types.GenerateContentConfig(temperature=0),

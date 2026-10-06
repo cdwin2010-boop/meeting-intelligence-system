@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 개발용 기본 서명 키. dev 가 아닌 환경에서 이 값 그대로면 서버 시작을 거부한다
@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     gemini_paid_api_key: SecretStr = SecretStr("")  # 유료 키
     gemini_model: str = "gemini-3.8-flash"  # STT·추출 공통 모델
     gemini_timeout_sec: float = 900.0  # Gemini 요청 1건·파일 처리 대기의 기한(초)
+    # 일시 오류(HTTP 500·502·503·504·접속 오류) 자동 재시도: generate_content 호출 하나하나에 적용. 0 이면 끔.
+    # 타임아웃·429·기타 4xx·키 오류는 재시도하지 않는다. 대기는 재시도마다 2배(최대 60초). SDK 자체 재시도는 쓰지 않는다
+    gemini_retry_max: int = Field(2, ge=0)
+    gemini_retry_backoff_sec: float = Field(5.0, ge=0)
 
     # ---- 음성 업로드·처리 ----
     # 전사 엔진: fake(가짜 대본, 네트워크 없음) / gemini. 업무 추출기도 같은 값을 따른다

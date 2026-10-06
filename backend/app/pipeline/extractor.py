@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from app.config import settings
 from app.pipeline.dates import WEEKDAYS_KO, resolve_due_date
 from app.models.minutes import MINUTES_FIELDS, NO_CONTENT
+from app.pipeline.retry import generate_with_retry
 from app.pipeline.fakes import fake_items_raw, fake_minutes_raw
 
 log = logging.getLogger("app.extractor")
@@ -303,7 +304,8 @@ class GeminiExtractor:
     def extract(self, transcript: str, held_at: datetime) -> ExtractionResult:
         from google.genai import types
 
-        response = self._client.models.generate_content(
+        response = generate_with_retry(
+            self._client,
             model=self._model,
             contents=build_prompt(transcript, held_at),
             # Pydantic 이 만든 JSON Schema 를 그대로 줄 수 있는 response_json_schema 를 쓴다
@@ -330,7 +332,8 @@ class GeminiExtractor:
         from google.genai import types
 
         try:
-            response = self._client.models.generate_content(
+            response = generate_with_retry(
+                self._client,
                 model=self._model,
                 contents=build_minutes_prompt(transcript, held_at),
                 config=types.GenerateContentConfig(

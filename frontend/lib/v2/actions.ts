@@ -15,6 +15,7 @@ export const MEETING_ACTION = {
   uploadUpdate: "upload_update",
   addItem: "add_item",
   editSpeakers: "edit_speakers",
+  reprocessMeeting: "reprocess_meeting",
   resolveChangeRequest: "resolve_change_request",
   requestChange: "request_change",
   downloadExcel: "download_excel",

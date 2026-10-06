@@ -10,6 +10,7 @@ def make_gemini_client(settings: Settings | None = None):
     cfg = settings or default_settings
     api_key = cfg.selected_gemini_key()  # 먼저 키 검사(없으면 여기서 오류)
     # HttpOptions.timeout 단위는 밀리초
+    # retry_options 는 주지 않는다: SDK 는 한 번만 시도하고, 일시 오류 재시도는 app/pipeline/retry.py 가 한다(이중 재시도 방지)
     return genai.Client(
         api_key=api_key,
         http_options=types.HttpOptions(timeout=int(cfg.gemini_timeout_sec * 1000)),

@@ -37,6 +37,6 @@ export default defineConfig({
         reuseExistingServer: false,
         timeout: 120_000,
         // 프로세스 환경변수가 .env.local 보다 우선 → 항상 목 모드
-        env: { NEXT_PUBLIC_USE_MOCK: "true" },
+        env: { NEXT_PUBLIC_USE_MOCK: "true", NEXT_PUBLIC_PROCESSING_REFRESH_SEC: "1" },
       },
 });

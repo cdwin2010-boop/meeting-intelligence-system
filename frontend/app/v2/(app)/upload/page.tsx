@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type DragEvent, type FormEvent } from "react";
 
 import { Button, StatusDot } from "@/components/mono";
+import { FakeEngineNotice, useEngineIsFake } from "@/components/v2/EngineNotice";
 import { FilePicker } from "@/components/v2/FilePicker";
 import { detailPath, V2_MEETINGS_PATH } from "@/components/v2/meeting-display";
 import { ParticipantPicker } from "@/components/v2/ParticipantPicker";
@@ -42,6 +43,7 @@ function toOffsetIso(date: string, time: string): string | null {
 
 export default function V2UploadPage() {
   const router = useRouter();
+  const engineIsFake = useEngineIsFake(true);
   const titleId = useId();
   const dateId = useId();
   const timeId = useId();
@@ -123,6 +125,7 @@ export default function V2UploadPage() {
         <p className="mt-1 text-sm text-mn-muted">음성 파일을 올리면 회의록과 업무를 자동으로 만듭니다.</p>
       </header>
 
+      <FakeEngineNotice show={engineIsFake} label="업로드 화면 처리 엔진 안내" />
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <form
           onSubmit={onSubmit}

@@ -20,12 +20,15 @@ KIND_ITEM_UPLOAD_UPDATE = "item.upload_updated"
 KIND_ITEM_MANUAL_ADD = "item.manual_added"
 # 업무 수정 API(PATCH /api/action-items/{id})·재개로 비워진 기한·화자 매핑 자동 채움이 같은 사건 종류(item.updated)를 쓴다
 KIND_ITEM_UPDATE = "item.updated"
+# 실패한 회의록 재처리(실행자·시각·이전 오류 코드)
+KIND_MEETING_REPROCESS = "meeting.reprocessed"
 HISTORY_KINDS: dict[str, str] = {
     KIND_MINUTES_OVERRIDE: "직권 수정",
     KIND_PARTICIPANTS_OVERRIDE: "직권 수정",
     KIND_ITEM_UPLOAD_UPDATE: "업무 갱신",
     KIND_ITEM_MANUAL_ADD: "직권 등록",
     KIND_ITEM_UPDATE: "업무 수정",
+    KIND_MEETING_REPROCESS: "재처리",
 }
 
 

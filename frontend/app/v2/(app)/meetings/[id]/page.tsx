@@ -48,6 +48,7 @@ import { DueEditor } from "@/components/v2/DueEditor";
 import { AudioPlayer, type SeekRequest } from "@/components/v2/AudioPlayer";
 import { HistoryDialog } from "@/components/v2/HistoryDialog";
 import { ManualItemDialog } from "@/components/v2/ManualItemDialog";
+import { ProcessingBanner } from "@/components/v2/ProcessingBanner";
 import { MinutesDialog, MinutesPanel } from "@/components/v2/MinutesPanel";
 import { UploadUpdateDialog } from "@/components/v2/UploadUpdateDialog";
 import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
@@ -60,6 +61,7 @@ import { SpeakerDialog } from "@/components/v2/SpeakerDialog";
 import { ApiError, isAbortError, type MissingField } from "@/lib/v2/errors";
 import { closeActionItem, confirmActionItem, deleteActionItem } from "@/lib/v2/action-items";
 import { can, ITEM_ACTION, MEETING_ACTION } from "@/lib/v2/actions";
+import { FAKE_MEETING_NOTICE, PROCESSING_REFRESH_MS } from "@/lib/v2/system";
 import {
   deleteMeeting,
   downloadMeetingExcel,
@@ -67,6 +69,7 @@ import {
   getMeeting,
   getSpeakers,
   holdMeeting,
+  reprocessMeeting,
   resumeMeeting,
   getTranscript,
   type ActionItem,
@@ -139,6 +142,16 @@ function SeekTime({ sec, onSeek }: { sec: number | null | undefined; onSeek: (se
     >
       {formatOffset(sec)}
     </button>
+  );
+}
+
+/** 이 회의록에 기록된 처리 엔진이 fake 일 때 안내(색만으로 구분하지 않고 글자로) */
+function FakeMeetingNotice({ show }: { show: boolean }) {
+  if (!show) return null;
+  return (
+    <p role="status" aria-label="회의록 처리 엔진 안내" className="rounded-mn-card border border-mn-border bg-mn-surface px-4 py-3 text-sm">
+      <StatusDot tone="queued" label={FAKE_MEETING_NOTICE} />
+    </p>
   );
 }
 
@@ -796,6 +809,14 @@ export default function V2MeetingDetailPage() {
     [meetingId],
   );
 
+  // 처리 중이면 일정 주기로 상세를 조용히 다시 받는다. 처리 중이 아니게 되면 멈추고, 화면을 떠나면 진행 중인 요청을 취소한다(load 효과의 정리)
+  const processingNow = state.kind === "ready" && state.meeting.status === "processing";
+  useEffect(() => {
+    if (!processingNow) return;
+    const timer = setInterval(() => void reloadDetail(), PROCESSING_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [processingNow, reloadDetail]);
+
   /** 업무 동작(담당자·기한·확정) 뒤: 응답의 업무는 allowedActions 가 null 이므로 행을 그대로 바꾸지 않고 상세를 다시 받아 서버 기준으로 바꾼다 */
   const replaceItem = useCallback((saved: ActionItem) => void reloadDetail(saved), [reloadDetail]);
 
@@ -906,6 +927,15 @@ export default function V2MeetingDetailPage() {
     setReasonAction(actions[kind]);
   };
 
+  const openReprocess = () =>
+    setReasonAction({
+      title: "회의록 재처리", target: meetingName, confirmLabel: "재처리하기", requireReason: false,
+      notice: "음성이 다시 처리되며 Gemini 모드이면 외부로 전송되고 비용이 생길 수 있습니다.",
+      run: async (_reason, signal) => {
+        await reprocessMeeting(meeting.id, signal);
+      },
+    });
+
   const openItemClose = (item: ActionItem) =>
     setReasonAction({
       title: "업무 종결", target: item.title || "(업무명 없음)", confirmLabel: "업무 종결하기", requireReason: true,
@@ -948,6 +978,13 @@ export default function V2MeetingDetailPage() {
         </div>
       </header>
       <PhaseRecords meeting={meeting} />
+      <ProcessingBanner
+        status={meeting.status}
+        processing={meeting.processing}
+        canReprocess={can(meeting.allowedActions, MEETING_ACTION.reprocessMeeting)}
+        onReprocess={openReprocess}
+      />
+      <FakeMeetingNotice show={meeting.minutes?.engine === "fake"} />
       {actionNotice ? (
         <p role={actionNotice.tone === "error" ? "alert" : "status"} className="text-sm">
           <StatusDot tone={actionNotice.tone} label={actionNotice.text} />

@@ -1,6 +1,7 @@
 """회의록 조회 API(읽기 전용): 목록·상세·전사문.
 열람 권한은 app/auth/access.py 한 곳에서 판정하고, 권한 없음·다른 고객사·없음은 모두 같은 404로 응답한다.
 전사문 내용은 로그에 남기지 않는다."""
+import re
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -15,6 +16,7 @@ from app.api.meeting_schemas import (
     MeetingListItem,
     MeetingListPage,
     MinutesOut,
+    ProcessingOut,
     SpeakerOut,
     TranscriptOut,
 )
@@ -33,6 +35,7 @@ from app.models.common import MEETING_STATUSES
 from app.services.reasons import event_reason, latest_reason
 from app.services.speakers import SpeakerView, display_text, load_speakers
 from app.services.history import record_meeting_view
+from app.services.reprocess import latest_job
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
@@ -131,6 +134,20 @@ def _account_ref(session: Session, account_id: int | None) -> AccountRef | None:
         return None
     found = session.get(Account, account_id)
     return AccountRef(id=found.id, name=found.name) if found else None
+
+
+_SAFE_CODE = re.compile(r"^[a-z0-9_]{1,50}$")
+
+
+def processing_out(session: Session, meeting: Meeting) -> ProcessingOut | None:
+    """가장 최근 처리 작업(상태·분류된 오류 코드·시작·종료 시각). 코드가 분류 코드 모양이 아니면 internal_error 로 바꿔 내려준다."""
+    job = latest_job(session, meeting.id)
+    if job is None:
+        return None
+    code = job.error_code
+    if code is not None and not _SAFE_CODE.match(code):
+        code = "internal_error"
+    return ProcessingOut(status=job.status, error_code=code, started_at=job.started_at, finished_at=job.finished_at)
 
 
 def minutes_out(session: Session, meeting: Meeting) -> MinutesOut:
@@ -252,6 +269,7 @@ def get_meeting(
         end_reason=latest_reason(session, meeting, "meeting.ended") if closure and closure.ended_at else None,
         delete_reason=latest_reason(session, meeting, "meeting.deleted") if closure and closure.deleted_at else None,
         minutes=minutes_out(session, meeting),
+        processing=processing_out(session, meeting),
         allowed_actions=meeting_allowed_actions(session, account, meeting),
     )
     # 상세 조회가 성공한 경우에만 열람 기록(첫 열람 유지, 마지막 열람 갱신)

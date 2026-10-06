@@ -14,6 +14,7 @@ from app.auth.deps import has_rank
 from app.auth.locks import HOLDABLE_STATUSES, reject_if_locked
 from app.models import Account, ActionItem, Meeting
 from app.models.closure import PHASES
+from app.services.reprocess import active_job_exists
 
 # ---------------- 회의록 단위 동작 ----------------
 CONFIRM_MEETING = "confirm_meeting"  # 회의록 확정(확정 대기일 때)
@@ -25,6 +26,7 @@ EDIT_MINUTES = "edit_minutes"  # 5개 항목 직권 수정
 UPLOAD_UPDATE = "upload_update"  # 수정 회의록 업로드
 ADD_ITEM = "add_item"  # 업무 추가(수기 등록)
 EDIT_SPEAKERS = "edit_speakers"  # 화자 지정
+REPROCESS_MEETING = "reprocess_meeting"  # 실패한 회의록 재처리
 RESOLVE_CHANGE_REQUEST = "resolve_change_request"  # 수정 요청 해결(수락·반려)
 REQUEST_CHANGE = "request_change"  # 수정 요청 작성(회의록 전체·업무 모두 같은 이름)
 DOWNLOAD_EXCEL = "download_excel"  # 엑셀 다운로드
@@ -39,7 +41,7 @@ SET_DUE = "set_due"  # 기한 입력·변경(날짜 또는 미확정)
 
 MEETING_ACTIONS = (
     CONFIRM_MEETING, HOLD_MEETING, RESUME_MEETING, END_MEETING, DELETE_MEETING, EDIT_MINUTES, UPLOAD_UPDATE, ADD_ITEM,
-    EDIT_SPEAKERS, RESOLVE_CHANGE_REQUEST, REQUEST_CHANGE, DOWNLOAD_EXCEL, VIEW_HISTORY,
+    EDIT_SPEAKERS, REPROCESS_MEETING, RESOLVE_CHANGE_REQUEST, REQUEST_CHANGE, DOWNLOAD_EXCEL, VIEW_HISTORY,
 )
 ITEM_ACTIONS = (CONFIRM_ITEM, CLOSE_ITEM, DELETE_ITEM, SET_ASSIGNEE, SET_DUE, REQUEST_CHANGE)
 
@@ -70,6 +72,8 @@ def meeting_allowed_actions(session: Session, account: Account, meeting: Meeting
             allowed += [EDIT_MINUTES, UPLOAD_UPDATE, ADD_ITEM, EDIT_SPEAKERS]
             if meeting.status == "awaiting_confirmation":
                 allowed.append(CONFIRM_MEETING)
+            if meeting.status == "failed" and not active_job_exists(session, meeting.id):
+                allowed.append(REPROCESS_MEETING)
             if holdable:
                 allowed.append(HOLD_MEETING)
             if meeting.status in _ENDABLE_STATUSES:

@@ -183,7 +183,7 @@ def lead_expected(state: str) -> list[str]:
         "ended": BASE + resolve + ["delete_meeting"],
         "deleted": BASE + resolve,
         "processing": BASE + resolve + ["edit_minutes", "upload_update", "add_item", "edit_speakers"],
-        "failed": BASE + resolve + ["edit_minutes", "upload_update", "add_item", "edit_speakers", "delete_meeting"],
+        "failed": BASE + resolve + ["edit_minutes", "upload_update", "add_item", "edit_speakers", "reprocess_meeting", "delete_meeting"],
     }[state])
 
 

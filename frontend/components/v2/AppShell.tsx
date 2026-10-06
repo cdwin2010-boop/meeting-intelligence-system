@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 
 import { Badge, Button } from "@/components/mono";
 import { useAuth } from "@/components/v2/AuthProvider";
+import { FakeEngineNotice, useEngineIsFake } from "@/components/v2/EngineNotice";
 import { V2_HOME, V2_LOGIN } from "@/lib/v2/next-path";
 import { RANK_LABEL } from "@/lib/v2/types";
 
@@ -29,6 +30,7 @@ const isCurrent = (pathname: string, href: string) =>
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { account, logout } = useAuth();
+  const engineIsFake = useEngineIsFake(account !== null);
   const pathname = usePathname();
   const router = useRouter();
 
@@ -84,7 +86,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             로그아웃
           </Button>
         </header>
-        <main className="flex min-w-0 flex-1 flex-col gap-6 px-4 pt-8 pb-16 md:px-12">{children}</main>
+        <main className="flex min-w-0 flex-1 flex-col gap-6 px-4 pt-8 pb-16 md:px-12">
+          <FakeEngineNotice show={engineIsFake} />
+          {children}
+        </main>
       </div>
     </div>
   );

@@ -14,7 +14,7 @@ export interface AllowOptions {
 
 const MEETING_ORDER = [
   "confirm_meeting", "hold_meeting", "resume_meeting", "end_meeting", "delete_meeting", "edit_minutes", "upload_update", "add_item",
-  "edit_speakers", "resolve_change_request", "request_change", "download_excel", "view_history",
+  "edit_speakers", "reprocess_meeting", "resolve_change_request", "request_change", "download_excel", "view_history",
 ];
 const ITEM_ORDER = ["confirm_item", "close_item", "delete_item", "set_assignee", "set_due", "request_change"];
 
@@ -31,6 +31,7 @@ export function meetingActions(detail: Detail, account: Account, options: AllowO
   if (lead) {
     if (!locked) {
       out.push("edit_minutes", "upload_update", "add_item", "edit_speakers");
+      if (status === "failed") out.push("reprocess_meeting"); // 처리 중인 작업이 없을 때(가짜 서버는 작업을 보지 않는다)
       if (status === "awaiting_confirmation") out.push("confirm_meeting");
       if (holdable) out.push("hold_meeting", "end_meeting");
     }

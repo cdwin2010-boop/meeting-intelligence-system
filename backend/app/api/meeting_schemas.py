@@ -93,6 +93,15 @@ class MinutesOut(CamelModel):
     updated_at: datetime | None = None
 
 
+class ProcessingOut(CamelModel):
+    """처리 작업 정보(가장 최근 작업). 오류 코드는 분류 코드만(원본 예외 문구·키는 내려주지 않는다)."""
+
+    status: str  # queued | running | completed | failed | no_content
+    error_code: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
 class MeetingDetail(CamelModel):
     id: int
     title: str
@@ -131,6 +140,8 @@ class MeetingDetail(CamelModel):
     delete_reason: str | None = None
     # 회의록 5개 항목(추가 필드). summary·decisions 는 예전부터 있던 칸 그대로(이번에 바꾸지 않음)
     minutes: MinutesOut = MinutesOut()
+    # 가장 최근 처리 작업 정보(추가 필드). 작업이 없으면 None
+    processing: ProcessingOut | None = None
     # 이 사용자가 이 회의록에서 지금 할 수 있는 동작(추가 필드, app/auth/actions.py). 화면 표시용이며 거부 판정은 각 API 가 한다
     allowed_actions: list[str] = []
 

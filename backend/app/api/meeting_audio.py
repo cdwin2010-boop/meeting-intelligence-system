@@ -51,6 +51,14 @@ def _audio_file(session: Session, meeting: Meeting) -> Path:
     return path
 
 
+def audio_file_or_none(session: Session, meeting: Meeting) -> Path | None:
+    """보관된 음성 원본 경로(없거나 저장 폴더 밖이면 None). 재처리가 같은 판정을 쓴다."""
+    try:
+        return _audio_file(session, meeting)
+    except HTTPException:
+        return None
+
+
 @router.get("/{meeting_id}/audio-url", response_model=AudioUrlOut, response_model_by_alias=True)
 def issue_audio_url(
     meeting_id: int,

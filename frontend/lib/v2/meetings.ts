@@ -95,6 +95,8 @@ export interface MeetingDetail {
   minutes?: Minutes;
   /** 이 사용자가 이 회의록에서 지금 할 수 있는 동작. 없으면 모든 동작 버튼을 숨긴다 */
   allowedActions?: string[];
+  /** 가장 최근 처리 작업 정보(추가 필드). 오류 코드는 분류 코드만 */
+  processing?: MeetingProcessing | null;
   actionItems: ActionItem[];
   /** reason: 처리 사유가 있는 사건(업무 종결·삭제, 회의록 보류·직권 종료·삭제)만, 그 밖에는 null */
   recentEvents: { eventType: string; actor: AccountRef | null; createdAt: string; reason?: string | null }[];
@@ -459,4 +461,17 @@ export interface ManualItemInput {
 /** POST /api/meetings/{id}/action-items: 수기 업무 등록(근거는 서버가 "등록자 직권 지정"으로 둔다). 지시자·총괄만(서버 판정) */
 export function createManualItem(id: number, input: ManualItemInput, signal?: AbortSignal): Promise<ActionItem> {
   return request<ActionItem>(`/meetings/${encodeURIComponent(String(id))}/action-items`, { method: "POST", body: input, signal });
+}
+
+/** 처리 작업 정보(상세 응답 processing) */
+export interface MeetingProcessing {
+  status: "queued" | "running" | "completed" | "failed" | "no_content";
+  errorCode: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+/** POST /api/meetings/{id}/reprocess(202): 실패한 회의록을 보관된 음성으로 다시 처리. 총괄·지시자만(서버 판정), 처리 중·음성 없음 등은 409 문구 */
+export function reprocessMeeting(id: number, signal?: AbortSignal): Promise<{ meetingId: number; jobId: number }> {
+  return request<{ meetingId: number; jobId: number }>(`/meetings/${encodeURIComponent(String(id))}/reprocess`, { method: "POST", signal });
 }

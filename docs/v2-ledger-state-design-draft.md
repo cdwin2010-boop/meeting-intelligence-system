@@ -816,3 +816,25 @@ A·B·C·D는 팀장 회신 2026-10-01로 [확정]됐다(부록 B). 각 표에�
 
 ### D-15 알려진 제한사항·이후 과제
 - 이 문서에 새로 쓰지 않는다. `CHANGELOG.md`의 "v2.0 기준선 마감"(알려진 제한사항, 이후 과제)을 본다.
+
+### D-16 처리 상태·재처리·재시도·엔진 표시 [구현 기준]
+- **처리 순서와 실패 시 남는 데이터**: 업로드(202, 음성 저장+원천 문서·회의록·작업 `queued` 생성) → 백그라운드 처리 `process_meeting`: 작업 `running` → 전사(STT) → **전사문 즉시 저장**(`transcripts`, 회의록당 1건) → 말소리 없음이면 `no_content` → 업무 추출 → 5개 항목 생성(업무 추출과 별도 호출, 실패해도 업무는 저장) → **업무 생성·5개 항목 저장·회의록 상태 결정·작업 완료를 한 트랜잭션**으로 저장. 따라서 실패한 회의록(`failed`)에는 전사문이 남을 수 있지만 AI 업무·5개 항목은 저장되지 않는다.
+- **작업 상태** `jobs.status`: `queued`·`running`·`completed`·`failed`·`no_content`. `attempts`는 작업이 `running`으로 시작된 횟수(작업 1건당 보통 1). **오류 코드** `jobs.error_code`는 분류 코드만 저장한다(원본 예외 문구·키·경로 금지):
+
+| 코드 | 뜻 |
+|---|---|
+| `gemini_key_missing` | 선택된 `GEMINI_KEY_MODE` 의 키가 비어 있음(다른 모드로 넘어가지 않음) |
+| `upload_missing` | 보관된 음성 파일이 없음 |
+| `timeout` | 시간 초과(요청 기한·파일 처리 대기) |
+| `stt_file_failed` | Gemini 가 올린 음성 파일을 처리하지 못함 |
+| `extraction_invalid` | 업무 추출 응답이 스키마에 맞지 않음 |
+| `gemini_api_{HTTP 상태}` | Gemini API 오류(예: `gemini_api_503`, `gemini_api_429`, `gemini_api_401`) |
+| `internal_error` | 그 밖의 예외 |
+| `server_restarted` | 서버가 재시작되어 처리가 중단됨(시작 복구가 기록) |
+
+- **상세 응답 `processing`**(추가 필드): 가장 최근 작업의 `status`·`errorCode`·`startedAt`·`finishedAt`(작업이 없으면 null). 분류 코드 모양(`[a-z0-9_]{1,50}`)이 아닌 값은 `internal_error`로 바꿔 내려준다. 화면(`lib/v2/processing-errors.ts`)은 코드를 한국어 이유로 풀고 코드 글자도 함께 보여 준다(일시 오류 `gemini_api_5xx`, 키 문제 `gemini_key_missing`·`gemini_api_401`·`403`, 모르는 코드는 "처리 중 오류가 발생했습니다 (코드)"). 처리 중(`processing`)이면 안내 배너와 자동 새로고침(`NEXT_PUBLIC_PROCESSING_REFRESH_SEC`, 기본 5초, 처리가 끝나면 멈추고 화면을 떠나면 요청 취소).
+- **재처리** `POST /api/meetings/{id}/reprocess`(202 `{meetingId, jobId}`): 권한은 `can_confirm_meeting`(등록 관리자·지시자; 다른 관리자·담당자 403, 볼 수 없으면 404). 회의록 `status=failed`이고 보류·종료·삭제가 아닐 때만(그 밖 409), 처리 중(`queued`·`running`) 작업이 있으면 409, 보관된 음성 원본이 없으면 409("보관된 음성 파일이 없어 다시 처리할 수 없습니다…"). 새 작업(`queued`)을 만들고 회의록을 `processing`으로 돌린 뒤 **같은 처리 함수(`process_meeting`)와 같은 실행기**로 다시 돌린다(`app/services/reprocess.py`, `app/api/meeting_reprocess.py`). 전사문은 회의록당 1건을 새 결과로 바꾸고 5개 항목도 회의록당 1행을 갱신하므로 중복되지 않는다. 끝난 뒤 상태는 첫 처리와 같은 규칙(관리자·지시자 등록=등록 시 확정, 담당자 등록=확정 대기)이고 **자동 확정 시각(`auto_confirm_at`)은 바꾸지 않는다**(최초 생성일 기준, 리셋 없음). 따라서 실패한 채 오래 두어 그 시각이 이미 지났다면, 재처리로 만들어진 업무와 회의록은 다음 자동 확정 작업에서 바로 확정 대상이 된다. 허용 동작 이름 `reprocess_meeting`(총괄·지시자, 잠기지 않음, `failed`, 처리 중 작업 없음). 이력은 공통 변경 이력 구분 `meeting.reprocessed`("재처리"): 실행자·시각·이전 오류 코드(`previousErrorCode`)·새 작업 ID, 사유는 받지 않는다. 화면은 실패 배너의 "다시 처리" → 확인 창(안내: 음성이 다시 처리되며 Gemini 모드이면 외부로 전송되고 비용이 생길 수 있음, 확인 버튼 "재처리하기").
+- **서버 시작 복구**: 서버가 시작될 때 `queued`·`running`으로 남은 작업을 `failed`(`server_restarted`)로, 그 회의록(`processing`)을 `failed`로 바꾼다(`recover_interrupted_jobs`, 사건 `job.failed`·`meeting.failed`). **자동 재실행은 하지 않는다.** 복구 실패는 로그에 예외 종류만 남기고 서버 시작을 막지 않는다.
+- **일시 오류 자동 재시도**(`app/pipeline/retry.py`): Gemini `generate_content` 호출 하나하나에만 적용(전사·업무 추출·5개 항목 각각; 이미 성공한 단계는 다시 부르지 않음). 대상은 HTTP 500·502·503·504와 접속 오류(`httpx.ConnectError`)뿐이며 타임아웃·429·기타 4xx·키 오류는 재시도하지 않는다. 설정: `GEMINI_RETRY_MAX`(기본 2, 0이면 끔), `GEMINI_RETRY_BACKOFF_SEC`(기본 5초, 재시도마다 2배, 최대 60초). 모두 실패하면 기존과 같은 오류 코드로 `failed`. 로그에는 예외 종류·상태 코드·횟수만 남긴다. google-genai SDK 는 클라이언트에 `retry_options`를 주지 않으면 한 번만 시도하므로(앱은 주지 않는다) 이중 재시도가 없다.
+- **처리 엔진 표시** `GET /api/system/engine`(로그인 필요): `{engine: "fake"|"gemini", isFake}` 만(키·키 모드·모델·기타 설정은 내려주지 않음). 서버 시작 때 `STT_PROVIDER=fake`면 "가짜(fake) 처리 모드로 실행 중" 경고 로그. 화면은 `isFake`이면 앱 틀 상단과 업로드 화면에 "시험용 가짜 처리 모드입니다. 업로드한 음성은 실제로 처리되지 않습니다."를 글자로 표시하고, 회의록 상세에는 그 회의록의 `minutes.engine`이 `fake`일 때 같은 취지의 안내를 보여 준다.
+- 마이그레이션·새 표 없음(기존 `jobs`·`meetings`·`events`를 그대로 사용).
