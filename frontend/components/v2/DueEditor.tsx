@@ -69,7 +69,7 @@ export function DueEditor({ item, editable, onSaved }: DueEditorProps) {
 
   if (!editing) {
     return (
-      <span className="flex items-center justify-between gap-2">
+      <span className="flex flex-wrap items-center justify-between gap-2 py-2">
         {value}
         <Button size="sm" aria-label={`${label} 기한 ${item.dueDate || item.dueUndetermined ? "변경" : "설정"}`} onClick={open}>
           {item.dueDate || item.dueUndetermined ? "변경" : "설정"}

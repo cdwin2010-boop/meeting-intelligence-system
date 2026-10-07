@@ -313,8 +313,6 @@ interface LedgerTableProps {
 
 function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, onSeek, onAddItem, onRequestChange, allowed, onCloseItem, onDeleteItem }: LedgerTableProps) {
   const needsCount = items.filter((item) => item.needsCompletion).length;
-  // 종결·삭제 버튼이 보이는 업무가 하나라도 있으면 동작 열을 넓힌다
-  const wideActions = items.some((it) => can(it.allowedActions, ITEM_ACTION.closeItem) || can(it.allowedActions, ITEM_ACTION.deleteItem));
   // 업무 확정: 한 번에 한 건. 거부되면 서버 문구(보완 필요 409·권한 403 등)를 원장 위에 보여 준다
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [notice, setNotice] = useState<{ tone: "ready" | "error"; text: string } | null>(null);
@@ -367,32 +365,40 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
           )
         ) : null}
       </div>
-      <div className="overflow-x-auto rounded-mn-card border border-mn-border bg-mn-surface">
-        <table aria-label="업무 원장" className="w-full min-w-[1220px] table-fixed border-collapse text-sm">
+      {/* 열 폭 규칙(고정 px 없음): 업무명·근거 칸은 남는 폭을 같은 비율로 나눠 갖고(폭 없는 col 은 table-fixed 에서 균등 분배),
+          나머지 칸은 내용에 맞는 rem 폭이다. 칸이 더 줄어들 수 없는 폭(표 최소 폭 아래)에서는 칸이 겹치지 않고 이 컨테이너 안에서만 가로 스크롤된다.
+          스크롤 컨테이너는 키보드로 스크롤할 수 있게 항상 포커스 대상으로 둔다(스크롤이 생길 때만 부여하기 어려워 항상 부여) */}
+      <div
+        role="group"
+        aria-label="업무 원장 표, 가로 스크롤 가능"
+        tabIndex={0}
+        className="mn-focus min-w-0 overflow-x-auto rounded-mn-card border border-mn-border bg-mn-surface"
+      >
+        <table aria-label="업무 원장" className="w-full min-w-[56.5rem] table-fixed border-collapse text-sm">
           <colgroup>
-            <col className="w-[120px]" />
+            <col className="w-[6.5rem]" />
             <col />
-            <col className="w-[180px]" />
-            <col className="w-[210px]" />
-            <col className="w-[160px]" />
-            <col className="w-[240px]" />
-            <col className={wideActions ? "w-[320px]" : "w-[200px]"} />
+            <col className="w-[7rem]" />
+            <col className="w-[7.5rem]" />
+            <col className="w-[7rem]" />
+            <col />
+            <col className="w-[8.5rem]" />
           </colgroup>
           <thead>
             <tr className="h-10 border-b border-mn-border text-left text-xs text-mn-muted">
-              <th scope="col" className="px-4 font-medium">상태</th>
-              <th scope="col" className="px-4 font-medium">업무명</th>
-              <th scope="col" className="px-4 font-medium">담당자</th>
-              <th scope="col" className="px-4 font-medium">완료 기한</th>
-              <th scope="col" className="px-4 font-medium">보완 필요</th>
-              <th scope="col" className="px-4 font-medium">근거</th>
-              <th scope="col" className="px-4 font-medium">동작</th>
+              <th scope="col" className="px-3 font-medium">상태</th>
+              <th scope="col" className="px-3 font-medium">업무명</th>
+              <th scope="col" className="px-3 font-medium">담당자</th>
+              <th scope="col" className="px-3 font-medium">완료 기한</th>
+              <th scope="col" className="px-3 font-medium">보완 필요</th>
+              <th scope="col" className="px-3 font-medium">근거</th>
+              <th scope="col" className="px-3 font-medium">동작</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
               <tr className="h-12">
-                <td colSpan={7} className="px-4 text-center text-mn-muted">
+                <td colSpan={7} className="px-3 text-center text-mn-muted">
                   추출된 업무가 없습니다.
                 </td>
               </tr>
@@ -401,10 +407,10 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                 const status = itemStatus(item);
                 return (
                   <tr key={item.id} className="h-12 border-b border-mn-border align-middle last:border-b-0">
-                    <td className="px-4">
+                    <td className="px-3">
                       <StatusDot tone={status.tone} label={status.label} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3 [overflow-wrap:anywhere] break-keep">
                       {item.origin === "manual" ? (
                         <span className="mr-2 inline-block align-middle">
                           <Badge>수기</Badge>
@@ -412,9 +418,9 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                       ) : null}
                       {item.title || <span className="text-mn-muted">(업무명 없음)</span>}
                     </td>
-                    <td className="px-4">
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="min-w-0 truncate">{item.assignee?.name ?? <span className="text-mn-muted">—</span>}</span>
+                    <td className="px-3">
+                      <span className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="min-w-0 [overflow-wrap:anywhere]">{item.assignee?.name ?? <span className="text-mn-muted">—</span>}</span>
                         {can(item.allowedActions, ITEM_ACTION.setAssignee) ? (
                           <Button
                             size="sm"
@@ -426,10 +432,10 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                         ) : null}
                       </span>
                     </td>
-                    <td className="px-4">
+                    <td className="px-3">
                       <DueEditor item={item} editable={can(item.allowedActions, ITEM_ACTION.setDue)} onSaved={onItemUpdated} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       {item.needsCompletion && item.missingFields.length > 0 ? (
                         <span className="flex flex-col gap-1">
                           {item.missingFields.map((field) => (
@@ -440,15 +446,15 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                         <span className="text-mn-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       {item.evidenceStartSec !== null || item.evidenceQuote ? (
                         <span className="flex flex-col gap-1">
                           {item.evidenceStartSec !== null ? <SeekTime sec={item.evidenceStartSec} onSeek={onSeek} /> : null}
                           {item.evidenceQuote ? (
                             item.origin === "manual" ? (
-                              <span className="text-xs text-mn-muted">{item.evidenceQuote}</span>
+                              <span className="text-xs text-mn-muted [overflow-wrap:anywhere] break-keep">{item.evidenceQuote}</span>
                             ) : (
-                              <q className="text-xs text-mn-muted">{item.evidenceQuote}</q>
+                              <q className="text-xs text-mn-muted [overflow-wrap:anywhere] break-keep">{item.evidenceQuote}</q>
                             )
                           ) : null}
                         </span>
@@ -456,8 +462,8 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                         <span className="text-mn-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4">
-                      <span className="flex items-center gap-2">
+                    <td className="px-3">
+                      <span className="flex flex-wrap items-center gap-2 py-2">
                         {can(item.allowedActions, ITEM_ACTION.confirmItem) ? (
                           <Button
                             size="sm"
