@@ -55,3 +55,12 @@ ACTION_ITEM_STATUSES = ("pending", "confirmed", "closed", "deleted")
 INACTIVE_ITEM_STATUSES = ("closed", "deleted")
 # 처리 작업 상태: 대기 → 실행 중 → 완료 / 실패 / 말소리 없음
 JOB_STATUSES = ("queued", "running", "completed", "failed", "no_content")
+# ---- 조직·프로젝트(작업 66-2) ----
+# 부서 종류: 일반 부서 / 임원 그룹(프로젝트 참여자 후보에서 따로 보인다)
+DEPARTMENT_KINDS = ("normal", "executive")
+# 부서 안 역할: 부서장(부서마다 1명, 서비스 계층에서 보장) / 부서원
+DEPARTMENT_ROLES = ("head", "member")
+# 프로젝트 상태: 승인 대기(부서원 등록) → 진행(active) 또는 반려
+PROJECT_STATUSES = ("pending_approval", "active", "rejected")
+# 프로젝트 참여 역할: 총괄 / 관리자 / 참여자(lead·manager 는 관리자 이상 직급만)
+PROJECT_MEMBER_ROLES = ("lead", "manager", "member")

@@ -538,11 +538,14 @@ def _tables(url: str) -> set[str]:
         engine.dispose()
 
 
+_BEFORE_GUESTS = "9e3b7c1d5a42"  # meeting_guest_participants 마이그레이션의 down_revision(뒤에 마이그레이션이 더 생겨도 이 표만 되돌린다)
+
+
 def test_guest_participants_migration_up_down_and_refuses_with_rows(tmp_path):
     url = f"sqlite:///{(tmp_path / 'mig.db').as_posix()}"
     command.upgrade(_alembic(url), "head")
     assert "meeting_guest_participants" in _tables(url)
-    command.downgrade(_alembic(url), "-1")  # 비어 있으면 되돌려진다
+    command.downgrade(_alembic(url), _BEFORE_GUESTS)  # 비어 있으면 되돌려진다
     assert "meeting_guest_participants" not in _tables(url) and "meeting_minutes" in _tables(url)
     command.upgrade(_alembic(url), "head")
 
@@ -555,5 +558,5 @@ def test_guest_participants_migration_up_down_and_refuses_with_rows(tmp_path):
         s.commit()
     engine.dispose()
     with pytest.raises(RuntimeError, match="downgrade 거부"):
-        command.downgrade(_alembic(url), "-1")
+        command.downgrade(_alembic(url), _BEFORE_GUESTS)
     assert "meeting_guest_participants" in _tables(url)

@@ -862,3 +862,13 @@ A·B·C·D는 팀장 회신 2026-10-01로 [확정]됐다(부록 B). 각 표에�
 - **활성 업무 조건 모듈** `app/models/item_conditions.py`: 업무 상태를 쿼리 조건으로 가르는 조건(삭제 아님·열려 있음·끝남·확정 대기·확정됨)을 이름 붙은 함수로 한 곳에 둔다. 업무 상태 직접 비교는 이 모듈 밖에 두지 않는다(`tests/test_item_conditions.py` 의 가드가 검사). 이후 "대체된 업무" 제외는 이 모듈 한 곳에만 추가한다(지금은 대체 기능이 없어 조건이 비어 있다).
 - **백업 주의**: WAL 모드에서는 `-wal`·`-shm` 파일이 함께 생긴다. 서버를 끄고 파일을 복사하거나 SQLite 백업 방식을 쓴다(실행 중 DB 파일만 복사하면 최근 변경이 빠질 수 있다).
 - **PostgreSQL 점검**: alembic 오프라인(`--sql`) 모드로 postgresql 방언 DDL 이 생성되는 것을 확인했다(18개 표, 마지막 리비전까지).
+
+### D-19 조직·프로젝트 [구현 기준, 작업 66-2]
+- **표**(마이그레이션 `c7e2a91d4b30`, 기존 표는 바꾸지 않는 별도 표 4개): `departments`(고객사·이름 유니크, `parent_id` 상위 부서, `kind` normal/executive), `account_departments`(계정×부서 유니크, `role` head/member), `projects`(등록 부서, `status` pending_approval/active/rejected, `lead_account_id`·`decided_by`·`decided_at`), `project_members`(프로젝트×계정 유니크, `role` lead/manager/member). 열거형은 문자열 + CHECK. downgrade 는 4개 표에 행이 있으면 거부한다. 별도 직원 표는 없고 기존 계정에 소속을 붙인다(겸직 = 소속 여러 개).
+- **부서장 1명 보장**: DB 제약이 아니라 `app/services/org.py` 의 `set_head` 가 새 부서장을 지정할 때 기존 부서장을 부서원으로 내린다. 부서장은 관리자 이상 직급(manager·executive)만, 부서장의 소속 제거는 거부(먼저 다른 사람을 지정).
+- **등록·승인 흐름**: 부서장이 등록하면 바로 active, 등록자가 lead(부서장 직급이 관리자 미만이면 409). 부서원이 등록하면 pending_approval(lead 없음), 부서장이 없으면 409. 소속이 아닌 부서는 403, 다른 고객사 부서는 404. 승인하면 active·승인자가 lead(등록자는 member 유지), 이미 active 면 200(변경 없음), 반려는 사유 필수(422)이며 사유는 이력 payload 에 둔다. 총괄·관리자 역할은 관리자 이상 직급만(409), 참여자는 모든 직급.
+- **권한**: 승인·반려 = 등록 부서의 부서장. 참여자 추가·역할 변경·제거 = 프로젝트의 lead 역할 참여자(active 프로젝트만, lead 는 제거 불가, 총괄의 역할은 바꿀 수 없음, 제거는 POST `/members/{accountId}/remove`). 열람 = 참여자·등록자·승인자, 관리자 이상은 같은 고객사 전체(부서 계층이 들어오면 `project_visibility` 에서 좁힌다). 볼 수 없거나 다른 고객사면 404.
+- **API**: `GET /api/departments`, `GET /api/me/org`, `GET·POST /api/projects`, `GET /api/projects/candidates?departmentId=`(자기 부서·타 부서·임원 그룹, 계정은 accountId·이름·직급만, 소속 아닌 부서 403), `GET /api/projects/{id}`, `POST .../approve`, `.../reject`, `.../members`, `.../members/{accountId}/remove`. 응답에 이메일·로그인 ID 없음.
+- **이력**: 공통 이력(events, 대상 종류 department·project)에 `department.updated`(부서 변경), `project.registered`·`approved`·`rejected`, `project.member_added`·`member_removed`·`member_role_changed`를 남긴다(회의록 이력 조회에는 섞이지 않음).
+- **관리 스크립트**: `python scripts/manage_org.py list|create-dept|set-head|add-member|remove-member --tenant 고객사 ...`(backend 에서 실행). 기본은 변경 예정만 보여 주는 dry-run, `--apply` 일 때만 저장, 실행자는 이력에 "시스템"(행위자 없음). 조직 등록·수정 API 는 만들지 않았다.
+- **아직 구현하지 않은 것**: 회의 유형·회의록의 프로젝트 연결·프로젝트 참여자의 회의록 열람 규칙·총괄/임원 확정 권한 범위(작업 66-3), 조직 관리 화면과 API(시스템 관리자 기능), 승인 대기 알림.

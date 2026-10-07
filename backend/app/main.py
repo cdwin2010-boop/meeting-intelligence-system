@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
-    accounts, action_items, auth, me, meeting_actions, meeting_hold, meeting_lifecycle, meeting_queries, meeting_speakers,
+    accounts, action_items, auth, departments, projects, me, meeting_actions, meeting_hold, meeting_lifecycle, meeting_queries, meeting_speakers,
     meeting_audio, meeting_minutes, me_processing, meeting_reprocess, meeting_update, meetings, probe, system,
 )
 from app.config import settings
@@ -53,6 +53,9 @@ app.include_router(meeting_lifecycle.router)
 app.include_router(action_items.router)
 app.include_router(me.router)
 app.include_router(accounts.router)
+app.include_router(departments.router)
+app.include_router(departments.me_router)
+app.include_router(projects.router)
 app.include_router(meeting_speakers.router)
 # 3단계 검증용 보호 엔드포인트(업무 API가 생기면 제거)
 app.include_router(probe.router)

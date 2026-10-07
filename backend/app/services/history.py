@@ -24,6 +24,14 @@ KIND_ITEM_UPDATE = "item.updated"
 KIND_MEETING_REPROCESS = "meeting.reprocessed"
 # 기존 업무의 빈 근거 시각을 전사문과 대조해 채운 보정(app/jobs/backfill_evidence_time.py)
 KIND_EVIDENCE_BACKFILL = "evidence.backfilled"
+# 조직·프로젝트(작업 66-2). 대상 종류는 department·project 라 회의록 이력 조회에는 섞이지 않는다
+KIND_DEPARTMENT_UPDATE = "department.updated"
+KIND_PROJECT_REGISTERED = "project.registered"
+KIND_PROJECT_APPROVED = "project.approved"
+KIND_PROJECT_REJECTED = "project.rejected"
+KIND_PROJECT_MEMBER_ADDED = "project.member_added"
+KIND_PROJECT_MEMBER_REMOVED = "project.member_removed"
+KIND_PROJECT_MEMBER_ROLE = "project.member_role_changed"
 HISTORY_KINDS: dict[str, str] = {
     KIND_MINUTES_OVERRIDE: "직권 수정",
     KIND_PARTICIPANTS_OVERRIDE: "직권 수정",
@@ -32,6 +40,13 @@ HISTORY_KINDS: dict[str, str] = {
     KIND_ITEM_UPDATE: "업무 수정",
     KIND_MEETING_REPROCESS: "재처리",
     KIND_EVIDENCE_BACKFILL: "근거 시각 보정",
+    KIND_DEPARTMENT_UPDATE: "부서 변경",
+    KIND_PROJECT_REGISTERED: "프로젝트 등록",
+    KIND_PROJECT_APPROVED: "프로젝트 승인",
+    KIND_PROJECT_REJECTED: "프로젝트 반려",
+    KIND_PROJECT_MEMBER_ADDED: "참여자 추가",
+    KIND_PROJECT_MEMBER_REMOVED: "참여자 제거",
+    KIND_PROJECT_MEMBER_ROLE: "참여자 역할 변경",
 }
 
 

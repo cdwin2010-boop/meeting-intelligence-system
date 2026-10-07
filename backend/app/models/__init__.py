@@ -10,6 +10,8 @@ from app.models.mail import MailOutbox
 from app.models.meeting import Meeting, MeetingParticipant
 from app.models.minutes import MeetingMinutes
 from app.models.notice import MeetingView, Notice
+from app.models.org import AccountDepartment, Department
+from app.models.project import Project, ProjectMember
 from app.models.source_document import SourceDocument
 from app.models.speaker import MeetingSpeaker
 from app.models.tenant import Tenant
@@ -17,7 +19,9 @@ from app.models.transcript import Transcript
 
 __all__ = [
     "Account",
+    "AccountDepartment",
     "ActionItem",
+    "Department",
     "Event",
     "Job",
     "MailOutbox",
@@ -30,6 +34,8 @@ __all__ = [
     "MeetingSpeaker",
     "MeetingView",
     "Notice",
+    "Project",
+    "ProjectMember",
     "SourceDocument",
     "Tenant",
     "Transcript",
