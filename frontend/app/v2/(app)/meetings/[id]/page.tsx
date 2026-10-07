@@ -88,6 +88,33 @@ type LoadState =
   | { kind: "error"; message: string }
   | { kind: "ready"; meeting: MeetingDetail };
 
+/** 업무 근거 → 전사문 딥링크 요청. nonce 가 바뀔 때마다 새 요청(같은 시각을 다시 눌러도 다시 이동) */
+interface DeepLinkRequest {
+  sec: number;
+  nonce: number;
+}
+
+/**
+ * 근거 시각(초)에 대응하는 전사 구간 찾기. 근거 시각은 서버가 전사문 구간의 start_sec 으로 정하므로 보통 정확히 같다(같은 초 단위 숫자, 변환 없음).
+ * 정확히 일치하는 구간이 있으면 그것, 없으면 근거 시각 이전(같거나 앞)에서 가장 가까운 구간. 앞선 구간이 없으면 -1(찾지 못함).
+ */
+function findSegmentIndex(segments: { start_sec?: number | null }[], sec: number): number {
+  let exact = -1;
+  let before = -1;
+  let beforeStart = -Infinity;
+  segments.forEach((segment, index) => {
+    const start = segment.start_sec;
+    if (typeof start !== "number" || !Number.isFinite(start)) return;
+    if (Math.abs(start - sec) < 0.001) {
+      if (exact < 0) exact = index;
+    } else if (start < sec && start >= beforeStart) {
+      before = index;
+      beforeStart = start;
+    }
+  });
+  return exact >= 0 ? exact : before;
+}
+
 type TranscriptState =
   | { kind: "idle" }
   | { kind: "loading" }
@@ -164,11 +191,29 @@ function BackLink() {
   );
 }
 
+/** 근거 칸의 "근거 위치 보기". 근거 시각이 없으면 비활성(이유는 title) */
+function ViewTranscriptButton({ item, onView }: { item: ActionItem; onView: (sec: number, trigger: HTMLElement) => void }) {
+  const sec = item.evidenceStartSec;
+  const has = sec !== null && sec !== undefined && Number.isFinite(sec) && sec >= 0;
+  return (
+    <Button
+      size="sm"
+      disabled={!has}
+      title={has ? undefined : "근거 시각이 없어 전사문 위치를 알 수 없습니다"}
+      aria-label={`근거 위치 보기: ${item.title || "업무명 없음"}${has ? ` ${formatOffset(sec)}` : ""}`}
+      onClick={(event) => has && onView(sec as number, event.currentTarget)}
+      className="shrink-0 whitespace-nowrap"
+    >
+      근거 위치 보기
+    </Button>
+  );
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <dt className="text-xs text-mn-muted">{label}</dt>
-      <dd className="mt-1 text-sm text-mn-text">{children}</dd>
+      <dt className="text-xs font-medium text-mn-muted">{label}</dt>
+      <dd className="mt-1 text-base font-semibold leading-7 text-mn-text [overflow-wrap:anywhere]">{children}</dd>
     </div>
   );
 }
@@ -234,7 +279,8 @@ function Overview({ meeting, speakerSummary, minutesPanel }: { meeting: MeetingD
           </Field>
         )}
       </dl>
-      {minutesPanel}
+      {/* 헤더 정보 블록과 5개 항목을 가르는 구분선 */}
+      <div className="border-t border-mn-border pt-5">{minutesPanel}</div>
     </section>
   );
 }
@@ -301,6 +347,8 @@ interface LedgerTableProps {
   onItemUpdated: (item: ActionItem) => void;
   /** 근거 타임스탬프를 누르면 그 위치부터 재생 */
   onSeek: (sec: number) => void;
+  /** "근거 위치 보기": 전사문을 열고 근거 시각의 줄로 이동·하이라이트(누른 버튼을 넘겨 닫을 때 포커스를 돌려준다) */
+  onViewTranscript: (sec: number, trigger: HTMLElement) => void;
   /** 관리자 이상이면 머리의 "업무 추가"(수기 등록) */
   onAddItem: () => void;
   onRequestChange: (item: ActionItem) => void;
@@ -311,7 +359,7 @@ interface LedgerTableProps {
   onDeleteItem: (item: ActionItem) => void;
 }
 
-function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, onSeek, onAddItem, onRequestChange, allowed, onCloseItem, onDeleteItem }: LedgerTableProps) {
+function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, onSeek, onViewTranscript, onAddItem, onRequestChange, allowed, onCloseItem, onDeleteItem }: LedgerTableProps) {
   const needsCount = items.filter((item) => item.needsCompletion).length;
   // 업무 확정: 한 번에 한 건. 거부되면 서버 문구(보완 필요 409·권한 403 등)를 원장 위에 보여 준다
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
@@ -449,7 +497,10 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                     <td className="px-3 py-3">
                       {item.evidenceStartSec !== null || item.evidenceQuote ? (
                         <span className="flex flex-col gap-1">
-                          {item.evidenceStartSec !== null ? <SeekTime sec={item.evidenceStartSec} onSeek={onSeek} /> : null}
+                          <span className="flex flex-wrap items-center gap-2">
+                            {item.evidenceStartSec !== null ? <SeekTime sec={item.evidenceStartSec} onSeek={onSeek} /> : null}
+                            <ViewTranscriptButton item={item} onView={onViewTranscript} />
+                          </span>
                           {item.evidenceQuote ? (
                             item.origin === "manual" ? (
                               <span className="text-xs text-mn-muted [overflow-wrap:anywhere] break-keep">{item.evidenceQuote}</span>
@@ -459,7 +510,10 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                           ) : null}
                         </span>
                       ) : (
-                        <span className="text-mn-muted">—</span>
+                        <span className="flex flex-col gap-1">
+                          <span className="text-mn-muted">—</span>
+                          <ViewTranscriptButton item={item} onView={onViewTranscript} />
+                        </span>
                       )}
                     </td>
                     <td className="px-3">
@@ -511,7 +565,7 @@ type TranscriptView = "applied" | "original";
 /** 지정된 화자가 있어야 이름 적용본이 의미가 있다 */
 const hasSpeakers = (transcript: Transcript) => (transcript.speakers ?? []).length > 0;
 
-function TranscriptBody({ state, view, onRetry, onSeek }: { state: TranscriptState; view: TranscriptView; onRetry: () => void; onSeek: (sec: number) => void }) {
+function TranscriptBody({ state, view, onRetry, onSeek, highlightIndex }: { state: TranscriptState; view: TranscriptView; onRetry: () => void; onSeek: (sec: number) => void; highlightIndex: number }) {
   switch (state.kind) {
     case "idle":
     case "loading":
@@ -550,7 +604,14 @@ function TranscriptBody({ state, view, onRetry, onSeek }: { state: TranscriptSta
       return (
         <ol className="flex flex-col gap-3">
           {segments.map((segment, index) => (
-            <li key={index} className="flex gap-4 text-sm">
+            // 하이라이트(딥링크 대상): 토큰 배경 + 왼쪽 굵은 선 + 스크린리더용 "근거 위치". 모든 줄이 같은 왼쪽 여백을 가져 줄이 밀리지 않는다
+            <li
+              key={index}
+              data-segment-index={index}
+              tabIndex={-1}
+              className={`mn-focus flex gap-4 border-l-4 py-1 pl-3 text-sm outline-none ${index === highlightIndex ? "border-mn-text bg-mn-selected" : "border-transparent"}`}
+            >
+              {index === highlightIndex ? <span className="sr-only">근거 위치</span> : null}
               <SeekTime sec={segment.start_sec} onSeek={onSeek} />
               <div className="min-w-0">
                 {segment.speaker ? <p className="text-xs text-mn-muted">{names.get(segment.speaker) ?? segment.speaker}</p> : null}
@@ -565,8 +626,21 @@ function TranscriptBody({ state, view, onRetry, onSeek }: { state: TranscriptSta
 }
 
 /** 전사문 접고 펼치기. 처음 펼칠 때만 불러온다. version 이 바뀌면(화자 저장 등) 펼쳐져 있으면 다시, 접혀 있으면 다음에 펼칠 때 불러온다 */
-function TranscriptPanel({ meetingId, version, onSeek }: { meetingId: number; version: number; onSeek: (sec: number) => void }) {
+function TranscriptPanel({
+  meetingId, version, onSeek, deepLink, returnFocusRef,
+}: {
+  meetingId: number;
+  version: number;
+  onSeek: (sec: number) => void;
+  /** 업무 근거 딥링크 요청(패널을 열고 해당 구간으로 이동·하이라이트) */
+  deepLink: DeepLinkRequest | null;
+  /** 딥링크를 누른 버튼. 패널을 닫으면 이 버튼으로 포커스를 돌려준다 */
+  returnFocusRef: { current: HTMLElement | null };
+}) {
   const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState<DeepLinkRequest | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const handledNonce = useRef(0);
   const [state, setState] = useState<TranscriptState>({ kind: "idle" });
   // 원하는 보기. 지정된 화자가 없으면 아래에서 원본으로 고정한다
   const [view, setView] = useState<TranscriptView>("applied");
@@ -608,10 +682,45 @@ function TranscriptPanel({ meetingId, version, onSeek }: { meetingId: number; ve
 
   const shownView: TranscriptView = state.kind === "ready" && hasSpeakers(state.transcript) ? view : "original";
 
+  // 딥링크 요청: 패널을 열고(이미 열려 있으면 그대로) 처음이면 전사문을 불러온다. 대상은 아래 hit 로 구간에 대응시킨다
+  useEffect(() => {
+    if (!deepLink) return;
+    setTarget(deepLink);
+    setOpen(true);
+    if (state.kind === "idle") void load();
+    // 요청이 바뀔 때만 처리한다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLink]);
+
+  const readySegments = state.kind === "ready" ? (state.transcript.segments ?? []).filter((s) => (s.text ?? "").trim()) : [];
+  const hit = target && state.kind === "ready" ? findSegmentIndex(readySegments, target.sec) : -1;
+  const notFound = target !== null && state.kind === "ready" && hit < 0;
+
+  // 조회가 끝나 해당 구간이 그려지면 가시 영역 안(가능하면 중앙)으로 스크롤하고 그 줄에 포커스(요청마다 한 번)
+  useEffect(() => {
+    if (!target || !open || state.kind !== "ready" || hit < 0 || handledNonce.current === target.nonce) return;
+    const container = containerRef.current;
+    const row = container?.querySelector<HTMLElement>(`[data-segment-index="${hit}"]`);
+    if (!container || !row) return;
+    handledNonce.current = target.nonce;
+    const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+    container.scrollIntoView({ block: "nearest", behavior });
+    const containerBox = container.getBoundingClientRect();
+    const rowBox = row.getBoundingClientRect();
+    const top = container.scrollTop + (rowBox.top - containerBox.top) - (container.clientHeight - rowBox.height) / 2;
+    container.scrollTo({ top: Math.max(0, top), behavior });
+    row.focus({ preventScroll: true });
+  }, [target, open, state, hit]);
+
   function toggle() {
     const next = !open;
     setOpen(next);
     if (next && state.kind === "idle") void load();
+    if (!next && target) {
+      // 닫으면 하이라이트를 지우고 딥링크를 누른 버튼으로 포커스를 돌려준다
+      setTarget(null);
+      returnFocusRef.current?.focus();
+    }
   }
 
   return (
@@ -642,8 +751,13 @@ function TranscriptPanel({ meetingId, version, onSeek }: { meetingId: number; ve
               ) : null}
             </div>
           ) : null}
-          <div className="max-h-[480px] overflow-y-auto px-5 py-4">
-            <TranscriptBody state={state} view={shownView} onRetry={() => void load()} onSeek={onSeek} />
+          {notFound ? (
+            <p role="status" className="border-b border-mn-border px-5 py-3 text-sm">
+              <StatusDot tone="queued" label="근거 시각에 해당하는 전사문 위치를 찾지 못했습니다" />
+            </p>
+          ) : null}
+          <div ref={containerRef} className="relative max-h-[480px] overflow-y-auto px-5 py-4">
+            <TranscriptBody state={state} view={shownView} onRetry={() => void load()} onSeek={onSeek} highlightIndex={hit} />
           </div>
         </div>
       ) : null}
@@ -675,6 +789,13 @@ export default function V2MeetingDetailPage() {
   const [minutesNotice, setMinutesNotice] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<{ tone: "ready" | "error"; text: string } | null>(null);
   const onSeek = useCallback((sec: number) => setSeek((prev) => ({ sec, nonce: (prev?.nonce ?? 0) + 1 })), []);
+  // 업무 근거 → 전사문 딥링크(누른 버튼은 전사문을 닫을 때 포커스를 돌려받는다)
+  const [deepLink, setDeepLink] = useState<DeepLinkRequest | null>(null);
+  const deepLinkTrigger = useRef<HTMLElement | null>(null);
+  const onViewTranscript = useCallback((sec: number, trigger: HTMLElement) => {
+    deepLinkTrigger.current = trigger;
+    setDeepLink((prev) => ({ sec, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
   const controllerRef = useRef<AbortController | null>(null);
   const changeRequests = useChangeRequests(meetingId);
 
@@ -1038,6 +1159,7 @@ export default function V2MeetingDetailPage() {
         onItemConfirmed={replaceItem}
         onItemUpdated={replaceItem}
         onSeek={onSeek}
+        onViewTranscript={onViewTranscript}
         onAddItem={() => setManualOpen(true)}
         onRequestChange={onRequestChange}
         allowed={meeting.allowedActions}
@@ -1084,7 +1206,7 @@ export default function V2MeetingDetailPage() {
         onResolved={changeRequests.replace}
         canResolve={can(meeting.allowedActions, MEETING_ACTION.resolveChangeRequest)}
       />
-      <TranscriptPanel key={meeting.id} meetingId={meeting.id} version={transcriptVersion} onSeek={onSeek} />
+      <TranscriptPanel key={meeting.id} meetingId={meeting.id} version={transcriptVersion} onSeek={onSeek} deepLink={deepLink} returnFocusRef={deepLinkTrigger} />
     </>
   );
 }

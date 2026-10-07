@@ -35,7 +35,7 @@ export function MinutesPanel({ minutes, canEdit, notice, onEdit }: MinutesPanelP
   return (
     <section aria-label="회의록 항목" className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xs text-mn-muted">회의록 항목</h2>
+        <h2 className="text-sm font-semibold text-mn-text">회의록 항목</h2>
         {canEdit ? (
           <Button size="sm" onClick={onEdit}>
             항목 수정
@@ -45,13 +45,13 @@ export function MinutesPanel({ minutes, canEdit, notice, onEdit }: MinutesPanelP
       {missing ? (
         <p className="text-sm text-mn-muted">아직 생성되지 않았습니다.{canEdit ? " 항목 수정으로 직접 채울 수 있습니다." : ""}</p>
       ) : (
-        <dl className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <dl className="grid grid-cols-1 gap-5 md:grid-cols-2">
           {MINUTES_FIELDS.map((field) => {
             const value = (minutes?.[field] ?? "").trim();
             return (
-              <div key={field}>
-                <dt className="text-xs text-mn-muted">{MINUTES_LABEL[field]}</dt>
-                <dd className="mt-1 whitespace-pre-line text-sm">{value && value !== MINUTES_EMPTY ? value : <span className="text-mn-muted">{MINUTES_EMPTY}</span>}</dd>
+              <div key={field} className="rounded-mn-card border border-mn-border bg-mn-bg p-4">
+                <dt className="text-base font-semibold text-mn-text">{MINUTES_LABEL[field]}</dt>
+                <dd className="mt-2 whitespace-pre-line text-sm leading-6 text-mn-text [overflow-wrap:anywhere]">{value && value !== MINUTES_EMPTY ? value : <span className="text-mn-muted">{MINUTES_EMPTY}</span>}</dd>
               </div>
             );
           })}
