@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import ActionItem, Meeting, MeetingClosure, append_event
 from app.models.common import utcnow
-from app.models.item_conditions import not_deleted_item
+from app.models.item_conditions import live_item, not_deleted_item
 
 
 def get_or_create_closure(session: Session, meeting: Meeting) -> MeetingClosure:
@@ -35,13 +35,13 @@ def end_meeting(
 
 
 def auto_end_if_all_closed(session: Session, meeting: Meeting) -> bool:
-    """삭제되지 않은 업무가 있고 모두 종결이면 회의록을 자동 종료한다. 종료했으면 True."""
+    """삭제되지 않은(대체된 업무는 제외) 업무가 있고 모두 종결이면 회의록을 자동 종료한다. 종료했으면 True."""
     session.flush()  # 방금 바꾼 업무 상태를 조회에 반영(세션 autoflush 꺼짐)
     closure = session.get(MeetingClosure, meeting.id)
     if closure is not None and (closure.ended_at is not None or closure.deleted_at is not None):
         return False
     statuses = session.scalars(
-        select(ActionItem.status).where(ActionItem.meeting_id == meeting.id, not_deleted_item())
+        select(ActionItem.status).where(ActionItem.meeting_id == meeting.id, not_deleted_item(), live_item())
     ).all()
     if not statuses or any(s != "closed" for s in statuses):
         return False

@@ -34,6 +34,14 @@ class MeetingListPage(CamelModel):
     available_phases: list[str] = []
 
 
+class SupersessionRef(CamelModel):
+    """대체 연결의 상대 업무 참조. 상대 업무의 회의록을 열람할 수 없으면 meeting_title 은 None."""
+
+    item_id: int
+    meeting_id: int
+    meeting_title: str | None
+
+
 class ActionItemOut(CamelModel):
     id: int
     title: str
@@ -46,6 +54,9 @@ class ActionItemOut(CamelModel):
     evidence_quote: str | None
     needs_completion: bool
     missing_fields: list[str]
+    # 대체 정보(추가 필드): 대체된 업무는 supersededBy, 대체하는 업무는 supersedes(목록)
+    superseded_by: "SupersessionRef | None" = None
+    supersedes: "list[SupersessionRef]" = []
     # 업무 출처(추가 필드): ai(AI 추출) | manual(수기·업로드 직권 등록, 근거는 "등록자 직권 지정")
     origin: str = "ai"
     # 이 사용자가 이 업무에서 지금 할 수 있는 동작(추가 필드, 회의록 상세 응답에서만 채움·그 밖의 응답은 None). 화면 표시용이며 거부 판정은 각 API 가 한다

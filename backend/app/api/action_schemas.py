@@ -2,7 +2,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from app.api.meeting_schemas import AccountRef
 from app.api.schemas import CamelModel
@@ -31,6 +31,17 @@ class MeetingConfirmResult(CamelModel):
 class ChangeRequestCreate(CamelModel):
     comment: str = Field(min_length=1, max_length=2000)
     item_id: int | None = None
+    # 요청 종류: edit(기본, 수정 요청) / supersede(대체 요청: itemId 가 대체하는 업무, supersedesItemId 가 대체될 과거 업무)
+    kind: Literal["edit", "supersede"] = "edit"
+    supersedes_item_id: int | None = None
+
+    @model_validator(mode="after")
+    def _kind_fields(self) -> "ChangeRequestCreate":
+        if self.kind == "supersede" and (self.item_id is None or self.supersedes_item_id is None):
+            raise ValueError("대체 요청은 itemId 와 supersedesItemId 가 필요합니다")
+        if self.kind == "edit" and self.supersedes_item_id is not None:
+            raise ValueError("supersedesItemId 는 대체 요청(kind=supersede)에만 보낼 수 있습니다")
+        return self
 
     @field_validator("comment")
     @classmethod
@@ -77,6 +88,9 @@ class ChangeRequestOut(CamelModel):
     item_id: int | None
     created_at: datetime
     resolution: Resolution | None
+    # 요청 종류(추가 필드): edit(수정 요청, 종류가 없던 예전 요청 포함) / supersede(대체 요청)와 대체될 과거 업무
+    kind: str = "edit"
+    supersedes_item_id: int | None = None
 
 
 class ChangeRequestResolve(CamelModel):

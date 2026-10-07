@@ -1,6 +1,7 @@
 # Changelog
 
 ## 미배포 (v2 개발 중)
+- v2 `backend/` 유사 업무 검색·업무 대체·대체 요청(작업 66-4): 표 `item_supersessions`(마이그레이션 `e5b1c7d29a64`, 기존 표 변경 없음), `GET /api/action-items/{id}/similar`(difflib, 설정 `SIMILAR_MIN_SCORE`·`SIMILAR_MAX_RESULTS`·`SIMILAR_SCAN_MAX`), `POST /api/action-items/{id}/supersede`, 수정 요청 종류(kind=supersede)와 수락 시 대체 실행, 대체된 업무는 할 일·안내·자동 확정·메일에서 제외하고 원장·엑셀·이력에는 "대체됨"으로 표시, 업무 허용 동작 3개와 응답 필드 추가. 프론트 변경 없음. **운영 DB 는 백업 후 `alembic upgrade head` 로 직접 적용**.
 - v2 `backend/` 프로젝트 총괄 승인 판정과 총괄 변경(작업 66-3b): 프로젝트 총괄(활성 프로젝트 lead, 직급 manager 이상)이 연결된 회의록에서 기존 총괄 권한 전체를 가짐(`access.py` 총괄 조건 한 줄), `POST /api/projects/{id}/change-lead`(사유 필수, 이전 총괄은 manager 로 남김), 프로젝트 상세 allowedActions. 마이그레이션·프론트 변경 없음.
 - v3.0 UI 업무 원장 열 레이아웃: 업무명 칸 폭 0 으로 인한 칸 겹침 해소(원인은 고정 px 폭 합이 표 최소 폭 초과), 열 폭을 rem·균등 분배로 변경(업무명·근거 비율 1.0), 기한·동작 버튼 줄바꿈, 표 컨테이너 키보드 가로 스크롤. 프론트만 변경.
 - v2 `backend/` 회의 유형·프로젝트 연결(작업 66-3): 표 `meeting_classifications`(마이그레이션 `d3a8f15c7e92`, meetings 표 변경 없음), 업로드 입력 `meetingType`·`projectId`(선택), 상세 응답에 `meetingType`·`project` 추가, 프로젝트 참여자 열람 규칙(`meeting_visibility` 한 줄), `GET /api/projects/{id}/meetings`. 승인 판정 불변. 프론트 변경 없음. **운영 DB 는 백업 후 `alembic upgrade head` 로 직접 적용**.

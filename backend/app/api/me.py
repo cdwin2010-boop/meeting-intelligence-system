@@ -88,6 +88,9 @@ class PendingChangeRequest(CamelModel):
     requester: AccountRef | None
     created_at: datetime
     comment_preview: str
+    # 요청 종류(추가 필드): edit(수정 요청) / supersede(대체 요청)와 대체될 과거 업무 id
+    kind: str = "edit"
+    supersedes_item_id: int | None = None
 
 
 class TodoList(CamelModel):
@@ -317,5 +320,6 @@ def _pending_change_requests(session: Session, account: Account, visible) -> Tod
             request_id=r.id, meeting_id=r.meeting_id, meeting_title=r.meeting_title,
             item_id=item_id, item_title=titles.get(item_id) if item_id is not None else None,
             requester=requester, created_at=r.created_at, comment_preview=_preview(payload.get("comment", "")),
+            kind=payload.get("kind", "edit"), supersedes_item_id=payload.get("supersedesItemId"),
         ))
     return TodoList(total=total, items=items)

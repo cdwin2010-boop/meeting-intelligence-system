@@ -15,6 +15,7 @@ from app.auth.locks import HOLDABLE_STATUSES, reject_if_locked
 from app.models import Account, ActionItem, Meeting, Project
 from app.models.closure import PHASES
 from app.services.projects import is_approver, is_project_lead
+from app.services.supersession import has_supersede_authority
 from app.services.reprocess import active_job_exists
 
 # ---------------- 회의록 단위 동작 ----------------
@@ -40,6 +41,11 @@ DELETE_ITEM = "delete_item"
 SET_ASSIGNEE = "set_assignee"  # 담당자 지정·변경
 SET_DUE = "set_due"  # 기한 입력·변경(날짜 또는 미확정)
 
+# ---------------- 업무 단위 대체 동작(프로젝트 회의록의 열려 있는 업무에만, 작업 66-4) ----------------
+FIND_SIMILAR_ITEMS = "find_similar_items"  # 유사/중복 업무 검색(그 회의록 열람 가능자)
+REQUEST_SUPERSEDE = "request_supersede"  # 대체 요청(수정 요청의 한 종류)
+SUPERSEDE_ITEM = "supersede_item"  # 대체 실행(프로젝트 총괄·지시자)
+
 # ---------------- 프로젝트 단위 동작(프로젝트 상세의 allowedActions) ----------------
 CHANGE_LEAD = "change_lead"  # 총괄 변경
 MANAGE_MEMBERS = "manage_members"  # 참여자 추가·역할 변경·제거
@@ -51,7 +57,9 @@ MEETING_ACTIONS = (
     CONFIRM_MEETING, HOLD_MEETING, RESUME_MEETING, END_MEETING, DELETE_MEETING, EDIT_MINUTES, UPLOAD_UPDATE, ADD_ITEM,
     EDIT_SPEAKERS, REPROCESS_MEETING, RESOLVE_CHANGE_REQUEST, REQUEST_CHANGE, DOWNLOAD_EXCEL, VIEW_HISTORY,
 )
-ITEM_ACTIONS = (CONFIRM_ITEM, CLOSE_ITEM, DELETE_ITEM, SET_ASSIGNEE, SET_DUE, REQUEST_CHANGE)
+ITEM_ACTIONS = (
+    CONFIRM_ITEM, CLOSE_ITEM, DELETE_ITEM, SET_ASSIGNEE, SET_DUE, REQUEST_CHANGE, FIND_SIMILAR_ITEMS, REQUEST_SUPERSEDE, SUPERSEDE_ITEM,
+)
 
 # 직권 종료할 수 있는 회의록 상태(app/api/meeting_lifecycle.py 의 ENDABLE_STATUSES 와 같다)
 _ENDABLE_STATUSES = ("awaiting_confirmation", "confirmed")
@@ -94,11 +102,15 @@ def meeting_allowed_actions(session: Session, account: Account, meeting: Meeting
 
 
 def item_allowed_actions(
-    session: Session, account: Account, item: ActionItem, meeting: Meeting, *, lead: bool | None = None
+    session: Session, account: Account, item: ActionItem, meeting: Meeting, *, lead: bool | None = None,
+    project: Project | None = None, superseded: bool = False,
 ) -> list[str]:
-    """업무 단위 허용 동작(ITEM_ACTIONS 순서). lead 는 회의록 단위에서 이미 구한 can_confirm_meeting 결과(없으면 여기서 구한다)."""
+    """업무 단위 허용 동작(ITEM_ACTIONS 순서). lead 는 회의록 단위에서 이미 구한 can_confirm_meeting 결과(없으면 여기서 구한다).
+    project 는 회의록이 연결된 프로젝트(대체 동작 판정), superseded 는 대체된 업무 여부(대체된 업무에는 수정 요청 외 동작이 나오지 않는다)."""
     if item.status == "deleted":
         return []
+    if superseded:
+        return [REQUEST_CHANGE]
     allowed = [REQUEST_CHANGE]
     if not is_locked(meeting):
         if can_write_item(session, account, item, meeting):
@@ -110,6 +122,10 @@ def item_allowed_actions(
                 allowed += [SET_ASSIGNEE, SET_DUE]
         if lead if lead is not None else can_confirm_meeting(session, account, meeting):
             allowed.append(DELETE_ITEM)
+        if project is not None and item.status in ("pending", "confirmed"):
+            allowed += [FIND_SIMILAR_ITEMS, REQUEST_SUPERSEDE]
+            if has_supersede_authority(session, account, project):
+                allowed.append(SUPERSEDE_ITEM)
     return [name for name in ITEM_ACTIONS if name in allowed]
 
 

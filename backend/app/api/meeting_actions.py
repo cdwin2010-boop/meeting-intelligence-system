@@ -27,6 +27,7 @@ from app.models import Account, ActionItem, Event, Meeting, append_event
 from app.models.common import utcnow
 from app.models.item_conditions import deleted_item, pending_item
 from app.services.notices import create_confirm_notices
+from app.services.supersession import prepare_supersede, supersede_item
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
@@ -179,6 +180,8 @@ def _request_out(session: Session, request: Event, resolution: Event | None) -> 
         item_id=request.payload.get("itemId"),
         created_at=request.created_at,
         resolution=_resolution(session, resolution),
+        kind=request.payload.get("kind", "edit"),
+        supersedes_item_id=request.payload.get("supersedesItemId"),
     )
 
 
@@ -199,11 +202,16 @@ def create_change_request(
         item = session.get(ActionItem, body.item_id)
         if item is None or item.meeting_id != meeting.id or item.status == "deleted":
             raise _http(status.HTTP_400_BAD_REQUEST, "같은 회의록의 업무만 지정할 수 있습니다")
+    payload = {"comment": body.comment, "itemId": body.item_id}
+    if body.kind == "supersede":
+        # 대체 요청: 권한을 뺀 나머지 대체 조건을 지금 검증한다(실행은 처리자가 수락할 때)
+        prepare_supersede(session, account, item, body.supersedes_item_id)
+        payload |= {"kind": "supersede", "supersedesItemId": body.supersedes_item_id}
     # 상태 변경 없음: 사건 기록만 남긴다(자동 확정 시계도 그대로)
     event = append_event(
         session, tenant_id=meeting.tenant_id, entity_type="meeting", entity_id=meeting.id,
         event_type=CR_CREATED, actor_account_id=account.id,
-        payload={"comment": body.comment, "itemId": body.item_id},
+        payload=payload,
     )
     session.commit()
     return ChangeRequestCreated(request_id=event.id)
@@ -252,6 +260,13 @@ def resolve_change_request(
         previous_rank = previous.payload.get("rank", "staff")
         if RANK_ORDER[account.rank] < RANK_ORDER.get(previous_rank, 0):
             raise _http(status.HTTP_409_CONFLICT, "더 높은 직급이 이미 결정한 요청입니다")
+
+    if body.decision == "accepted" and request.payload.get("kind") == "supersede":
+        # 대체 요청 수락: 같은 트랜잭션에서 대체를 실행한다(권한 없으면 403, 조건이 안 맞으면 409 로 거부되고 요청은 대기로 남는다).
+        # 사유는 처리자의 답변이 있으면 그것, 없으면 요청 코멘트
+        new_item = session.get(ActionItem, request.payload["itemId"])
+        reason = (body.reason or "").strip() or request.payload.get("comment", "")
+        supersede_item(session, account, new_item, request.payload["supersedesItemId"], reason, source_request_id=request.id)
 
     event = append_event(
         session, tenant_id=meeting.tenant_id, entity_type="change_request", entity_id=request.id,

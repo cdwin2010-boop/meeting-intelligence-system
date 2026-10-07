@@ -14,6 +14,7 @@ from app.api.meeting_schemas import (
     EventOut,
     MeetingDetail,
     ProjectRef,
+    SupersessionRef,
     MeetingListItem,
     MeetingListPage,
     MinutesOut,
@@ -33,7 +34,8 @@ from app.models import (
 from app.models.minutes import MINUTES_FIELDS
 from app.models.closure import meeting_phase, phase_condition
 from app.models.common import MEETING_STATUSES
-from app.models.item_conditions import not_deleted_item
+from app.services.supersession import project_of_meeting, superseded_ids, supersession_refs
+from app.models.item_conditions import live_item, not_deleted_item
 from app.services.reasons import event_reason, latest_reason
 from app.services.speakers import SpeakerView, display_text, load_speakers
 from app.services.history import record_meeting_view
@@ -56,7 +58,7 @@ def _item_counts():
             ActionItem.meeting_id.label("meeting_id"),
             func.count(ActionItem.id).label("item_count"),
             # 합계는 엔진마다 반환형이 다르다(PostgreSQL 은 Decimal). 한 곳에서 coalesce + 정수 변환으로 int 를 보장한다
-            cast(func.coalesce(func.sum(case((ActionItem.needs_supplement, 1), else_=0)), 0), Integer).label("needs_count"),
+            cast(func.coalesce(func.sum(case((and_(ActionItem.needs_supplement, live_item()), 1), else_=0)), 0), Integer).label("needs_count"),
         )
         .where(not_deleted_item())
         .group_by(ActionItem.meeting_id)
@@ -245,8 +247,20 @@ def get_meeting(
     ]
     # 허용 동작(화면 표시용): 회의록 단위 한 번 + 업무마다. 판정 규칙은 app/auth/actions.py 가 기존 함수로 계산한다
     lead = can_confirm_meeting(session, account, meeting)
+    item_ids = [row.ActionItem.id for row in item_rows]
+    superseded_set = superseded_ids(session, item_ids)
+    superseded_by, supersedes = supersession_refs(session, account, item_ids)
+    linked = project_of_meeting(session, meeting.id)
     for out, row in zip(action_items, item_rows):
-        out.allowed_actions = item_allowed_actions(session, account, row.ActionItem, meeting, lead=lead)
+        out.allowed_actions = item_allowed_actions(
+            session, account, row.ActionItem, meeting, lead=lead, project=linked, superseded=row.ActionItem.id in superseded_set,
+        )
+        ref = superseded_by.get(row.ActionItem.id)
+        if ref is not None:
+            out.superseded_by = SupersessionRef(item_id=ref["itemId"], meeting_id=ref["meetingId"], meeting_title=ref["meetingTitle"])
+        out.supersedes = [
+            SupersessionRef(item_id=r["itemId"], meeting_id=r["meetingId"], meeting_title=r["meetingTitle"]) for r in supersedes.get(row.ActionItem.id, [])
+        ]
 
     hold = session.get(MeetingHold, meeting.id)
     closure = session.get(MeetingClosure, meeting.id)

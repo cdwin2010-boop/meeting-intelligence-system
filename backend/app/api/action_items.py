@@ -20,6 +20,7 @@ from app.models.common import utcnow
 from app.services.history import KIND_ITEM_UPDATE, record_change
 from app.services.lifecycle import auto_end_if_all_closed
 from app.services.notices import create_confirm_notices
+from app.services.supersession import reject_if_superseded
 
 router = APIRouter(prefix="/api/action-items", tags=["action-items"])
 
@@ -51,6 +52,7 @@ def get_writable_item(session: Session, account: Account, item_id: int) -> Actio
     if not can_write_item(session, account, item, meeting):
         raise _http(status.HTTP_403_FORBIDDEN, "이 업무를 수정·확정할 권한이 없습니다")
     reject_if_locked(meeting)
+    reject_if_superseded(session, item)  # 대체된 업무는 수정·확정·종결을 거부(409)
     return item
 
 
@@ -222,6 +224,7 @@ def delete_action_item(
     if not can_confirm_meeting(session, account, meeting):
         raise _http(status.HTTP_403_FORBIDDEN, "이 업무를 삭제할 권한이 없습니다")
     reject_if_locked(meeting)
+    reject_if_superseded(session, item)
     if item.status == "deleted":
         return item_out(session, item)
     before = item.status

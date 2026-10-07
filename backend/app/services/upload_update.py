@@ -25,6 +25,7 @@ from app.config import settings
 from app.models import Account, ActionItem, Meeting, MeetingGuestParticipant, MeetingParticipant, SourceDocument
 from app.models.action_item import MANUAL_EVIDENCE, MANUAL_ORIGIN
 from app.models.item_conditions import not_deleted_item
+from app.services.supersession import superseded_ids
 from app.models.minutes import MINUTES_FIELDS
 from app.services import export_sheets as sheets
 from app.services.history import (
@@ -43,6 +44,7 @@ _SKIP_REASON = {
     "closed": "종결된 업무라 바꾸지 않았습니다",
     "deleted": "삭제된 업무라 바꾸지 않았습니다",
 }
+_SUPERSEDED_REASON = "대체됨: 대체된 업무라 바꾸지 않았습니다"
 _TOKEN_SPLIT = re.compile(r"[,\n;]+")
 _PERSON_TOKEN = re.compile(r"^(.*?)\s*\((.+)\)\s*$")
 
@@ -302,6 +304,7 @@ def _plan_minutes(session: Session, meeting: Meeting, parsed: ParsedFile, plan: 
 
 def _plan_items(session: Session, meeting: Meeting, parsed: ParsedFile, resolver: Resolver, plan: Plan) -> None:
     items = {i.id: i for i in session.scalars(select(ActionItem).where(ActionItem.meeting_id == meeting.id))}
+    superseded = superseded_ids(session, list(items))  # 대체된 업무는 확정·종결·삭제 업무처럼 건너뛴다
     seen: set[int] = set()
     sheet = sheets.SHEET_TASKS
     for row, record in parsed.task_rows:
@@ -340,9 +343,9 @@ def _plan_items(session: Session, meeting: Meeting, parsed: ParsedFile, resolver
             plan.errors.append(Issue(sheet, row, f"업무 ID {item_id} 이(가) 두 번 나옵니다"))
             continue
         seen.add(item_id)
-        if item.status != _EDITABLE_STATUS:
+        if item_id in superseded or item.status != _EDITABLE_STATUS:
             plan.skipped.append({"itemId": item_id, "row": row, "title": item.title, "status": item.status,
-                                 "reason": _SKIP_REASON.get(item.status, "바꿀 수 없는 상태입니다")})
+                                 "reason": _SUPERSEDED_REASON if item_id in superseded else _SKIP_REASON.get(item.status, "바꿀 수 없는 상태입니다")})
             continue
 
         before = _snapshot(item.title, item.assignee_id, item.due_date, item.due_undetermined)

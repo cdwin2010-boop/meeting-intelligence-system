@@ -33,6 +33,8 @@ KIND_PROJECT_MEMBER_ADDED = "project.member_added"
 KIND_PROJECT_MEMBER_REMOVED = "project.member_removed"
 KIND_PROJECT_MEMBER_ROLE = "project.member_role_changed"
 KIND_PROJECT_LEAD_CHANGED = "project.lead_changed"
+# 업무 대체(작업 66-4): 대체되는 업무와 대체하는 업무 양쪽에 남긴다
+KIND_ITEM_SUPERSEDED = "item.superseded"
 HISTORY_KINDS: dict[str, str] = {
     KIND_MINUTES_OVERRIDE: "직권 수정",
     KIND_PARTICIPANTS_OVERRIDE: "직권 수정",
@@ -49,6 +51,7 @@ HISTORY_KINDS: dict[str, str] = {
     KIND_PROJECT_MEMBER_REMOVED: "참여자 제거",
     KIND_PROJECT_MEMBER_ROLE: "참여자 역할 변경",
     KIND_PROJECT_LEAD_CHANGED: "프로젝트 총괄 변경",
+    KIND_ITEM_SUPERSEDED: "대체",
 }
 
 

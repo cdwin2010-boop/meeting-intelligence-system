@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     sqlite_busy_timeout_ms: int = Field(default=10000, ge=0)
     # 저널 모드: WAL(기본, 읽기와 쓰기가 서로 막지 않음) / DELETE(예전 방식으로 되돌릴 때)
     sqlite_journal_mode: Literal["WAL", "DELETE"] = "WAL"
+    # 유사 업무 검색(작업 66-4): 이 점수(0~100) 미만은 제외 / 돌려줄 최대 건수 / 후보 업무를 훑는 최대 건수(최신 회의 순)
+    similar_min_score: int = Field(default=50, ge=0, le=100)
+    similar_max_results: int = Field(default=10, ge=1)
+    similar_scan_max: int = Field(default=300, ge=1)
     # 실행 환경 구분: dev / test / prod
     app_env: str = "dev"
 

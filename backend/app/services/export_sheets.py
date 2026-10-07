@@ -45,6 +45,8 @@ CONFIRM_KIND_LABEL = {
     "manager": "관리자 확정", "registration": "등록 시 확정", "period_elapsed": "기간 경과 자동 확정", "due_reached": "기한 도래 자동 확정",
 }
 ITEM_STATUS_LABEL = {"pending": "확정 대기", "confirmed": "확정", "closed": "종결"}
+# 대체된 업무(상태값은 그대로 두고 대체 연결로 판정)의 상태 라벨
+ITEM_STATUS_SUPERSEDED = "대체됨"
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 

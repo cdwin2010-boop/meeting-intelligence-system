@@ -344,7 +344,8 @@ def test_pending_change_requests_shown_to_resolvers_not_staff(env, team):
         assert [i["requestId"] for i in body["items"]] == [first, second]  # 오래된 요청 먼저
     item_entry, meeting_entry = pending_requests(env, team["mgr"])["items"]
     assert set(item_entry) == {"requestId", "meetingId", "meetingTitle", "itemId", "itemTitle", "requester", "createdAt",
-                               "commentPreview"}
+                               "commentPreview", "kind", "supersedesItemId"}  # 작업 66-4: 요청 종류 필드 추가
+    assert (item_entry["kind"], item_entry["supersedesItemId"]) == ("edit", None)
     assert (item_entry["meetingId"], item_entry["meetingTitle"], item_entry["itemId"], item_entry["itemTitle"]) == (
         meeting_id, "주간 회의", item_id, "자료 정리")
     assert item_entry["requester"] == {"id": team["staff"].id, "name": "김담당"}

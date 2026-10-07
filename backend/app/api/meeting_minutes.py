@@ -23,6 +23,7 @@ from app.auth.deps import get_current_account
 from app.db import get_session
 from app.models import Account, ActionItem, Event, Meeting, MeetingGuestParticipant, MeetingParticipant, SourceDocument
 from app.models.item_conditions import not_deleted_item
+from app.services.supersession import superseded_ids
 from app.models.minutes import MINUTES_FIELDS
 from app.services import export_sheets as sheets
 from app.services.history import HISTORY_KINDS, history_fields
@@ -184,6 +185,7 @@ def export_meeting(
         .where(ActionItem.meeting_id == meeting.id, not_deleted_item())
         .order_by(ActionItem.id)
     ).all()
+    superseded = superseded_ids(session, [row.ActionItem.id for row in item_rows])
     tasks = [
         {
             sheets.COL_ID: row.ActionItem.id,
@@ -191,7 +193,10 @@ def export_meeting(
             sheets.COL_ASSIGNEE: row.assignee_name or "",
             sheets.COL_ASSIGNEE_LOGIN: row.assignee_login or "",
             sheets.COL_DUE: sheets.due_text(row.ActionItem.due_date, row.ActionItem.due_undetermined),
-            sheets.COL_STATUS: sheets.ITEM_STATUS_LABEL.get(row.ActionItem.status, row.ActionItem.status),
+            sheets.COL_STATUS: (
+                sheets.ITEM_STATUS_SUPERSEDED if row.ActionItem.id in superseded
+                else sheets.ITEM_STATUS_LABEL.get(row.ActionItem.status, row.ActionItem.status)
+            ),
             sheets.COL_EVIDENCE_TIME: sheets.offset_text(row.ActionItem.evidence_start_sec),
             sheets.COL_EVIDENCE_QUOTE: row.ActionItem.evidence_quote or "",
         }

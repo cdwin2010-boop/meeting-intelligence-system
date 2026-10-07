@@ -7,6 +7,7 @@ from app.models.event import Event, append_event
 from app.models.guest import MeetingGuestParticipant
 from app.models.hold import MeetingHold
 from app.models.job import Job
+from app.models.supersession import ItemSupersession
 from app.models.mail import MailOutbox
 from app.models.meeting import Meeting, MeetingParticipant
 from app.models.minutes import MeetingMinutes
@@ -24,6 +25,7 @@ __all__ = [
     "ActionItem",
     "Department",
     "Event",
+    "ItemSupersession",
     "Job",
     "MailOutbox",
     "Meeting",
