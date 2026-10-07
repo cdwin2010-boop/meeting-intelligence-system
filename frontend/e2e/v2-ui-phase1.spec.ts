@@ -466,13 +466,37 @@ for (const width of [1280, 768]) {
         await page.keyboard.press("Tab");
         inAside.push(await page.evaluate(() => (document.activeElement?.closest("aside") ? (document.activeElement as HTMLElement).getAttribute("aria-label") ?? "?" : "-")));
       }
-      expect([...new Set(inAside.filter((v) => v !== "-"))]).toEqual(["회의록 추적 패널 펼치기"]);
+      expect(inAside.filter((v) => v !== "-")).toEqual([]); // 접힌 띠 안에는 Tab 으로 닿는 요소가 없다(토글은 헤더)
       await toggle(page, "펼치기").click();
       await expect(toggle(page, "접기")).toHaveAttribute("aria-expanded", "true");
       expect((await boxOf(aside(page))).width).toBe(248);
       await expect(mainNav(page).getByRole("link", { name: "회의록" })).toHaveCount(1);
       await expect(page.getByRole("link", { name: "회의록 올리기" })).toHaveCount(1);
       await expect(page.getByRole("group", { name: /처리 중 \d+건/ })).toHaveCount(0);
+    });
+
+    test("토글은 헤더 로그아웃 오른쪽에 하나뿐(패널·띠 안에 없음), 보이는 글자·이름, 접어도 위치 그대로", async ({ page }) => {
+      await start(page);
+      await page.goto("/v2");
+      await expect(page.getByRole("button", { name: /회의록 추적 패널/ })).toHaveCount(1);
+      await expect(aside(page).getByRole("button", { name: /회의록 추적 패널/ })).toHaveCount(0);
+      const header = page.locator("header");
+      const open = header.getByRole("button", { name: "회의록 추적 패널 접기" });
+      await expect(open).toHaveText("패널 접기 ›");
+      const logout = await boxOf(header.getByRole("button", { name: "로그아웃" }));
+      const before = await boxOf(open);
+      expect(before.x).toBeGreaterThanOrEqual(logout.x + logout.width);
+      expect(Math.abs(before.y + before.height / 2 - (logout.y + logout.height / 2))).toBeLessThan(6);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await open.click();
+      const folded = header.getByRole("button", { name: "회의록 추적 패널 펼치기" });
+      await expect(folded).toHaveText("‹ 패널 펼치기");
+      await expect(aside(page).getByRole("button", { name: /회의록 추적 패널/ })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /회의록 추적 패널/ })).toHaveCount(1);
+      const after = await boxOf(folded);
+      expect(Math.abs(after.x + after.width - (before.x + before.width))).toBeLessThan(1); // 헤더 오른쪽 끝(패널 왼쪽)에 붙은 채 그대로
+      expect(Math.abs(after.y - before.y)).toBeLessThan(1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     });
 
     test("키보드(Enter·Space)로 조작되고 새로고침 뒤에도 접힘이 유지된다", async ({ page }) => {

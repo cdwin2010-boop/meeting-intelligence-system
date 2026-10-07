@@ -8,7 +8,7 @@
  *   드로어: 포커스 가두기·Esc·바깥(배경) 클릭 닫기·경로 이동 시 자동 닫기·닫히면 햄버거로 포커스 복귀·열린 동안 본문 스크롤 잠금·배경 내용 inert.
  *   사용자 표시·로그아웃은 한 요소만 두고 모바일에서는 드로어 하단에, 데스크톱에서는 헤더에 둔다(접근성 이름 "로그인 사용자"·"로그아웃" 유지).
  * - 헤더: 모바일에는 처리 현황 요약 뱃지(ProcessingBadge, 같은 ProcessingProvider 상태·새 폴링 없음). 업로드 진입은 패널(모바일은 드로어)의 "회의록 올리기" 하나만 둔다(v3.0 에서 헤더 "새 회의 업로드" 제거).
- * - 데스크톱 패널 접기·펼치기(768 이상): 토글은 패널 위쪽 줄 왼쪽 끝. 접으면 48px 띠(토글+처리 중 건수), 나머지는 hidden 이라 접근성 트리·Tab 에서 빠진다.
+ * - 데스크톱 패널 접기·펼치기(768 이상): 토글은 헤더 로그아웃 오른쪽(v3.0 에서 패널 안에서 이동). 접으면 48px 띠(처리 중 건수만), 나머지는 hidden 이라 접근성 트리·Tab 에서 빠진다.
  *   상태는 계정별 localStorage(저장소가 막혀도 정상, 기본 펼침)에서 마운트 뒤 적용한다. 접혀 있어도 처리 현황 알림(aria-live)은 띠에서 유지한다.
  * - 화면 높이는 dvh 로(모바일 주소창 변화 대응), 드로어 안 스크롤은 본문과 분리(overscroll-behavior: contain).
  */
@@ -182,7 +182,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             setDrawerOpen(false);
           }} className="fixed inset-0 z-30 bg-mn-overlay md:hidden" /> : null}
       <div inert={open} className="flex min-w-0 flex-1 flex-col">
-        <header className="flex min-h-14 items-center gap-3 border-b border-mn-border px-4 md:h-14 md:px-12">
+        <header className={`flex min-h-14 items-center gap-3 border-b border-mn-border px-4 md:h-14 md:px-12 ${folded ? "md:pr-[248px]" : ""}`}>
           <div className="ml-auto flex min-w-0 items-center gap-3">
             {mobile ? (
               <ProcessingBadge
@@ -193,6 +193,18 @@ export function AppShell({ children }: { children: ReactNode }) {
               />
             ) : null}
             {!mobile ? userBlock : null}
+            {!mobile ? (
+              <Button
+                size="sm"
+                aria-label={collapsed ? "회의록 추적 패널 펼치기" : "회의록 추적 패널 접기"}
+                aria-expanded={!collapsed}
+                aria-controls={contentId}
+                onClick={toggleCollapsed}
+                className="shrink-0 whitespace-nowrap"
+              >
+                {collapsed ? <><span aria-hidden="true">‹</span> 패널 펼치기</> : <>패널 접기 <span aria-hidden="true">›</span></>}
+              </Button>
+            ) : null}
             {mobile ? (
               <Button
                 ref={hamburgerRef}
@@ -224,19 +236,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           `md:static md:z-auto md:flex md:h-auto md:overflow-visible md:border-l md:bg-transparent ${folded ? "md:w-12 md:items-center md:px-0" : "md:w-[248px]"}`,
         ].join(" ")}
       >
-        <div className="flex items-center justify-between gap-2">
-          {!mobile ? (
-            <Button
-              size="sm"
-              aria-label={collapsed ? "회의록 추적 패널 펼치기" : "회의록 추적 패널 접기"}
-              aria-expanded={!collapsed}
-              aria-controls={contentId}
-              onClick={toggleCollapsed}
-            >
-              {collapsed ? "‹" : "›"}
-            </Button>
-          ) : null}
-          <Link href={V2_HOME} className={`mn-focus rounded-mn-control text-base font-semibold tracking-tight ${folded ? "hidden" : ""} ${!mobile ? "mr-auto" : ""}`}>
+        <div className={`flex items-center justify-between gap-2 ${folded ? "hidden" : ""}`}>
+          <Link href={V2_HOME} className="mn-focus rounded-mn-control text-base font-semibold tracking-tight">
             회의록 추적
           </Link>
           {open ? (
