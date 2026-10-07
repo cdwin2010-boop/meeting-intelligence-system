@@ -89,7 +89,7 @@ export function DueEditor({ item, editable, onSaved }: DueEditorProps) {
         value={date}
         disabled={saving}
         onChange={(event) => setDate(event.target.value)}
-        className="mn-focus h-9 w-full rounded-mn-control border border-mn-border bg-mn-bg px-2 font-mn-mono text-sm text-mn-text outline-none disabled:opacity-50"
+        className="mn-focus h-9 w-full rounded-mn-control border border-mn-control bg-mn-bg px-2 font-mn-mono text-sm text-mn-text outline-none disabled:opacity-50"
       />
       <span className="flex flex-wrap items-center gap-2">
         <Button size="sm" disabled={saving} aria-label={`${label} 기한 저장`} onClick={() => void save({ dueDate: date })}>

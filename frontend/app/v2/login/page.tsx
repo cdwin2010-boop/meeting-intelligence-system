@@ -15,7 +15,7 @@ import { ApiError, NetworkError } from "@/lib/v2/errors";
 import { safeNextPath } from "@/lib/v2/next-path";
 
 const inputClass =
-  "mn-focus h-10 w-full rounded-mn-control border border-mn-border bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50";
+  "mn-focus h-10 w-full rounded-mn-control border border-mn-control bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50";
 
 const MSG_BAD_CREDENTIALS = "아이디 또는 비밀번호가 올바르지 않습니다";
 const MSG_NETWORK = "서버에 연결할 수 없습니다. 잠시 후 다시 시도하세요";

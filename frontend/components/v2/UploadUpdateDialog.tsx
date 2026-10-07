@@ -234,7 +234,7 @@ export function UploadUpdateDialog({ meetingId, open, onClose, onApplied }: Uplo
                       value={choices[amb.key] !== undefined ? String(choices[amb.key]) : ""}
                       disabled={busy !== null}
                       onChange={(event) => onPickChoice(amb.key, event.target.value)}
-                      className="mn-focus h-9 rounded-mn-control border border-mn-border bg-mn-bg px-2 text-sm text-mn-text outline-none disabled:opacity-50"
+                      className="mn-focus h-9 rounded-mn-control border border-mn-control bg-mn-bg px-2 text-sm text-mn-text outline-none disabled:opacity-50"
                     >
                       <option value="">계정을 선택하세요</option>
                       {amb.candidates.map((c) => (

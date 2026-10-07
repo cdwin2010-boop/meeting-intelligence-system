@@ -1,0 +1,73 @@
+/*
+ * v2 화면 테마(작업 68-1): 기본은 라이트("Soft Warm Neutral"), 다크는 기존 Mono Dark 값 그대로.
+ * - 선택자는 html 의 data-v2-theme 속성이다. 이 속성은 v2 화면(app/v2/layout.tsx)만 붙이고 v2 를 떠나면 지우므로 v1 화면은 바뀌지 않는다.
+ *   html 에 두는 이유: 모달이 document.body 로 포털되어 v2 루트 요소 밖에 그려지기 때문이다.
+ * - 토큰 이름은 그대로(--mn-*), 라이트에서 값만 덮어쓴다. 컴포넌트에는 색을 직접 쓰지 않는다.
+ * - 값과 대비 비율은 docs/v3-ui-theme.md 에 있다. 그림자는 포커스 링 하나뿐.
+ */
+html[data-v2-theme="dark"] {
+  color-scheme: dark;
+}
+
+html[data-v2-theme="light"] {
+  color-scheme: light;
+
+  /* 배경 / 표면 */
+  --mn-background: #faf9f6;
+  --mn-surface: #ffffff;
+  --mn-surface-elevated: #f4f2ee; /* hover, 모달, 메뉴 */
+  --mn-overlay: #0f172a66;
+  --mn-border: #e5e7eb;
+  --mn-control-border: #7a8494; /* 컨트롤 테두리: 흰색·오프화이트 배경 대비 3:1 이상 */
+
+  /* 인터랙션: 주 버튼은 진한 차콜 배경 + 흰 글자 */
+  --mn-accent: #1e293b;
+  --mn-accent-hover: #0f172a;
+  --mn-on-accent: #ffffff;
+
+  /* 텍스트 */
+  --mn-text: #0f172a;
+  --mn-text-muted: #475569;
+  --mn-text-disabled: #94a3b8; /* 비활성 글자(WCAG 대비 예외) */
+  --mn-link: #1d4ed8;
+  --mn-selected: #eceae4;
+  --mn-focus: #334155;
+
+  /* 상태 점(장식, 글자 라벨과 함께): 채도를 낮춘 뮤트 톤 */
+  --mn-blue: #4f6f9f; /* 진행 = 소프트 슬레이트 블루 */
+  --mn-teal: #5e8c6a; /* 완료 = 세이지 그린 */
+  --mn-red: #b91c1c; /* 실패, 위험 버튼 배경(흰 글자 4.5:1 이상) */
+  --mn-red-hover: #991b1b;
+  --mn-on-red: #ffffff;
+
+  --mn-focus-ring: 0 0 0 1px #faf9f6, 0 0 0 3px #334155;
+
+  /* 상태 칩 */
+  --mn-chip-neutral-bg: #eef0f3; --mn-chip-neutral-fg: #3f4a5a;
+  --mn-chip-info-bg: #e3eaf3; --mn-chip-info-fg: #2f4a6b;
+  --mn-chip-success-bg: #e3efe6; --mn-chip-success-fg: #2d5a3a;
+  --mn-chip-warning-bg: #f6ebd3; --mn-chip-warning-fg: #7a4b05;
+  --mn-chip-muted-bg: #eceae6; --mn-chip-muted-fg: #57534e;
+  --mn-chip-danger-bg: #f8e4e1; --mn-chip-danger-fg: #8e2a1f;
+  --mn-chip-superseded-bg: #f3e8d0; --mn-chip-superseded-fg: #6b4a10;
+  --mn-chip-cancelled-bg: #ecebe6; --mn-chip-cancelled-fg: #57534e;
+}
+
+/* 상태 칩: 연한 배경 + 진한 글자. 글자 라벨은 항상 함께 쓴다(색만으로 구분하지 않음). 대체됨·취소는 취소선 */
+.mn-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--mn-radius-badge);
+  font-size: 12px;
+  font-weight: 500;
+}
+.mn-chip-neutral { background: var(--mn-chip-neutral-bg); color: var(--mn-chip-neutral-fg); }
+.mn-chip-info { background: var(--mn-chip-info-bg); color: var(--mn-chip-info-fg); }
+.mn-chip-success { background: var(--mn-chip-success-bg); color: var(--mn-chip-success-fg); }
+.mn-chip-warning { background: var(--mn-chip-warning-bg); color: var(--mn-chip-warning-fg); }
+.mn-chip-muted { background: var(--mn-chip-muted-bg); color: var(--mn-chip-muted-fg); }
+.mn-chip-danger { background: var(--mn-chip-danger-bg); color: var(--mn-chip-danger-fg); }
+.mn-chip-superseded { background: var(--mn-chip-superseded-bg); color: var(--mn-chip-superseded-fg); text-decoration: line-through; }
+.mn-chip-cancelled { background: var(--mn-chip-cancelled-bg); color: var(--mn-chip-cancelled-fg); text-decoration: line-through; }

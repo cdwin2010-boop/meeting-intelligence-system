@@ -159,7 +159,7 @@ export function MinutesDialog({ meetingId, open, minutes, onClose, onSaved }: Mi
                 setError(null);
                 setValues((prev) => ({ ...prev, [field]: event.target.value }));
               }}
-              className="mn-focus w-full rounded-mn-control border border-mn-border bg-mn-bg px-3 py-2 text-sm text-mn-text outline-none placeholder:text-mn-muted disabled:opacity-50"
+              className="mn-focus w-full rounded-mn-control border border-mn-control bg-mn-bg px-3 py-2 text-sm text-mn-text outline-none placeholder:text-mn-muted disabled:opacity-50"
             />
           </div>
         ))}

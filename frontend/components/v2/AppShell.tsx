@@ -22,6 +22,7 @@ import { FakeEngineNotice, useEngineIsFake } from "@/components/v2/EngineNotice"
 import { ProcessingBadge } from "@/components/v2/ProcessingBadge";
 import { useProcessing } from "@/components/v2/ProcessingProvider";
 import { ProcessingPanel } from "@/components/v2/ProcessingPanel";
+import { ThemeToggle } from "@/components/v2/ThemeToggle";
 import { V2_HOME, V2_LOGIN } from "@/lib/v2/next-path";
 import { isActiveStatus } from "@/lib/v2/processing-status";
 import { RANK_LABEL } from "@/lib/v2/types";
@@ -162,6 +163,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   // 사용자 표시·로그아웃: 한 요소만 두고 모바일에서는 드로어 하단, 데스크톱에서는 헤더에 둔다
   const userBlock = (
     <>
+      <ThemeToggle />
       {account ? (
         <div role="group" className="flex items-center gap-2" aria-label="로그인 사용자">
           <span className="text-sm font-medium text-mn-text">{account.name}</span>

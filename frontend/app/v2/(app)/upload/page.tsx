@@ -21,7 +21,7 @@ import { isAbortError } from "@/lib/v2/errors";
 import { uploadMeeting } from "@/lib/v2/meetings";
 
 const inputClass =
-  "mn-focus h-10 w-full rounded-mn-control border border-mn-border bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50";
+  "mn-focus h-10 w-full rounded-mn-control border border-mn-control bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -146,7 +146,7 @@ export default function V2UploadPage() {
             onDrop={onDrop}
             className={[
               "flex flex-col items-center gap-3 rounded-mn-card border border-dashed px-6 py-8 text-center",
-              dragOver ? "border-mn-accent bg-mn-elevated" : "border-mn-border",
+              dragOver ? "border-mn-accent bg-mn-elevated" : "border-mn-control",
             ].join(" ")}
           >
             <p className="text-sm font-medium">음성 파일을 끌어다 놓거나 선택하세요</p>
@@ -241,7 +241,7 @@ export default function V2UploadPage() {
           <div className="flex justify-end gap-3">
             <Link
               href={V2_MEETINGS_PATH}
-              className="mn-focus inline-flex h-10 items-center rounded-mn-control border border-mn-border px-4 text-sm font-medium hover:bg-mn-elevated"
+              className="mn-focus inline-flex h-10 items-center rounded-mn-control border border-mn-control px-4 text-sm font-medium hover:bg-mn-elevated"
             >
               취소
             </Link>

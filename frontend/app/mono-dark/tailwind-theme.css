@@ -9,6 +9,10 @@
   --color-mn-elevated: var(--mn-surface-elevated);
   --color-mn-overlay: var(--mn-overlay);
   --color-mn-border: var(--mn-border);
+  --color-mn-control: var(--mn-control-border);
+  --color-mn-link: var(--mn-link);
+  --color-mn-selected: var(--mn-selected);
+  --color-mn-disabled: var(--mn-text-disabled);
   --color-mn-accent: var(--mn-accent);
   --color-mn-accent-hover: var(--mn-accent-hover);
   --color-mn-on-accent: var(--mn-on-accent);

@@ -130,7 +130,7 @@ export function AssigneeDialog({ item, onClose, onSaved }: AssigneeDialogProps) 
                 setError(null);
                 setSelected(event.target.value);
               }}
-              className="mn-focus h-10 w-full rounded-mn-control border border-mn-border bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50"
+              className="mn-focus h-10 w-full rounded-mn-control border border-mn-control bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50"
             >
               <option value="" disabled>
                 계정을 선택하세요

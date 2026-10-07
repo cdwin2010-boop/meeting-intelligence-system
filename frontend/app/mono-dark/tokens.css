@@ -28,6 +28,21 @@
   --mn-red-hover: #cc0000;
   --mn-on-red: #ffffff;
 
+  /* v2 테마 토큰(작업 68-1). 여기는 다크 값이고 v1 화면도 이 값을 쓴다. 라이트 값은 theme-v2.css 가 v2 루트(html[data-v2-theme])에만 덮어쓴다 */
+  --mn-control-border: #262626; /* 입력·버튼·선택·체크박스 같은 컨트롤 테두리(다크는 카드 보더와 같은 값: 3:1 보정은 이후 단계) */
+  --mn-text-disabled: #6b6b6b; /* 비활성 글자(WCAG 대비 예외) */
+  --mn-link: #8ab4ff;
+  --mn-selected: #171717; /* 선택 행 */
+  /* 상태 칩: 연한 배경 + 진한 글자(다크는 어두운 배경 + 밝은 글자). 대체됨·취소는 취소선과 함께 쓴다 */
+  --mn-chip-neutral-bg: #171717; --mn-chip-neutral-fg: #a1a1a1;
+  --mn-chip-info-bg: #0a1f3d; --mn-chip-info-fg: #7ab3ff;
+  --mn-chip-success-bg: #0b2e27; --mn-chip-success-fg: #50e3c2;
+  --mn-chip-warning-bg: #33250a; --mn-chip-warning-fg: #f5c26b;
+  --mn-chip-muted-bg: #171717; --mn-chip-muted-fg: #a1a1a1;
+  --mn-chip-danger-bg: #3a0a0a; --mn-chip-danger-fg: #ff8a8a;
+  --mn-chip-superseded-bg: #33250a; --mn-chip-superseded-fg: #d9a441;
+  --mn-chip-cancelled-bg: #171717; --mn-chip-cancelled-fg: #8a8a8a;
+
   /* 그림자는 포커스 링 하나만 허용 */
   --mn-focus-ring: 0 0 0 1px #000000, 0 0 0 3px #a3a3a3;
 

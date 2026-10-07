@@ -115,7 +115,7 @@ export function ManualItemDialog({ meetingId, open, onClose, onCreated }: Manual
               setError(null);
               setTitle(event.target.value);
             }}
-            className="mn-focus h-10 w-full rounded-mn-control border border-mn-border bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50"
+            className="mn-focus h-10 w-full rounded-mn-control border border-mn-control bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50"
           />
         </div>
         <div className="flex flex-col gap-1">
@@ -127,7 +127,7 @@ export function ManualItemDialog({ meetingId, open, onClose, onCreated }: Manual
             value={assignee}
             disabled={saving}
             onChange={(event) => setAssignee(event.target.value)}
-            className="mn-focus h-10 w-full rounded-mn-control border border-mn-border bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50"
+            className="mn-focus h-10 w-full rounded-mn-control border border-mn-control bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50"
           >
             <option value="">선택 안 함</option>
             {accounts.map((a) => (
@@ -153,7 +153,7 @@ export function ManualItemDialog({ meetingId, open, onClose, onCreated }: Manual
               value={due}
               disabled={saving || undetermined}
               onChange={(event) => setDue(event.target.value)}
-              className="mn-focus h-10 w-[170px] rounded-mn-control border border-mn-border bg-mn-bg px-3 font-mn-mono text-sm text-mn-text outline-none disabled:opacity-50"
+              className="mn-focus h-10 w-[170px] rounded-mn-control border border-mn-control bg-mn-bg px-3 font-mn-mono text-sm text-mn-text outline-none disabled:opacity-50"
             />
             <label htmlFor={undeterminedId} className="flex items-center gap-2 text-sm">
               <input

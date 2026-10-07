@@ -14,7 +14,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 // - danger: 파괴적 액션 전용 Red (유채색이 버튼 채움으로 허용되는 유일한 경우)
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
   primary: "bg-mn-accent text-mn-on-accent hover:bg-mn-accent-hover",
-  secondary: "border border-mn-border bg-transparent text-mn-text hover:bg-mn-elevated",
+  secondary: "border border-mn-control bg-transparent text-mn-text hover:bg-mn-elevated",
   danger: "bg-mn-red text-mn-on-red hover:bg-mn-red-hover",
 };
 

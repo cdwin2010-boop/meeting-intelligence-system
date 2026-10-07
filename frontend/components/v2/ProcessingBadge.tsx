@@ -21,7 +21,7 @@ export function ProcessingBadge({ onOpen }: { onOpen: () => void }) {
       type="button"
       aria-label={`처리 현황 요약: ${text}`}
       onClick={onOpen}
-      className="mn-focus inline-flex min-h-11 min-w-0 items-center truncate rounded-mn-control border border-mn-border px-3 font-mn-mono text-xs text-mn-text hover:bg-mn-elevated"
+      className="mn-focus inline-flex min-h-11 min-w-0 items-center truncate rounded-mn-control border border-mn-control px-3 font-mn-mono text-xs text-mn-text hover:bg-mn-elevated"
     >
       <span className="truncate">{text}</span>
     </button>

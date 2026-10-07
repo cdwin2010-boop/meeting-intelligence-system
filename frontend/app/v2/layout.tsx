@@ -2,6 +2,7 @@
 import type { Metadata } from "next";
 
 import { AuthProvider } from "@/components/v2/AuthProvider";
+import { THEME_INIT_SCRIPT, ThemeProvider } from "@/components/v2/ThemeProvider";
 
 export const metadata: Metadata = {
   title: "회의록 추적",
@@ -9,5 +10,13 @@ export const metadata: Metadata = {
 };
 
 export default function V2Layout({ children }: { children: React.ReactNode }) {
-  return <AuthProvider>{children}</AuthProvider>;
+  return (
+    <>
+      {/* 첫 페인트 전에 테마 속성을 붙인다(저장된 다크가 라이트로 번쩍이지 않게) */}
+      <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      <ThemeProvider>
+        <AuthProvider>{children}</AuthProvider>
+      </ThemeProvider>
+    </>
+  );
 }

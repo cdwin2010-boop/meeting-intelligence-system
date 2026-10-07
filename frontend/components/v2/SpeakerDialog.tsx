@@ -31,7 +31,7 @@ type LoadState =
 type AccountsState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; accounts: AccountOption[] };
 
 const selectClass =
-  "mn-focus h-10 w-full rounded-mn-control border border-mn-border bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50";
+  "mn-focus h-10 w-full rounded-mn-control border border-mn-control bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50";
 
 const errorMessage = (error: unknown, fallback: string) => (error instanceof Error && error.message ? error.message : fallback);
 

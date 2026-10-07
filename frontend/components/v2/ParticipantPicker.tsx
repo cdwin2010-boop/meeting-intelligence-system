@@ -77,7 +77,7 @@ export function ParticipantPicker({ selected, onChange, disabled = false }: Part
                   className={[
                     "inline-flex h-8 cursor-pointer items-center gap-2 rounded-mn-control border px-3 text-[13px]",
                     "has-[:focus-visible]:[box-shadow:var(--mn-focus-ring)] has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50",
-                    checked ? "border-mn-accent bg-mn-elevated text-mn-text" : "border-mn-border text-mn-muted hover:text-mn-text",
+                    checked ? "border-mn-accent bg-mn-elevated text-mn-text" : "border-mn-control text-mn-muted hover:text-mn-text",
                   ].join(" ")}
                 >
                   <input
