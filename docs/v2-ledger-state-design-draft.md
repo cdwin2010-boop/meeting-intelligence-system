@@ -881,3 +881,11 @@ A·B·C·D는 팀장 회신 2026-10-01로 [확정]됐다(부록 B). 각 표에�
 - **프로젝트별 회의록**: `GET /api/projects/{id}/meetings` — 연결된 회의록 중 내가 열람할 수 있는 것만, 최신 회의 일시순. 기존 회의록 목록의 쿼리 함수(`build_meeting_page`)를 재사용해 항목 형식·쪽 나눔·단계 인자(담당자의 보류·삭제 조회 403)가 같다. 프로젝트를 볼 수 없으면 404.
 - **승인 판정은 바꾸지 않았다**(`can_confirm_meeting`·`meeting_lead_condition`·`can_write_item`): 프로젝트 총괄의 확정 권한 범위는 정책 미결이며, 현재 동작을 고정하는 테스트만 있다.
 - **아직 하지 않은 것**: 프로젝트 총괄의 승인 권한 범위, 유형·소속 변경, 외부 회의의 고객 상담 정책, 유형별 AI 프롬프트 분기, 화면.
+
+### D-21 프로젝트 총괄 권한과 총괄 변경 [구현 기준, 작업 66-3b]
+- **권한 범위**: 프로젝트 총괄(활성 프로젝트의 `project_members` role=lead)은 그 프로젝트에 연결된 회의록(`meeting_classifications.project_id`)에서 기존 "회의록 총괄" 권한 전체를 가진다(회의록 확정, 업무 확정·수정·삭제·종결, 보류·재개, 직권 종료·삭제, 5개 항목 수정, 수정 회의록 업로드 갱신, 수기 업무 추가, 재처리, 화자 지정, 할 일의 확정 대기 목록 등). 수정 요청 해결은 원래 관리자 직급이면 열람 가능한 요청을 해결하는 규칙이라 총괄 판정과 무관하다.
+- **적용 조건**: 총괄의 현재 직급이 manager 이상이고 프로젝트가 active 일 때만. 직급이 내려가거나 프로젝트가 대기·반려이면 권한이 없다. 기존 총괄 규칙(회의록 등록 관리자 등)과 지시자 권한은 그대로이며 프로젝트 총괄은 추가 경로다. 연결되지 않은 회의록·다른 프로젝트·다른 고객사에는 영향이 없고 열람 규칙은 바꾸지 않았다.
+- **구현 위치**: `auth/access.py` 의 `meeting_lead_condition` 에 `is_project_lead_of_meeting` 한 줄을 합쳤다. `can_confirm_condition`·`is_meeting_lead`·`can_confirm_meeting`·`can_write_item`·허용 동작이 모두 이 조건을 통해 따라온다(호출처 수정 없음, 직접 비교 코드 없음).
+- **총괄 변경** `POST /api/projects/{id}/change-lead`(`newLeadId`, `reason` 필수): 현재 총괄 본인(`projects.lead_account_id`)과 지시자만(그 밖은 403, 볼 수 없으면 404). active 프로젝트만(409). 새 총괄은 같은 고객사 활성 계정(아니면 400)이고 직급 manager 이상(아니면 409). 이미 총괄이면 200(변경 없음). 한 트랜잭션으로 `lead_account_id` 갱신, 새 총괄을 lead 참여자로(없으면 추가), 이전 총괄은 manager 참여자로 남긴다(계속 열람). 이미 확정된 건은 그대로. 이력 `project.lead_changed`("프로젝트 총괄 변경": 이전·새 총괄, 사유, 변경자). 참여자 관리 API 의 lead 역할 변경·제거 금지 규칙은 그대로다.
+- **프로젝트 상세 allowedActions**(추가 필드): `change_lead`(active 이고 총괄 본인 또는 지시자), `manage_members`(active 이고 lead 참여자), `approve_project`·`reject_project`(대기 중이고 등록 부서의 부서장).
+- **아직 하지 않은 것**: 총괄 변경 화면, 대기 프로젝트 승인 알림, 유형·소속 변경.

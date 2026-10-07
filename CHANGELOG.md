@@ -1,6 +1,7 @@
 # Changelog
 
 ## 미배포 (v2 개발 중)
+- v2 `backend/` 프로젝트 총괄 승인 판정과 총괄 변경(작업 66-3b): 프로젝트 총괄(활성 프로젝트 lead, 직급 manager 이상)이 연결된 회의록에서 기존 총괄 권한 전체를 가짐(`access.py` 총괄 조건 한 줄), `POST /api/projects/{id}/change-lead`(사유 필수, 이전 총괄은 manager 로 남김), 프로젝트 상세 allowedActions. 마이그레이션·프론트 변경 없음.
 - v3.0 UI 업무 원장 열 레이아웃: 업무명 칸 폭 0 으로 인한 칸 겹침 해소(원인은 고정 px 폭 합이 표 최소 폭 초과), 열 폭을 rem·균등 분배로 변경(업무명·근거 비율 1.0), 기한·동작 버튼 줄바꿈, 표 컨테이너 키보드 가로 스크롤. 프론트만 변경.
 - v2 `backend/` 회의 유형·프로젝트 연결(작업 66-3): 표 `meeting_classifications`(마이그레이션 `d3a8f15c7e92`, meetings 표 변경 없음), 업로드 입력 `meetingType`·`projectId`(선택), 상세 응답에 `meetingType`·`project` 추가, 프로젝트 참여자 열람 규칙(`meeting_visibility` 한 줄), `GET /api/projects/{id}/meetings`. 승인 판정 불변. 프론트 변경 없음. **운영 DB 는 백업 후 `alembic upgrade head` 로 직접 적용**.
 - v2 `backend/` 조직·프로젝트(작업 66-2): 표 4개(departments·account_departments·projects·project_members, 마이그레이션 `c7e2a91d4b30`, 기존 표 변경 없음), 조직 조회 API(`/api/departments`·`/api/me/org`), 프로젝트 API(등록·승인·반려·참여자 관리·목록·상세·참여자 후보), 관리 스크립트 `scripts/manage_org.py`(기본 dry-run), 공통 이력 구분 추가. 회의록 연결·열람 규칙은 66-3. 프론트 변경 없음. **운영 DB 는 백업 후 `alembic upgrade head` 로 직접 적용**.

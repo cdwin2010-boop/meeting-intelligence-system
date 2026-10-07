@@ -12,8 +12,9 @@ from sqlalchemy.orm import Session
 from app.auth.access import VIEW_ALL_RANKS, can_confirm_meeting, can_write_item
 from app.auth.deps import has_rank
 from app.auth.locks import HOLDABLE_STATUSES, reject_if_locked
-from app.models import Account, ActionItem, Meeting
+from app.models import Account, ActionItem, Meeting, Project
 from app.models.closure import PHASES
+from app.services.projects import is_approver, is_project_lead
 from app.services.reprocess import active_job_exists
 
 # ---------------- 회의록 단위 동작 ----------------
@@ -38,6 +39,13 @@ CLOSE_ITEM = "close_item"
 DELETE_ITEM = "delete_item"
 SET_ASSIGNEE = "set_assignee"  # 담당자 지정·변경
 SET_DUE = "set_due"  # 기한 입력·변경(날짜 또는 미확정)
+
+# ---------------- 프로젝트 단위 동작(프로젝트 상세의 allowedActions) ----------------
+CHANGE_LEAD = "change_lead"  # 총괄 변경
+MANAGE_MEMBERS = "manage_members"  # 참여자 추가·역할 변경·제거
+APPROVE_PROJECT = "approve_project"  # 프로젝트 승인(대기 중일 때)
+REJECT_PROJECT = "reject_project"  # 프로젝트 반려(대기 중일 때)
+PROJECT_ACTIONS = (CHANGE_LEAD, MANAGE_MEMBERS, APPROVE_PROJECT, REJECT_PROJECT)
 
 MEETING_ACTIONS = (
     CONFIRM_MEETING, HOLD_MEETING, RESUME_MEETING, END_MEETING, DELETE_MEETING, EDIT_MINUTES, UPLOAD_UPDATE, ADD_ITEM,
@@ -103,6 +111,18 @@ def item_allowed_actions(
         if lead if lead is not None else can_confirm_meeting(session, account, meeting):
             allowed.append(DELETE_ITEM)
     return [name for name in ITEM_ACTIONS if name in allowed]
+
+
+def project_allowed_actions(session: Session, account: Account, project: Project) -> list[str]:
+    """프로젝트 단위 허용 동작(PROJECT_ACTIONS 순서). 판정은 services/projects.py 의 기존 함수와 같은 규칙을 호출한다."""
+    allowed = []
+    if project.status == "active" and (account.rank == "executive" or project.lead_account_id == account.id):
+        allowed.append(CHANGE_LEAD)
+    if project.status == "active" and is_project_lead(session, account, project):
+        allowed.append(MANAGE_MEMBERS)
+    if project.status == "pending_approval" and is_approver(session, account, project):
+        allowed += [APPROVE_PROJECT, REJECT_PROJECT]
+    return [name for name in PROJECT_ACTIONS if name in allowed]
 
 
 def available_phases(account: Account) -> list[str]:

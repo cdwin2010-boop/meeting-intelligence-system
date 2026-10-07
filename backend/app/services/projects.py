@@ -15,7 +15,7 @@ from app.auth.scope import scoped
 from app.models import Account, AccountDepartment, Department, Project, ProjectMember
 from app.models.common import utcnow
 from app.services.history import (
-    KIND_PROJECT_APPROVED, KIND_PROJECT_MEMBER_ADDED, KIND_PROJECT_MEMBER_REMOVED, KIND_PROJECT_MEMBER_ROLE,
+    KIND_PROJECT_APPROVED, KIND_PROJECT_LEAD_CHANGED, KIND_PROJECT_MEMBER_ADDED, KIND_PROJECT_MEMBER_REMOVED, KIND_PROJECT_MEMBER_ROLE,
     KIND_PROJECT_REGISTERED, KIND_PROJECT_REJECTED, record_change,
 )
 from app.services.org import department_head, find_department, members_of, membership
@@ -207,6 +207,35 @@ def remove_project_member(session: Session, account: Account, project: Project, 
     session.delete(row)
     session.flush()
     _record(session, project, account.id, KIND_PROJECT_MEMBER_REMOVED, {"accountId": target_id, "role": row.role}, {})
+
+
+# ---------------- 총괄 변경 ----------------
+def change_project_lead(session: Session, account: Account, project: Project, new_lead_id: int, reason: str) -> bool:
+    """총괄을 바꾼다(현재 총괄 본인 또는 지시자만). 이미 그 계정이 총괄이면 변경 없이 False.
+    새 총괄은 lead 로 만들고(참여자가 아니면 추가) 이전 총괄은 manager 참여자로 남긴다. 이미 확정된 건은 건드리지 않는다. 커밋은 호출부."""
+    if not (account.rank == "executive" or project.lead_account_id == account.id):
+        raise _http(status.HTTP_403_FORBIDDEN, "현재 총괄 또는 지시자만 총괄을 바꿀 수 있습니다")
+    if project.status != "active":
+        raise _http(status.HTTP_409_CONFLICT, "진행 중인 프로젝트만 총괄을 바꿀 수 있습니다")
+    target = _valid_member_accounts(session, account, [new_lead_id])[0]
+    if not _is_manager_rank(target):
+        raise _http(status.HTTP_409_CONFLICT, "프로젝트 총괄은 관리자 이상 직급이어야 합니다")
+    previous_id = project.lead_account_id
+    if previous_id == target.id:
+        return False
+    if previous_id is not None:
+        old_row = member_row(session, project.id, previous_id)
+        if old_row is not None:
+            old_row.role = "manager"
+    row = member_row(session, project.id, target.id)
+    if row is None:
+        session.add(ProjectMember(project_id=project.id, account_id=target.id, role="lead", added_by=account.id))
+    else:
+        row.role = "lead"
+    project.lead_account_id = target.id
+    session.flush()
+    _record(session, project, account.id, KIND_PROJECT_LEAD_CHANGED, {"leadAccountId": previous_id}, {"leadAccountId": target.id, "reason": reason})
+    return True
 
 
 # ---------------- 참여자 후보 ----------------

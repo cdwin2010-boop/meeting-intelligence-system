@@ -74,11 +74,27 @@ def get_visible_meeting(session: Session, account: Account, meeting_id: int) -> 
 # 열람 권한(위)과 별개다. 판정은 아래 함수에서만 한다.
 #  - 지시자(executive): 모든 회의록·업무를 확정·수정
 #  - 관리자(manager)가 그 회의록의 "총괄"이면 회의록 확정과 모든 업무 수정·확정.
-#    총괄 = 회의록을 등록한 관리자. 담당자(staff)가 등록한 회의록이면 그 회의에 참석한 관리자가 총괄
+#    총괄 = 회의록을 등록한 관리자. 담당자(staff)가 등록한 회의록이면 그 회의에 참석한 관리자가 총괄.
+#    추가로, 회의록이 연결된 활성 프로젝트의 총괄(role=lead)인 관리자도 그 회의록의 총괄
 #  - 총괄이 아닌 관리자: 본인이 담당자인 업무만 수정·확정(회의록 확정은 불가)
 #  - 담당자(staff): 확정·수정 불가
 def registrant_id(session: Session, meeting: Meeting) -> int | None:
     return session.scalar(select(SourceDocument.registered_by).where(SourceDocument.id == meeting.source_document_id))
+
+
+def is_project_lead_of_meeting(account: Account) -> ColumnElement[bool]:
+    """그 회의록이 연결된 활성 프로젝트의 총괄(project_members 의 role="lead")인가. 직급 조건(manager 이상)은 meeting_lead_condition 이 함께 건다."""
+    classification = aliased(MeetingClassification)
+    project = aliased(Project)
+    member = aliased(ProjectMember)
+    return exists().where(
+        classification.meeting_id == Meeting.id,
+        project.id == classification.project_id,
+        project.status == "active",
+        member.project_id == project.id,
+        member.account_id == account.id,
+        member.role == "lead",
+    )
 
 
 def meeting_lead_condition(account: Account) -> ColumnElement[bool]:
@@ -93,7 +109,8 @@ def meeting_lead_condition(account: Account) -> ColumnElement[bool]:
         registrant.id == document.registered_by,
         registrant.rank == "staff",
     )
-    return or_(is_registrant(account), and_(staff_registered, is_participant(account)))
+    # 프로젝트 총괄(작업 66-3b)은 추가 경로: 연결된 활성 프로젝트의 lead 이고 현재 직급이 manager 이상(위에서 확인)일 때만
+    return or_(is_registrant(account), and_(staff_registered, is_participant(account)), is_project_lead_of_meeting(account))
 
 
 def can_confirm_condition(account: Account) -> ColumnElement[bool]:

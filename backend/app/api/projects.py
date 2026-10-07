@@ -14,6 +14,7 @@ from app.api.action_schemas import ReasonBody
 from app.api.meeting_queries import MeetingStatus, build_meeting_page
 from app.api.meeting_schemas import MeetingListPage
 from app.api.schemas import CamelModel
+from app.auth.actions import project_allowed_actions
 from app.auth.deps import get_current_account
 from app.db import get_session
 from app.models import Account, Department, MeetingClassification, Meeting, Project, ProjectMember
@@ -56,6 +57,8 @@ class ProjectOut(CamelModel):
 
 class ProjectDetail(ProjectOut):
     members: list[MemberOut]
+    # 이 사용자가 지금 할 수 있는 동작(추가 필드, app/auth/actions.py). 화면 표시용이며 거부 판정은 각 API 가 한다
+    allowed_actions: list[str] = []
 
 
 class ProjectCreate(CamelModel):
@@ -123,6 +126,7 @@ def _out(session: Session, viewer: Account, project: Project, cls=ProjectOut):
             .where(ProjectMember.project_id == project.id).order_by(ProjectMember.id)
         )
         data["members"] = [MemberOut(account_id=a.id, name=a.name, rank=a.rank, role=role) for a, role in rows]
+        data["allowed_actions"] = project_allowed_actions(session, viewer, project)
     return cls(**data)
 
 
@@ -212,6 +216,21 @@ def approve(project_id: int, account: Account = Depends(get_current_account), se
 def reject(project_id: int, body: ReasonBody, account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> ProjectDetail:
     project = _visible_or_404(session, account, project_id)
     svc.reject_project(session, account, project, body.reason)
+    session.commit()
+    return _out(session, account, project, ProjectDetail)
+
+
+class ChangeLeadBody(ReasonBody):
+    new_lead_id: int
+
+
+@router.post("/{project_id}/change-lead", response_model=ProjectDetail, response_model_by_alias=True)
+def change_lead(
+    project_id: int, body: ChangeLeadBody, account: Account = Depends(get_current_account), session: Session = Depends(get_session)
+) -> ProjectDetail:
+    """총괄 변경(현재 총괄 본인 또는 지시자). 사유 필수. 이전 총괄은 manager 참여자로 남는다. 이미 그 계정이 총괄이면 200(변경 없음)."""
+    project = _visible_or_404(session, account, project_id)
+    svc.change_project_lead(session, account, project, body.new_lead_id, body.reason)
     session.commit()
     return _out(session, account, project, ProjectDetail)
 

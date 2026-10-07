@@ -213,15 +213,16 @@ def test_project_meetings_listing(env, team, project):
     assert call(env, "GET", team["kim"], "/api/projects/99999/meetings").status_code == 404
 
 
-# ================= 승인 판정 불변 =================
-def test_project_lead_still_cannot_confirm_meetings_they_did_not_upload(env, team, project):
-    """정책 미결, 이후 변경될 수 있음: 지금은 프로젝트 총괄이어도 기존 규칙(등록한 관리자 또는 담당자 등록 회의록의 참석 관리자)대로
-    자기가 올리지 않은 프로젝트 회의록을 확정할 수 없다. 이 테스트는 현재 동작을 고정할 뿐 확정된 정책이 아니다."""
+# ================= 프로젝트 총괄 승인 판정 =================
+def test_project_lead_can_confirm_meetings_they_did_not_upload(env, team, project):
+    """정책 확정(작업 66-3b): 프로젝트 총괄(활성 프로젝트의 lead, 직급 manager 이상)은 자기가 올리지 않은 프로젝트 회의록도 확정할 수 있다.
+    세부 권한 범위는 tests/test_project_lead.py 가 검증한다. 지시자 권한은 기존대로다."""
     meeting_id = project_meeting(env, team, project, registrant="kim", status="awaiting_confirmation")
-    assert call(env, "POST", team["head"], f"/api/meetings/{meeting_id}/confirm").status_code == 403
     detail = call(env, "GET", team["head"], f"/api/meetings/{meeting_id}").json()
-    assert "confirm_meeting" not in detail["allowedActions"]
-    assert call(env, "POST", team["boss"], f"/api/meetings/{meeting_id}/confirm").status_code == 200  # 지시자는 기존대로
+    assert "confirm_meeting" in detail["allowedActions"]
+    assert call(env, "POST", team["head"], f"/api/meetings/{meeting_id}/confirm").status_code == 200
+    other = project_meeting(env, team, project, registrant="kim", status="awaiting_confirmation", day=2)
+    assert call(env, "POST", team["boss"], f"/api/meetings/{other}/confirm").status_code == 200  # 지시자는 기존대로
 
 
 # ================= 마이그레이션 =================
