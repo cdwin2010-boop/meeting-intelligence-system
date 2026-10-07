@@ -221,24 +221,26 @@ for (const width of [768, 1280]) {
   });
 }
 
-test.describe("헤더 '새 회의 업로드'와 '보는 중'", () => {
-  test("누르면 업로드 화면으로 이동하고 업로드 화면에서는 숨는다(기존 메뉴 '회의록 올리기'와 이름이 다르다)", async ({ page }) => {
+test.describe("업로드 진입(패널 하나)과 '보는 중'", () => {
+  test("헤더에 '새 회의 업로드'가 없고 패널의 '회의록 올리기'만 있으며 누르면 업로드 화면으로 이동", async ({ page }) => {
     await start(page);
     await page.goto("/v2");
-    const button = page.getByRole("link", { name: "새 회의 업로드" });
-    await expect(button).toBeVisible();
+    await expect(page.getByRole("link", { name: "새 회의 업로드" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "회의록 올리기" })).toHaveCount(1);
-    await button.click();
+    await aside(page).getByRole("link", { name: "회의록 올리기" }).click();
     await expect(page).toHaveURL(/\/v2\/upload$/);
     await expect(page.getByRole("heading", { level: 1, name: "회의록 올리기" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "새 회의 업로드" })).toHaveCount(0);
   });
 
-  test("모바일에서도 보인다", async ({ page }) => {
+  test("모바일: 헤더에 없고 드로어를 연 뒤 '회의록 올리기'로 이동", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 800 });
     await start(page);
     await page.goto("/v2/meetings");
-    await expect(page.getByRole("link", { name: "새 회의 업로드" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "새 회의 업로드" })).toHaveCount(0);
+    await hamburger(page).click();
+    await expect(page.getByRole("link", { name: "회의록 올리기" })).toHaveCount(1);
+    await aside(page).getByRole("link", { name: "회의록 올리기" }).click();
+    await expect(page).toHaveURL(/\/v2\/upload$/);
   });
 
   test("지금 보는 회의록이면 [열기] 대신 '보는 중' 글자, 다른 회의록이면 [열기]로 이동", async ({ page }) => {
@@ -316,12 +318,11 @@ test.describe("회의록 목록 반응형", () => {
       await expect(page.getByText("1–20 / 25")).toBeHidden();
     });
 
-    test("빈 목록: 진행중 탭에만 '첫 회의 올리기' 버튼, 헤더 버튼과 이름이 겹치지 않는다", async ({ page }) => {
+    test("빈 목록: 진행중 탭에만 '첫 회의 올리기' 버튼", async ({ page }) => {
       await start(page, { list: { items: [], total: 0 } });
       await page.goto("/v2/meetings");
       await expect(page.getByRole("status").filter({ hasText: "등록된 회의록이 없습니다." })).toBeVisible();
       await expect(page.getByRole("link", { name: "첫 회의 올리기" })).toBeVisible();
-      await expect(page.getByRole("link", { name: "새 회의 업로드" })).toBeVisible();
       await page.getByRole("tab", { name: "종료" }).click();
       await expect(page.getByRole("status").filter({ hasText: "종료된 회의록이 없습니다." })).toBeVisible();
       await expect(page.getByRole("link", { name: "첫 회의 올리기" })).toHaveCount(0);
@@ -394,11 +395,9 @@ for (const width of [767, 375]) {
       await start(page, { processing: [proc(1)] });
       await page.goto("/v2");
       const burger = await boxOf(hamburger(page));
-      const upload = await boxOf(page.getByRole("link", { name: "새 회의 업로드" }));
       const badge = await boxOf(page.getByRole("button", { name: /처리 현황 요약/ }));
       expect(burger.x + burger.width).toBeGreaterThan(width - 20);
-      expect(badge.x + badge.width).toBeLessThanOrEqual(upload.x + 0.5); // 뱃지 → 업로드 → 햄버거 순
-      expect(upload.x + upload.width).toBeLessThanOrEqual(burger.x + 0.5);
+      expect(badge.x + badge.width).toBeLessThanOrEqual(burger.x + 0.5); // 뱃지 → 햄버거 순
       expect(Math.abs(badge.y - burger.y)).toBeLessThan(8); // 한 줄
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await hamburger(page).click();
@@ -417,5 +416,119 @@ for (const width of [767, 375]) {
       await expect(aside(page)).toBeHidden();
       await expect(hamburger(page)).toBeFocused();
     });
+  });
+}
+
+/* 작업 65-2: 탭 줄 세로 넘침 제거, 데스크톱 패널 접기·펼치기 */
+for (const width of [1280, 768, 375]) {
+  test(`탭 줄이 세로로 넘치지 않는다 ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await start(page);
+    await page.goto("/v2/meetings");
+    const tabs = page.getByRole("tablist", { name: "회의록 단계" });
+    await expect(tabs).toBeVisible();
+    const m = await tabs.evaluate((el) => ({ sh: el.scrollHeight, ch: el.clientHeight, oy: getComputedStyle(el).overflowY, bar: (el as HTMLElement).offsetWidth - el.clientWidth }));
+    expect(m.sh).toBeLessThanOrEqual(m.ch);
+    expect(m.oy).toBe("hidden");
+    expect(m.bar).toBe(0);
+    if (width === 375) expect(await tabs.getByRole("tab").first().evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+}
+
+const toggle = (page: Page, name: "접기" | "펼치기") => page.getByRole("button", { name: `회의록 추적 패널 ${name}` });
+
+for (const width of [1280, 768]) {
+  test.describe(`데스크톱 패널 접기·펼치기 ${width}px`, () => {
+    test.use({ viewport: { width, height: 800 } });
+
+    test("토글 이름·aria-expanded 전환, 48px 띠와 본문 확장, 메뉴·처리 현황이 접근성 트리·Tab 에서 빠지고 펼치면 복귀", async ({ page }) => {
+      await start(page, { processing: [proc(1), proc(2, { status: "queued" }), proc(3, { status: "completed" })] });
+      await page.goto("/v2");
+      await expect(toggle(page, "접기")).toHaveAttribute("aria-expanded", "true");
+      expect((await boxOf(aside(page))).width).toBe(248);
+      const mainBefore = (await boxOf(page.locator("main"))).width;
+      await toggle(page, "접기").click();
+      await expect(toggle(page, "펼치기")).toHaveAttribute("aria-expanded", "false");
+      await expect(toggle(page, "펼치기")).toBeFocused();
+      const strip = await boxOf(aside(page));
+      expect(Math.abs(strip.width - 48)).toBeLessThanOrEqual(1);
+      expect(Math.round(strip.x + strip.width)).toBe(width);
+      expect((await boxOf(page.locator("main"))).width).toBeGreaterThan(mainBefore + 150);
+      await expect(page.getByRole("group", { name: "처리 중 2건" })).toHaveText("2");
+      await expect(page.getByRole("navigation", { name: "주 메뉴" })).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "회의록 올리기" })).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "회의록 추적" })).toHaveCount(0);
+      await expect(page.getByLabel("처리 현황", { exact: true })).toBeHidden();
+      await page.locator("body").click({ position: { x: 5, y: 5 } });
+      const inAside: string[] = [];
+      for (let i = 0; i < 25; i += 1) {
+        await page.keyboard.press("Tab");
+        inAside.push(await page.evaluate(() => (document.activeElement?.closest("aside") ? (document.activeElement as HTMLElement).getAttribute("aria-label") ?? "?" : "-")));
+      }
+      expect([...new Set(inAside.filter((v) => v !== "-"))]).toEqual(["회의록 추적 패널 펼치기"]);
+      await toggle(page, "펼치기").click();
+      await expect(toggle(page, "접기")).toHaveAttribute("aria-expanded", "true");
+      expect((await boxOf(aside(page))).width).toBe(248);
+      await expect(mainNav(page).getByRole("link", { name: "회의록" })).toHaveCount(1);
+      await expect(page.getByRole("link", { name: "회의록 올리기" })).toHaveCount(1);
+      await expect(page.getByRole("group", { name: /처리 중 \d+건/ })).toHaveCount(0);
+    });
+
+    test("키보드(Enter·Space)로 조작되고 새로고침 뒤에도 접힘이 유지된다", async ({ page }) => {
+      await start(page);
+      await page.goto("/v2");
+      await toggle(page, "접기").focus();
+      await page.keyboard.press("Enter");
+      await expect(toggle(page, "펼치기")).toBeFocused();
+      await page.reload();
+      await expect(toggle(page, "펼치기")).toBeVisible();
+      expect(Math.abs((await boxOf(aside(page))).width - 48)).toBeLessThanOrEqual(1);
+      await toggle(page, "펼치기").focus();
+      await page.keyboard.press("Space");
+      await expect(toggle(page, "접기")).toBeVisible();
+      await page.reload();
+      await expect(toggle(page, "접기")).toBeVisible();
+    });
+
+    test("저장소 접근이 막혀도 접고 펼 수 있다", async ({ page }) => {
+      await start(page);
+      await page.addInitScript(() => {
+        Object.defineProperty(window, "localStorage", { get: () => { throw new DOMException("blocked", "SecurityError"); } });
+      });
+      await page.goto("/v2");
+      await expect(toggle(page, "접기")).toBeVisible();
+      await toggle(page, "접기").click();
+      await expect(toggle(page, "펼치기")).toBeVisible();
+      await toggle(page, "펼치기").click();
+      await expect(toggle(page, "접기")).toBeVisible();
+    });
+
+    test("접힌 동안에도 처리 현황 조회가 계속되어 건수가 갱신되고 완료 안내가 유지된다", async ({ page }) => {
+      const server = await start(page, { processing: [proc(1, { title: "알림 회의" })] });
+      await page.goto("/v2");
+      await toggle(page, "접기").click();
+      await expect(page.getByRole("group", { name: "처리 중 1건" })).toHaveText("1");
+      server.processing = [proc(1, { title: "알림 회의" }), proc(2, { status: "queued" })];
+      await expect(page.getByRole("group", { name: "처리 중 2건" })).toHaveText("2", { timeout: 15000 });
+      server.processing = [proc(1, { title: "알림 회의", status: "completed" }), proc(2, { status: "queued" })];
+      await expect(page.locator("aside [aria-live=polite]:visible").filter({ hasText: "알림 회의: 처리 완료" })).toHaveCount(1, { timeout: 15000 });
+      await expect(page.getByRole("group", { name: "처리 중 1건" })).toHaveText("1", { timeout: 15000 });
+    });
+  });
+}
+
+for (const width of [767, 375]) {
+  test(`모바일 ${width}px: 패널 접기 토글이 없고 드로어는 그대로`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await start(page);
+    await page.goto("/v2");
+    await expect(page.getByRole("button", { name: /회의록 추적 패널/ })).toHaveCount(0);
+    await hamburger(page).click();
+    await expect(page.getByRole("button", { name: /회의록 추적 패널/ })).toHaveCount(0);
+    await expect(mainNav(page).getByRole("link", { name: "회의록" })).toBeVisible();
+    expect((await boxOf(aside(page))).width).toBeGreaterThan(200);
+    await page.keyboard.press("Escape");
+    await expect(hamburger(page)).toBeFocused();
   });
 }

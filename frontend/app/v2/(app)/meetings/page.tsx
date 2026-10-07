@@ -39,7 +39,7 @@ const EMPTY_TEXT: Record<MeetingPhase, string> = {
 /** 단계 탭. 현재 탭은 aria-selected 와 흰 밑줄·굵은 글자로 구분 */
 function PhaseTabs({ phases, current, onChange }: { phases: MeetingPhase[]; current: MeetingPhase; onChange: (p: MeetingPhase) => void }) {
   return (
-    <div role="tablist" aria-label="회의록 단계" className="flex gap-1 overflow-x-auto border-b border-mn-border max-md:flex-nowrap">
+    <div role="tablist" aria-label="회의록 단계" className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-mn-border max-md:flex-nowrap">
       {phases.map((phase) => {
         const selected = phase === current;
         return (
@@ -49,7 +49,7 @@ function PhaseTabs({ phases, current, onChange }: { phases: MeetingPhase[]; curr
             role="tab"
             aria-selected={selected}
             onClick={() => onChange(phase)}
-            className={`mn-focus -mb-px h-10 shrink-0 whitespace-nowrap rounded-t-mn-control border-b-2 px-4 text-sm max-md:h-11 max-md:aria-selected:before:content-['●_'] ${
+            className={`mn-focus h-10 shrink-0 whitespace-nowrap rounded-t-mn-control border-b-2 px-4 text-sm max-md:h-11 max-md:aria-selected:before:content-['●_'] ${
               selected ? "border-mn-text font-semibold text-mn-text" : "border-transparent text-mn-muted hover:text-mn-text"
             }`}
           >

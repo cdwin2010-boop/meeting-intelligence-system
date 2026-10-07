@@ -7,7 +7,9 @@
  * - 모바일: 메뉴(같은 aside 요소)는 숨고, 헤더 오른쪽 햄버거로 오른쪽에서 드로어처럼 열린다. 메뉴 링크가 DOM 에 두 번 생기지 않는다.
  *   드로어: 포커스 가두기·Esc·바깥(배경) 클릭 닫기·경로 이동 시 자동 닫기·닫히면 햄버거로 포커스 복귀·열린 동안 본문 스크롤 잠금·배경 내용 inert.
  *   사용자 표시·로그아웃은 한 요소만 두고 모바일에서는 드로어 하단에, 데스크톱에서는 헤더에 둔다(접근성 이름 "로그인 사용자"·"로그아웃" 유지).
- * - 헤더: 모바일에는 처리 현황 요약 뱃지(ProcessingBadge, 같은 ProcessingProvider 상태·새 폴링 없음), 모든 너비에 "새 회의 업로드"(업로드 화면에서는 숨김).
+ * - 헤더: 모바일에는 처리 현황 요약 뱃지(ProcessingBadge, 같은 ProcessingProvider 상태·새 폴링 없음). 업로드 진입은 패널(모바일은 드로어)의 "회의록 올리기" 하나만 둔다(v3.0 에서 헤더 "새 회의 업로드" 제거).
+ * - 데스크톱 패널 접기·펼치기(768 이상): 토글은 패널 위쪽 줄 왼쪽 끝. 접으면 48px 띠(토글+처리 중 건수), 나머지는 hidden 이라 접근성 트리·Tab 에서 빠진다.
+ *   상태는 계정별 localStorage(저장소가 막혀도 정상, 기본 펼침)에서 마운트 뒤 적용한다. 접혀 있어도 처리 현황 알림(aria-live)은 띠에서 유지한다.
  * - 화면 높이는 dvh 로(모바일 주소창 변화 대응), 드로어 안 스크롤은 본문과 분리(overscroll-behavior: contain).
  */
 import Link from "next/link";
@@ -18,8 +20,10 @@ import { Badge, Button } from "@/components/mono";
 import { useAuth } from "@/components/v2/AuthProvider";
 import { FakeEngineNotice, useEngineIsFake } from "@/components/v2/EngineNotice";
 import { ProcessingBadge } from "@/components/v2/ProcessingBadge";
+import { useProcessing } from "@/components/v2/ProcessingProvider";
 import { ProcessingPanel } from "@/components/v2/ProcessingPanel";
 import { V2_HOME, V2_LOGIN } from "@/lib/v2/next-path";
+import { isActiveStatus } from "@/lib/v2/processing-status";
 import { RANK_LABEL } from "@/lib/v2/types";
 
 export const V2_MEETINGS = "/v2/meetings";
@@ -47,6 +51,24 @@ function useIsMobile(): boolean {
   return mobile;
 }
 
+const COLLAPSE_KEY_PREFIX = "mi.v2.shell.panelCollapsed.";
+
+function readCollapsed(accountId: number): boolean {
+  try {
+    return window.localStorage.getItem(`${COLLAPSE_KEY_PREFIX}${accountId}`) === "1";
+  } catch {
+    return false; // 저장소가 막혀 있어도 화면은 정상(펼침)
+  }
+}
+
+function writeCollapsed(accountId: number, collapsed: boolean): void {
+  try {
+    window.localStorage.setItem(`${COLLAPSE_KEY_PREFIX}${accountId}`, collapsed ? "1" : "0");
+  } catch {
+    // 저장 실패는 무시(이번 방문 동안만 유지)
+  }
+}
+
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -59,8 +81,26 @@ export function AppShell({ children }: { children: ReactNode }) {
   const asideRef = useRef<HTMLElement>(null);
   const hamburgerRef = useRef<HTMLButtonElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const { items, announcement } = useProcessing();
+  const accountId = account?.id ?? null;
+  const [collapsed, setCollapsed] = useState(false);
+  const activeCount = items.filter((item) => isActiveStatus(item.status)).length;
+  // 접힘은 데스크톱에서만 적용한다(모바일 드로어는 항상 펼친 모양)
+  const folded = collapsed && !mobile;
+  const contentId = `${asideId}-content`;
   const wasOpen = useRef(false);
   const open = drawerOpen && mobile;
+
+  // 저장된 접힘 상태는 마운트 뒤에 적용한다(서버 렌더링과 불일치 방지)
+  useEffect(() => {
+    if (accountId !== null) setCollapsed(readCollapsed(accountId));
+  }, [accountId]);
+
+  function toggleCollapsed() {
+    const next = !collapsed;
+    setCollapsed(next);
+    if (accountId !== null) writeCollapsed(accountId, next);
+  }
 
   function onLogout() {
     logout(); // 토큰 삭제
@@ -152,14 +192,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                 }}
               />
             ) : null}
-            {!uploadCurrent ? (
-              <Link
-                href={V2_UPLOAD}
-                className="mn-focus inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-mn-control border border-mn-accent bg-mn-accent px-3 text-sm font-medium text-mn-on-accent hover:bg-mn-accent-hover max-md:h-11"
-              >
-                새 회의 업로드
-              </Link>
-            ) : null}
             {!mobile ? userBlock : null}
             {mobile ? (
               <Button
@@ -189,11 +221,22 @@ export function AppShell({ children }: { children: ReactNode }) {
         className={[
           "shrink-0 flex-col gap-6 border-mn-border px-4 py-6",
           open ? "fixed inset-y-0 right-0 z-40 flex h-dvh w-[min(86vw,320px)] overflow-y-auto overscroll-contain border-l bg-mn-bg" : "hidden",
-          "md:static md:z-auto md:flex md:h-auto md:w-[248px] md:overflow-visible md:border-l md:bg-transparent",
+          `md:static md:z-auto md:flex md:h-auto md:overflow-visible md:border-l md:bg-transparent ${folded ? "md:w-12 md:items-center md:px-0" : "md:w-[248px]"}`,
         ].join(" ")}
       >
         <div className="flex items-center justify-between gap-2">
-          <Link href={V2_HOME} className="mn-focus rounded-mn-control text-base font-semibold tracking-tight">
+          {!mobile ? (
+            <Button
+              size="sm"
+              aria-label={collapsed ? "회의록 추적 패널 펼치기" : "회의록 추적 패널 접기"}
+              aria-expanded={!collapsed}
+              aria-controls={contentId}
+              onClick={toggleCollapsed}
+            >
+              {collapsed ? "‹" : "›"}
+            </Button>
+          ) : null}
+          <Link href={V2_HOME} className={`mn-focus rounded-mn-control text-base font-semibold tracking-tight ${folded ? "hidden" : ""} ${!mobile ? "mr-auto" : ""}`}>
             회의록 추적
           </Link>
           {open ? (
@@ -202,6 +245,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Button>
           ) : null}
         </div>
+        {folded ? (
+          <>
+            {activeCount > 0 ? (
+              <span role="group" aria-label={`처리 중 ${activeCount}건`} className="font-mn-mono text-xs text-mn-text">
+                {activeCount}
+              </span>
+            ) : null}
+            <p className="sr-only" aria-live="polite" aria-label="처리 상태 변경 안내">
+              {announcement}
+            </p>
+          </>
+        ) : null}
+        <div id={contentId} className={`flex-col gap-6 ${folded ? "hidden" : "contents"}`}>
         <Link
           href={V2_UPLOAD}
           aria-current={uploadCurrent ? "page" : undefined}
@@ -231,6 +287,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {mobile ? (
           <div className="sticky bottom-0 mt-auto flex flex-col gap-3 border-t border-mn-border bg-mn-bg pt-4">{userBlock}</div>
         ) : null}
+        </div>
       </aside>
     </div>
   );

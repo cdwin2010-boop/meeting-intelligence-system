@@ -1,6 +1,7 @@
 # Changelog
 
 ## 미배포 (v2 개발 중)
+- v3.0 UI: 헤더 "새 회의 업로드" 제거(패널 "회의록 올리기"만 유지), 회의록 목록 탭 줄 세로 스크롤 막대(위아래 버튼) 제거, 데스크톱 패널 접기·펼치기(48px 띠·처리 중 건수·계정별 저장). 프론트만 변경.
 - v3.0 UI 앱 틀 패널(메뉴·처리 현황)을 화면 오른쪽으로 이동: 데스크톱 border-l, 모바일 드로어는 오른쪽에서 열림·햄버거는 헤더 오른쪽, DOM 순서 헤더·본문 → 패널. 프론트만 변경.
 - v2 `backend/` 뼈대 추가: 설정(pydantic-settings, `DATABASE_URL`·`APP_ENV`)·SQLAlchemy 2.0 DB 연결·Alembic 초기화(마이그레이션 없음)·`GET /api/health`·pytest 1건. 스텁·프론트 변경 없음.
 - v2 `backend/` 핵심 테이블 7개(tenants·accounts·source_documents·meetings·meeting_participants·action_items·events)와 첫 Alembic 마이그레이션, 업무 "보완 필요" 계산 속성, 추가 전용 `append_event()`, pytest 8건 추가(backend 9건).
