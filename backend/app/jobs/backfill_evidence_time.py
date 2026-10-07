@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import ActionItem, Meeting, Transcript
 from app.models.action_item import MANUAL_ORIGIN
+from app.models.item_conditions import not_deleted_item
 from app.pipeline.evidence_time import locate, segments_of
 from app.services.history import KIND_EVIDENCE_BACKFILL, record_change
 
@@ -32,7 +33,7 @@ def run_backfill(session: Session, *, meeting_id: int | None = None, apply: bool
             ActionItem.evidence_start_sec.is_(None),
             ActionItem.evidence_quote.is_not(None),
             ActionItem.evidence_quote != "",
-            ActionItem.status != "deleted",
+            not_deleted_item(),
             ActionItem.extract_model != MANUAL_ORIGIN,
             ~Meeting.deleted,
             ~Meeting.on_hold,

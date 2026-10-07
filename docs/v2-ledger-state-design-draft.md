@@ -851,3 +851,14 @@ A·B·C·D는 팀장 회신 2026-10-01로 [확정]됐다(부록 B). 각 표에�
 - **적용 지점**: `process_meeting`이 업무 추출 결과를 저장하기 직전에 적용한다. 업로드 처리와 재처리가 같은 함수를 지나므로 같은 경로이고, 시각을 못 찾은 업무도 업무 자체는 저장된다. fake 경로의 결과(예: 3초·20초)는 그대로다. 새 표·칸·마이그레이션 없음.
 - **기존 데이터 보정 도구** `python -m app.jobs.backfill_evidence_time [--meeting-id N] [--apply]`(backend/ 에서 실행, Gemini 호출 없음): 기본은 변경 예정 목록만 출력하는 dry-run(업무 id, 회의록 id, 새 시각 또는 "대조 실패", 인용문 앞 30자), `--apply`일 때만 저장, `--meeting-id`로 한 회의록만. 대상은 근거 시각이 비고 근거 인용문이 있는 업무이며 **근거 시각 칸만 채운다**(이미 값이 있는 업무·수기 등록 업무·삭제된 업무·삭제·보류 단계 회의록은 제외, 확정·종결 업무는 포함). 저장 때 공통 변경 이력에 구분 `evidence.backfilled`(화면 표시 이름 "근거 시각 보정", 실행자 시스템, 변경 전 None·후 값)을 남긴다. 운영 DB 에는 백업 후 사용자가 직접 실행한다.
 - 관련 설정: `EVIDENCE_MATCH_MIN`(`.env`, pydantic-settings).
+
+### D-18 DB 중립 규칙과 SQLite 설정 [구현 기준]
+- **방언 의존 금지**: 앱 코드는 SQLAlchemy 표현식만 쓴다. SQLite 전용 함수·구문(strftime, json_extract, INSERT OR REPLACE, 방언별 upsert 등)과 표 재생성 우회를 새로 만들지 않는다. SQLite 전용 설정은 `app/db.py` 의 SQLite 분기 안에만 둔다. 새 표는 기존 표를 바꾸지 않는 별도 표로 추가한다.
+- **SQLite 연결 설정**(연결마다): `PRAGMA busy_timeout`, `journal_mode`, WAL 이면 `synchronous=NORMAL`, `foreign_keys=ON`. 설정 이름·기본값: `SQLITE_BUSY_TIMEOUT_MS`=10000, `SQLITE_JOURNAL_MODE`=WAL(DELETE 로 되돌릴 수 있음). SQLite 가 아닌 주소면 어떤 PRAGMA 도 실행하지 않고, 메모리 DB 는 저널 모드를 바꾸지 않는다. 저널 모드 전환에 실패해도 서버는 시작되고 경고 로그만 남긴다.
+- **기존 운영 DB 파일**: 서버를 다음에 시작할 때(첫 연결) WAL 로 바뀐다(파일에 기록되는 설정).
+- **SAVEPOINT**: pysqlite 는 begin_nested() 와 트랜잭션 시작 시점이 어긋나므로 SQLite 분기에서 드라이버의 자동 BEGIN 을 끄고 BEGIN 을 직접 보낸다(메일 중복 방지가 savepoint 를 쓴다).
+- **메일 중복 방지**: `queue_mail` 은 savepoint 안에서 넣고, dedupe_key unique 위반이면 "이미 있음" 으로 건너뛴다(다른 제약 위반은 그대로 올림).
+- **합계 집계**: 회의록 목록의 보완 필요 수는 coalesce + 정수 변환으로 엔진과 무관하게 int.
+- **활성 업무 조건 모듈** `app/models/item_conditions.py`: 업무 상태를 쿼리 조건으로 가르는 조건(삭제 아님·열려 있음·끝남·확정 대기·확정됨)을 이름 붙은 함수로 한 곳에 둔다. 업무 상태 직접 비교는 이 모듈 밖에 두지 않는다(`tests/test_item_conditions.py` 의 가드가 검사). 이후 "대체된 업무" 제외는 이 모듈 한 곳에만 추가한다(지금은 대체 기능이 없어 조건이 비어 있다).
+- **백업 주의**: WAL 모드에서는 `-wal`·`-shm` 파일이 함께 생긴다. 서버를 끄고 파일을 복사하거나 SQLite 백업 방식을 쓴다(실행 중 DB 파일만 복사하면 최근 변경이 빠질 수 있다).
+- **PostgreSQL 점검**: alembic 오프라인(`--sql`) 모드로 postgresql 방언 DDL 이 생성되는 것을 확인했다(18개 표, 마지막 리비전까지).

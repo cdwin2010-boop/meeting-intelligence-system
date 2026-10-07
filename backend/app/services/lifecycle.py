@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import ActionItem, Meeting, MeetingClosure, append_event
 from app.models.common import utcnow
+from app.models.item_conditions import not_deleted_item
 
 
 def get_or_create_closure(session: Session, meeting: Meeting) -> MeetingClosure:
@@ -40,7 +41,7 @@ def auto_end_if_all_closed(session: Session, meeting: Meeting) -> bool:
     if closure is not None and (closure.ended_at is not None or closure.deleted_at is not None):
         return False
     statuses = session.scalars(
-        select(ActionItem.status).where(ActionItem.meeting_id == meeting.id, ActionItem.status != "deleted")
+        select(ActionItem.status).where(ActionItem.meeting_id == meeting.id, not_deleted_item())
     ).all()
     if not statuses or any(s != "closed" for s in statuses):
         return False

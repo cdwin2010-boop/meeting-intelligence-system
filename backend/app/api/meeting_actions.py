@@ -25,6 +25,7 @@ from app.auth.deps import RANK_ORDER, get_current_account, require_rank
 from app.db import get_session
 from app.models import Account, ActionItem, Event, Meeting, append_event
 from app.models.common import utcnow
+from app.models.item_conditions import deleted_item, pending_item
 from app.services.notices import create_confirm_notices
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
@@ -90,7 +91,7 @@ def confirm_meeting(
     if with_items:
         pending = session.scalars(
             select(ActionItem)
-            .where(ActionItem.meeting_id == meeting.id, ActionItem.status == "pending")
+            .where(ActionItem.meeting_id == meeting.id, pending_item())
             .order_by(ActionItem.id)
         ).all()
         for item in pending:
@@ -118,7 +119,7 @@ def on_deleted_item(request_event):
     return exists().where(
         ActionItem.id == request_event.payload["itemId"].as_integer(),
         ActionItem.tenant_id == request_event.tenant_id,
-        ActionItem.status == "deleted",
+        deleted_item(),
     )
 
 

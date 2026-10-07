@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from alembic import command
-from sqlalchemy import select, text
+from sqlalchemy import inspect, select, text
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.scope import scoped
@@ -149,6 +149,6 @@ def test_migration_downgrade_refuses_when_data_exists(tmp_path):
             command.downgrade(cfg, _BEFORE_TRANSCRIPTS)
         with engine.connect() as conn:
             assert conn.execute(text("SELECT audio_retention_days FROM tenants WHERE id = 1")).scalar_one() == 30
-            assert "transcripts" in {r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}
+            assert "transcripts" in set(inspect(conn).get_table_names())
     finally:
         engine.dispose()

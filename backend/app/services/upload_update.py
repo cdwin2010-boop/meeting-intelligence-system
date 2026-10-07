@@ -24,6 +24,7 @@ from app.auth.access import VIEW_ALL_RANKS
 from app.config import settings
 from app.models import Account, ActionItem, Meeting, MeetingGuestParticipant, MeetingParticipant, SourceDocument
 from app.models.action_item import MANUAL_EVIDENCE, MANUAL_ORIGIN
+from app.models.item_conditions import not_deleted_item
 from app.models.minutes import MINUTES_FIELDS
 from app.services import export_sheets as sheets
 from app.services.history import (
@@ -432,7 +433,7 @@ def _fill_view_impact(session: Session, meeting: Meeting, plan: Plan) -> None:
     registrant = session.scalar(select(SourceDocument.registered_by).where(SourceDocument.id == meeting.source_document_id))
     assigned: set[int] = set()
     planned = {u["item"].id: u["after"].get("assigneeId", u["item"].assignee_id) for u in plan.updates}
-    for item in session.scalars(select(ActionItem).where(ActionItem.meeting_id == meeting.id, ActionItem.status != "deleted")):
+    for item in session.scalars(select(ActionItem).where(ActionItem.meeting_id == meeting.id, not_deleted_item())):
         owner = planned.get(item.id, item.assignee_id)
         if owner is not None:
             assigned.add(owner)

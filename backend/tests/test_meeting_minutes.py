@@ -7,7 +7,7 @@ from datetime import date
 import pytest
 from alembic import command
 from openpyxl import load_workbook
-from sqlalchemy import select, text
+from sqlalchemy import inspect, select, text
 
 from app.db import make_engine
 from app.models import ActionItem, Event, Meeting, MeetingMinutes
@@ -295,7 +295,7 @@ def _tables(url: str) -> set[str]:
     engine = make_engine(url)
     try:
         with engine.connect() as conn:
-            return {r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}
+            return set(inspect(conn).get_table_names())
     finally:
         engine.dispose()
 

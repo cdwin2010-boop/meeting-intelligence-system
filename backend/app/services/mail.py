@@ -5,11 +5,12 @@
 - 수신자는 같은 고객사의 활성 계정 중 이메일이 있는 계정만.
 """
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import Account, ActionItem, MailOutbox, Meeting, MeetingParticipant, SourceDocument
-from app.models.common import INACTIVE_ITEM_STATUSES
+from app.models.item_conditions import open_item
 
 SUBJECT_PREFIX = "[회의록]"
 
@@ -29,22 +30,30 @@ def mailable_accounts(session: Session, tenant_id: int, account_ids) -> list[Acc
 
 
 def queue_mail(session: Session, *, account: Account, kind: str, subject: str, body: str, dedupe_key: str) -> bool:
-    """dedupe_key 가 없을 때만 쌓는다(커밋은 호출부 트랜잭션). 쌓았으면 True."""
+    """dedupe_key 가 없을 때만 쌓는다(커밋은 호출부 트랜잭션). 쌓았으면 True.
+    미리 조회해도 동시 실행이면 둘 다 없다고 볼 수 있으므로, 넣는 순간 unique 위반(IntegrityError)도 "이미 있음" 으로 보고 건너뛴다.
+    savepoint 안에서 넣으므로 위반해도 호출부 트랜잭션의 다른 변경은 그대로 남는다(방언 중립)."""
     if session.scalar(select(MailOutbox.id).where(MailOutbox.dedupe_key == dedupe_key)) is not None:
         return False
-    session.add(
-        MailOutbox(
-            tenant_id=account.tenant_id,
-            account_id=account.id,
-            to_email=account.email.strip(),
-            kind=kind,
-            subject=subject[:300],
-            body=body,
-            status="queued",
-            dedupe_key=dedupe_key,
-        )
-    )
-    session.flush()
+    try:
+        with session.begin_nested():
+            session.add(
+                MailOutbox(
+                    tenant_id=account.tenant_id,
+                    account_id=account.id,
+                    to_email=account.email.strip(),
+                    kind=kind,
+                    subject=subject[:300],
+                    body=body,
+                    status="queued",
+                    dedupe_key=dedupe_key,
+                )
+            )
+    except IntegrityError:
+        # 같은 dedupe_key 가 그 사이 생긴 경우만 "이미 있음". 다른 제약 위반(허용되지 않는 종류 등)은 숨기지 않고 그대로 올린다
+        if session.scalar(select(MailOutbox.id).where(MailOutbox.dedupe_key == dedupe_key)) is None:
+            raise
+        return False
     return True
 
 
@@ -59,7 +68,7 @@ def queue_immediate_new_minutes(session: Session, meeting: Meeting) -> int:
     participants = select(MeetingParticipant.account_id).where(MeetingParticipant.meeting_id == meeting.id)
     assignees = select(ActionItem.assignee_id).where(
         ActionItem.meeting_id == meeting.id, ActionItem.assignee_id.is_not(None),
-        ActionItem.status.not_in(INACTIVE_ITEM_STATUSES),
+        open_item(),
     )
     candidates = participants.union(assignees)
     created = 0

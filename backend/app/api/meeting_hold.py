@@ -23,12 +23,12 @@ from app.auth.deps import require_rank
 from app.db import get_session
 from app.models import Account, ActionItem, Meeting, MeetingHold, append_event
 from app.models.common import utcnow
+from app.models.item_conditions import open_item
 from app.services.reasons import latest_reason
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
 # 재개 때 기한을 비우는 업무(진행 중인 것만)
-ACTIVE_ITEM_STATUSES = ("pending", "confirmed")
 
 
 class MeetingHoldResult(CamelModel):
@@ -119,7 +119,7 @@ def resume_meeting(
     cleared: list[int] = []
     items = session.scalars(
         select(ActionItem)
-        .where(ActionItem.meeting_id == meeting.id, ActionItem.status.in_(ACTIVE_ITEM_STATUSES))
+        .where(ActionItem.meeting_id == meeting.id, open_item())
         .order_by(ActionItem.id)
     ).all()
     for item in items:

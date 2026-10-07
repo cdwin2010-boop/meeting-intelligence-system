@@ -22,6 +22,7 @@ from app.auth.access import can_confirm_meeting, get_visible_meeting
 from app.auth.deps import get_current_account
 from app.db import get_session
 from app.models import Account, ActionItem, Event, Meeting, MeetingGuestParticipant, MeetingParticipant, SourceDocument
+from app.models.item_conditions import not_deleted_item
 from app.models.minutes import MINUTES_FIELDS
 from app.services import export_sheets as sheets
 from app.services.history import HISTORY_KINDS, history_fields
@@ -180,7 +181,7 @@ def export_meeting(
     item_rows = session.execute(
         select(ActionItem, assignee.name.label("assignee_name"), assignee.login_id.label("assignee_login"))
         .outerjoin(assignee, assignee.id == ActionItem.assignee_id)
-        .where(ActionItem.meeting_id == meeting.id, ActionItem.status != "deleted")
+        .where(ActionItem.meeting_id == meeting.id, not_deleted_item())
         .order_by(ActionItem.id)
     ).all()
     tasks = [

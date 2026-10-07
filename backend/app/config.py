@@ -20,6 +20,11 @@ class Settings(BaseSettings):
 
     # DB 연결 주소. 기본은 backend/data/app.db (실행 위치 기준 상대 경로, data/ 는 커밋 제외)
     database_url: str = "sqlite:///./data/app.db"
+    # SQLite 전용 설정(SQLite 가 아닌 DATABASE_URL 이면 쓰이지 않는다).
+    # 잠금 대기 시간(밀리초): 다른 연결이 쓰는 중이면 이 시간까지 기다렸다가 "database is locked" 로 실패한다
+    sqlite_busy_timeout_ms: int = Field(default=10000, ge=0)
+    # 저널 모드: WAL(기본, 읽기와 쓰기가 서로 막지 않음) / DELETE(예전 방식으로 되돌릴 때)
+    sqlite_journal_mode: Literal["WAL", "DELETE"] = "WAL"
     # 실행 환경 구분: dev / test / prod
     app_env: str = "dev"
 

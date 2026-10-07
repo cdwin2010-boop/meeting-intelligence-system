@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.auth.scope import scoped
 from app.models import Account, ActionItem, Meeting, MeetingParticipant, SourceDocument
+from app.models.item_conditions import not_deleted_item
 
 # 고객사 전체 회의록을 볼 수 있는 직급
 VIEW_ALL_RANKS = ("manager", "executive")
@@ -27,7 +28,7 @@ def has_assigned_item(account: Account) -> ColumnElement[bool]:
     return exists().where(
         item.meeting_id == Meeting.id,
         item.assignee_id == account.id,
-        item.status != "deleted",
+        not_deleted_item(item),
     )
 
 

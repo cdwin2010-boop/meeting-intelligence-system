@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Account, ActionItem, Event, MeetingSpeaker, Transcript, append_event
+from app.models.item_conditions import pending_item
 
 UNREGISTERED_SUFFIX = "(미등록)"
 # "[00:12:40] 화자1: 말" — 대괄호 타임스탬프 뒤 첫 콜론 앞까지를 화자 표기로 본다
@@ -111,7 +112,7 @@ def auto_assign_from_speakers(session: Session, *, meeting_id: int, tenant_id: i
     )
     items = session.scalars(
         select(ActionItem).where(
-            ActionItem.meeting_id == meeting_id, ActionItem.status == "pending", ActionItem.assignee_id.is_(None)
+            ActionItem.meeting_id == meeting_id, pending_item(), ActionItem.assignee_id.is_(None)
         ).order_by(ActionItem.id)
     ).all()
     names = _extracted_assignee_names(session, [i.id for i in items])

@@ -1,6 +1,7 @@
 # Changelog
 
 ## 미배포 (v2 개발 중)
+- v2 `backend/` 기반 정비: SQLite 연결마다 WAL·synchronous=NORMAL·busy_timeout 적용(설정 `SQLITE_BUSY_TIMEOUT_MS`·`SQLITE_JOURNAL_MODE`, 기존 DB 는 다음 서버 시작 때 WAL 로 바뀜, 백업은 서버를 끄고), 업무 상태 조건을 `app/models/item_conditions.py` 한 곳으로 모음(동작 불변), 목록 보완 필요 수 int 보장, 메일 중복 방지의 unique 위반 처리, 테스트의 sqlite_master 조회 3곳을 inspect() 로 교체. 마이그레이션·프론트 변경 없음.
 - v3.0 UI: 데스크톱 패널 접기·펼치기 버튼을 헤더 로그아웃 옆으로 이동(패널·띠 안 토글 제거, 접어도 버튼 위치 유지). 프론트만 변경.
 - v3.0 UI: 헤더 "새 회의 업로드" 제거(패널 "회의록 올리기"만 유지), 회의록 목록 탭 줄 세로 스크롤 막대(위아래 버튼) 제거, 데스크톱 패널 접기·펼치기(48px 띠·처리 중 건수·계정별 저장). 프론트만 변경.
 - v3.0 UI 앱 틀 패널(메뉴·처리 현황)을 화면 오른쪽으로 이동: 데스크톱 border-l, 모바일 드로어는 오른쪽에서 열림·햄버거는 헤더 오른쪽, DOM 순서 헤더·본문 → 패널. 프론트만 변경.

@@ -12,7 +12,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.action_schemas import ReasonBody
-from app.api.meeting_hold import ACTIVE_ITEM_STATUSES
 from app.auth.locks import reject_if_locked
 from app.api.meeting_schemas import AccountRef
 from app.api.schemas import CamelModel
@@ -22,6 +21,7 @@ from app.db import get_session
 from app.models import Account, ActionItem, Meeting, MeetingClosure, append_event
 from app.models.closure import meeting_phase
 from app.models.common import utcnow
+from app.models.item_conditions import open_item
 from app.services.lifecycle import end_meeting, get_or_create_closure
 from app.services.reasons import latest_reason
 
@@ -96,7 +96,7 @@ def end_meeting_by_manager(
     closed: list[int] = []
     items = session.scalars(
         select(ActionItem)
-        .where(ActionItem.meeting_id == meeting.id, ActionItem.status.in_(ACTIVE_ITEM_STATUSES))
+        .where(ActionItem.meeting_id == meeting.id, open_item())
         .order_by(ActionItem.id)
     ).all()
     for item in items:

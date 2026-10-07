@@ -22,6 +22,7 @@ from app.auth.access import VIEW_ALL_RANKS
 from app.config import settings
 from app.models import Account, ActionItem, Meeting, MeetingView
 from app.models.closure import active_meeting_condition
+from app.models.item_conditions import pending_item
 from app.services.mail import SUBJECT_PREFIX, login_link, queue_mail
 
 # 이 상태의 회의록에 속한 업무는 세지 않는다
@@ -42,7 +43,7 @@ def _counts(session: Session) -> tuple[dict[int, int], dict[int, int], dict[int,
             select(ActionItem.tenant_id, func.count(ActionItem.id))
             .join(Meeting, Meeting.id == ActionItem.meeting_id)
             .where(
-                ActionItem.status == "pending",
+                pending_item(),
                 ActionItem.needs_supplement,
                 Meeting.status.not_in(EXCLUDED_MEETING_STATUSES),
                 active_meeting_condition(),
@@ -56,7 +57,7 @@ def _counts(session: Session) -> tuple[dict[int, int], dict[int, int], dict[int,
             .join(Meeting, Meeting.id == ActionItem.meeting_id)
             .where(
                 ActionItem.assignee_id.is_not(None),
-                ActionItem.status == "pending",
+                pending_item(),
                 Meeting.tenant_id == ActionItem.tenant_id,
                 Meeting.status.not_in(EXCLUDED_MEETING_STATUSES),
                 active_meeting_condition(),

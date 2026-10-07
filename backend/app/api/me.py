@@ -18,7 +18,7 @@ from app.auth.deps import get_current_account, has_rank
 from app.db import get_session
 from app.models import Account, ActionItem, Event, Meeting, MeetingView, Notice
 from app.models.closure import active_meeting_condition
-from app.models.common import INACTIVE_ITEM_STATUSES
+from app.models.item_conditions import confirmed_item, inactive_item, open_item, pending_item
 from app.models.common import utcnow
 
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -107,8 +107,8 @@ class Todos(CamelModel):
 @router.get("/notices", response_model=list[NoticeOut], response_model_by_alias=True)
 def my_notices(account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> list[NoticeOut]:
     """내 미확인 안내(최신순). 종결·삭제된 업무, 보류 중·삭제된 회의록에 대한 안내는 빼고 보여 준다(행은 그대로 둠)."""
-    inactive_item = exists().where(
-        ActionItem.id == Notice.entity_id, ActionItem.status.in_(INACTIVE_ITEM_STATUSES)
+    ended_item = exists().where(
+        ActionItem.id == Notice.entity_id, inactive_item()
     )
     held_meeting = exists().where(Meeting.id == Notice.meeting_id, Meeting.on_hold | Meeting.deleted)
     rows = session.scalars(
@@ -117,7 +117,7 @@ def my_notices(account: Account = Depends(get_current_account), session: Session
             Notice.tenant_id == account.tenant_id,
             Notice.account_id == account.id,
             Notice.seen_at.is_(None),
-            ~((Notice.entity_type == "action_item") & inactive_item),
+            ~((Notice.entity_type == "action_item") & ended_item),
             ~held_meeting,
         )
         .order_by(Notice.id.desc())
@@ -191,7 +191,7 @@ def my_todos(account: Account = Depends(get_current_account), session: Session =
         stmt = (
             select(ActionItem)
             .join(Meeting, Meeting.id == ActionItem.meeting_id)
-            .where(visible, ActionItem.status == "pending", ActionItem.needs_supplement)
+            .where(visible, pending_item(), ActionItem.needs_supplement)
         )
         needs = TodoList(
             total=_count(session, stmt),
@@ -205,7 +205,7 @@ def my_todos(account: Account = Depends(get_current_account), session: Session =
     stmt = (
         select(ActionItem)
         .join(Meeting, Meeting.id == ActionItem.meeting_id)
-        .where(visible, ActionItem.assignee_id == account.id, ActionItem.status.in_(("pending", "confirmed")))
+        .where(visible, ActionItem.assignee_id == account.id, open_item())
     )
     my_items = TodoList(
         total=_count(session, stmt),
@@ -231,7 +231,7 @@ def my_todos(account: Account = Depends(get_current_account), session: Session =
         .join(Meeting, Meeting.id == ActionItem.meeting_id)
         .where(
             visible,
-            ActionItem.status == "confirmed",
+            confirmed_item(),
             ActionItem.confirm_kind.in_(AUTO_CONFIRM_KINDS),
             ActionItem.confirmed_at.is_not(None),
             _not_viewed_since(account, ActionItem.meeting_id, ActionItem.confirmed_at),

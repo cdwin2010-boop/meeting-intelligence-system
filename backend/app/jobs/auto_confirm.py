@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import settings
 from app.models import ActionItem, Meeting, append_event
 from app.models.closure import active_meeting_condition
+from app.models.item_conditions import pending_item
 from app.services.notices import create_confirm_notices
 
 log = logging.getLogger("app.jobs.auto_confirm")
@@ -83,7 +84,7 @@ def _confirm_item(session: Session, item_id: int, kind: str, now: datetime) -> b
         update(ActionItem)
         .where(
             ActionItem.id == item_id,
-            ActionItem.status == "pending",
+            pending_item(),
             ~ActionItem.needs_supplement,  # 그 사이 빈칸이 되었으면 확정하지 않는다
             ActionItem.meeting_id.in_(select(Meeting.id).where(active_meeting_condition())),  # 그 사이 보류·종료·삭제됐으면 확정하지 않는다
         )
@@ -130,7 +131,7 @@ def _plan(session: Session, now: datetime) -> tuple[list[int], list[tuple[int, s
             Meeting.auto_confirm_at,
         )
         .join(Meeting, Meeting.id == ActionItem.meeting_id)
-        .where(ActionItem.status == "pending", Meeting.status.not_in(EXCLUDED_MEETING_STATUSES), active_meeting_condition())
+        .where(pending_item(), Meeting.status.not_in(EXCLUDED_MEETING_STATUSES), active_meeting_condition())
         .order_by(ActionItem.id)
     ).all()
 

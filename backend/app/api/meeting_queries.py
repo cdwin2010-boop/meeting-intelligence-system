@@ -5,7 +5,7 @@ import re
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import Integer, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.api.meeting_schemas import (
@@ -32,6 +32,7 @@ from app.models import (
 from app.models.minutes import MINUTES_FIELDS
 from app.models.closure import meeting_phase, phase_condition
 from app.models.common import MEETING_STATUSES
+from app.models.item_conditions import not_deleted_item
 from app.services.reasons import event_reason, latest_reason
 from app.services.speakers import SpeakerView, display_text, load_speakers
 from app.services.history import record_meeting_view
@@ -53,9 +54,10 @@ def _item_counts():
         select(
             ActionItem.meeting_id.label("meeting_id"),
             func.count(ActionItem.id).label("item_count"),
-            func.sum(case((ActionItem.needs_supplement, 1), else_=0)).label("needs_count"),
+            # 합계는 엔진마다 반환형이 다르다(PostgreSQL 은 Decimal). 한 곳에서 coalesce + 정수 변환으로 int 를 보장한다
+            cast(func.coalesce(func.sum(case((ActionItem.needs_supplement, 1), else_=0)), 0), Integer).label("needs_count"),
         )
-        .where(ActionItem.status != "deleted")
+        .where(not_deleted_item())
         .group_by(ActionItem.meeting_id)
         .subquery()
     )
@@ -212,7 +214,7 @@ def get_meeting(
     item_rows = session.execute(
         select(ActionItem, assignee.id.label("assignee_id"), assignee.name.label("assignee_name"))
         .outerjoin(assignee, assignee.id == ActionItem.assignee_id)
-        .where(ActionItem.meeting_id == meeting.id, ActionItem.status != "deleted")
+        .where(ActionItem.meeting_id == meeting.id, not_deleted_item())
         .order_by(ActionItem.id)
     ).all()
     action_items = [
