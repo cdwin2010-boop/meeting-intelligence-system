@@ -1,9 +1,10 @@
 "use client";
 
 /*
- * v2 로그인 후 공통 앱 틀 (시안 docs/ui-v2-mockups/02-home.html 의 왼쪽 메뉴)
- * - 기준 너비 768px: 768 이상은 데스크톱(고정 왼쪽 메뉴·헤더 오른쪽에 사용자·로그아웃), 768 미만은 모바일.
- * - 모바일: 왼쪽 메뉴(같은 aside 요소)는 숨고, 헤더 왼쪽 햄버거로 드로어처럼 열린다. 메뉴 링크가 DOM 에 두 번 생기지 않는다.
+ * v2 로그인 후 공통 앱 틀 (시안 docs/ui-v2-mockups/02-home.html 의 메뉴, v3.0 에서 화면 오른쪽으로 이동)
+ * - DOM 순서는 화면 순서와 같게 헤더·본문(content) → 메뉴(aside) 로 둔다(키보드 Tab 순서 = 화면 순서).
+ * - 기준 너비 768px: 768 이상은 데스크톱(화면 오른쪽 고정 메뉴·헤더 오른쪽에 사용자·로그아웃), 768 미만은 모바일.
+ * - 모바일: 메뉴(같은 aside 요소)는 숨고, 헤더 오른쪽 햄버거로 오른쪽에서 드로어처럼 열린다. 메뉴 링크가 DOM 에 두 번 생기지 않는다.
  *   드로어: 포커스 가두기·Esc·바깥(배경) 클릭 닫기·경로 이동 시 자동 닫기·닫히면 햄버거로 포커스 복귀·열린 동안 본문 스크롤 잠금·배경 내용 inert.
  *   사용자 표시·로그아웃은 한 요소만 두고 모바일에서는 드로어 하단에, 데스크톱에서는 헤더에 둔다(접근성 이름 "로그인 사용자"·"로그아웃" 유지).
  * - 헤더: 모바일에는 처리 현황 요약 뱃지(ProcessingBadge, 같은 ProcessingProvider 상태·새 폴링 없음), 모든 너비에 "새 회의 업로드"(업로드 화면에서는 숨김).
@@ -140,14 +141,55 @@ export function AppShell({ children }: { children: ReactNode }) {
             event.preventDefault();
             setDrawerOpen(false);
           }} className="fixed inset-0 z-30 bg-mn-overlay md:hidden" /> : null}
+      <div inert={open} className="flex min-w-0 flex-1 flex-col">
+        <header className="flex min-h-14 items-center gap-3 border-b border-mn-border px-4 md:h-14 md:px-12">
+          <div className="ml-auto flex min-w-0 items-center gap-3">
+            {mobile ? (
+              <ProcessingBadge
+                onOpen={() => {
+                  setDrawerOpen(true);
+                  requestAnimationFrame(() => document.getElementById("processing-panel")?.scrollIntoView({ block: "nearest" }));
+                }}
+              />
+            ) : null}
+            {!uploadCurrent ? (
+              <Link
+                href={V2_UPLOAD}
+                className="mn-focus inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-mn-control border border-mn-accent bg-mn-accent px-3 text-sm font-medium text-mn-on-accent hover:bg-mn-accent-hover max-md:h-11"
+              >
+                새 회의 업로드
+              </Link>
+            ) : null}
+            {!mobile ? userBlock : null}
+            {mobile ? (
+              <Button
+                ref={hamburgerRef}
+                size="sm"
+                aria-label="메뉴 열기"
+                aria-expanded={open}
+                aria-controls={asideId}
+                onClick={() => setDrawerOpen(true)}
+                className="min-h-11 min-w-11"
+              >
+                ☰
+              </Button>
+            ) : null}
+          </div>
+        </header>
+        <main className="flex min-w-0 flex-1 flex-col gap-6 px-4 pt-8 pb-16 md:px-12">
+          <FakeEngineNotice show={engineIsFake} />
+          {children}
+        </main>
+      </div>
+
       <aside
         id={asideId}
         ref={asideRef}
         aria-label={open ? "메뉴 드로어" : undefined}
         className={[
           "shrink-0 flex-col gap-6 border-mn-border px-4 py-6",
-          open ? "fixed inset-y-0 left-0 z-40 flex h-dvh w-[min(86vw,320px)] overflow-y-auto overscroll-contain border-r bg-mn-bg" : "hidden",
-          "md:static md:z-auto md:flex md:h-auto md:w-[248px] md:overflow-visible md:border-r md:bg-transparent",
+          open ? "fixed inset-y-0 right-0 z-40 flex h-dvh w-[min(86vw,320px)] overflow-y-auto overscroll-contain border-l bg-mn-bg" : "hidden",
+          "md:static md:z-auto md:flex md:h-auto md:w-[248px] md:overflow-visible md:border-l md:bg-transparent",
         ].join(" ")}
       >
         <div className="flex items-center justify-between gap-2">
@@ -190,47 +232,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="sticky bottom-0 mt-auto flex flex-col gap-3 border-t border-mn-border bg-mn-bg pt-4">{userBlock}</div>
         ) : null}
       </aside>
-
-      <div inert={open} className="flex min-w-0 flex-1 flex-col">
-        <header className="flex min-h-14 items-center gap-3 border-b border-mn-border px-4 md:h-14 md:px-12">
-          {mobile ? (
-            <Button
-              ref={hamburgerRef}
-              size="sm"
-              aria-label="메뉴 열기"
-              aria-expanded={open}
-              aria-controls={asideId}
-              onClick={() => setDrawerOpen(true)}
-              className="min-h-11 min-w-11"
-            >
-              ☰
-            </Button>
-          ) : null}
-          <div className="ml-auto flex min-w-0 items-center gap-3">
-            {mobile ? (
-              <ProcessingBadge
-                onOpen={() => {
-                  setDrawerOpen(true);
-                  requestAnimationFrame(() => document.getElementById("processing-panel")?.scrollIntoView({ block: "nearest" }));
-                }}
-              />
-            ) : null}
-            {!uploadCurrent ? (
-              <Link
-                href={V2_UPLOAD}
-                className="mn-focus inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-mn-control border border-mn-accent bg-mn-accent px-3 text-sm font-medium text-mn-on-accent hover:bg-mn-accent-hover max-md:h-11"
-              >
-                새 회의 업로드
-              </Link>
-            ) : null}
-            {!mobile ? userBlock : null}
-          </div>
-        </header>
-        <main className="flex min-w-0 flex-1 flex-col gap-6 px-4 pt-8 pb-16 md:px-12">
-          <FakeEngineNotice show={engineIsFake} />
-          {children}
-        </main>
-      </div>
     </div>
   );
 }

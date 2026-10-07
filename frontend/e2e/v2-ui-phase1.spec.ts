@@ -104,7 +104,7 @@ for (const width of [767, 375]) {
       await start(page);
       await page.goto("/v2");
       await hamburger(page).click();
-      await page.mouse.click(width - 10, 400);
+      await page.mouse.click(10, 400); // 드로어가 오른쪽에서 열리므로 배경은 왼쪽
       await expect(aside(page)).toBeHidden();
       await expect(hamburger(page)).toBeFocused();
     });
@@ -343,3 +343,79 @@ test.describe("회의록 목록 반응형", () => {
     });
   });
 });
+
+/* 작업 65: 패널을 화면 오른쪽으로 이동 */
+const boxOf = async (locator: ReturnType<Page["locator"]>) => (await locator.boundingBox())!;
+
+for (const width of [1280, 768]) {
+  test.describe(`패널 오른쪽 배치 ${width}px`, () => {
+    test.use({ viewport: { width, height: 800 } });
+
+    test("패널이 뷰포트 오른쪽 끝에 붙고 본문은 패널보다 왼쪽, 경계선은 패널 왼쪽 면, 메뉴 링크는 한 번만", async ({ page }) => {
+      await start(page);
+      await page.goto("/v2");
+      const panel = await boxOf(aside(page));
+      const main = await boxOf(page.locator("main"));
+      expect(Math.round(panel.x + panel.width)).toBe(width);
+      expect(panel.width).toBe(248);
+      expect(main.x + main.width).toBeLessThanOrEqual(panel.x + 0.5);
+      expect(await aside(page).evaluate((el) => { const c = getComputedStyle(el); return [c.borderLeftWidth, c.borderRightWidth]; })).toEqual(["1px", "0px"]);
+      await expect(mainNav(page).getByRole("link", { name: "회의록" })).toHaveCount(1);
+      await expect(page.getByRole("navigation")).toHaveCount(1);
+      // 헤더의 사용자·로그아웃은 패널과 겹치지 않는다
+      const logout = await boxOf(page.locator("header").getByRole("button", { name: "로그아웃" }));
+      expect(logout.x + logout.width).toBeLessThanOrEqual(panel.x);
+    });
+
+    test("Tab 순서가 화면 순서(헤더 → 본문 → 패널)와 같다", async ({ page }) => {
+      await start(page);
+      await page.goto("/v2");
+      await page.locator("body").click({ position: { x: 5, y: 5 } });
+      const seen: string[] = [];
+      for (let i = 0; i < 30; i += 1) {
+        await page.keyboard.press("Tab");
+        const where = await page.evaluate(() => {
+          const el = document.activeElement as HTMLElement;
+          return el.closest("header") ? "header" : el.closest("main") ? "main" : el.closest("aside") ? "aside" : "other";
+        });
+        if (seen[seen.length - 1] !== where) seen.push(where);
+        if (where === "aside" && seen.length >= 3) break;
+      }
+      expect(seen.filter((v) => v !== "other")).toEqual(["header", "main", "aside"]);
+    });
+  });
+}
+
+for (const width of [767, 375]) {
+  test.describe(`패널 오른쪽 드로어 ${width}px`, () => {
+    test.use({ viewport: { width, height: 800 } });
+
+    test("햄버거가 헤더 오른쪽 끝, 드로어는 오른쪽 가장자리에 붙어 열린다", async ({ page }) => {
+      await start(page, { processing: [proc(1)] });
+      await page.goto("/v2");
+      const burger = await boxOf(hamburger(page));
+      const upload = await boxOf(page.getByRole("link", { name: "새 회의 업로드" }));
+      const badge = await boxOf(page.getByRole("button", { name: /처리 현황 요약/ }));
+      expect(burger.x + burger.width).toBeGreaterThan(width - 20);
+      expect(badge.x + badge.width).toBeLessThanOrEqual(upload.x + 0.5); // 뱃지 → 업로드 → 햄버거 순
+      expect(upload.x + upload.width).toBeLessThanOrEqual(burger.x + 0.5);
+      expect(Math.abs(badge.y - burger.y)).toBeLessThan(8); // 한 줄
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await hamburger(page).click();
+      const drawer = await boxOf(aside(page));
+      expect(Math.round(drawer.x + drawer.width)).toBe(width);
+      expect(await aside(page).evaluate((el) => getComputedStyle(el).borderLeftWidth)).toBe("1px");
+    });
+
+    test("뱃지를 누르면 드로어가 오른쪽에서 열리고 Esc 로 닫히며 햄버거로 포커스가 돌아온다", async ({ page }) => {
+      await start(page, { processing: [proc(1)] });
+      await page.goto("/v2");
+      await page.getByRole("button", { name: /처리 현황 요약/ }).click();
+      const drawer = await boxOf(aside(page));
+      expect(Math.round(drawer.x + drawer.width)).toBe(width);
+      await page.keyboard.press("Escape");
+      await expect(aside(page)).toBeHidden();
+      await expect(hamburger(page)).toBeFocused();
+    });
+  });
+}
