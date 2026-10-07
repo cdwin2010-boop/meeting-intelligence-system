@@ -14,6 +14,7 @@ from app.config import settings
 from app.db import get_session, get_session_factory
 from app.models import Account, Job, Meeting, MeetingParticipant, SourceDocument, Tenant, append_event
 from app.models.common import utcnow
+from app.services.classification import save_classification, validate_classification
 from app.services.processing import auto_confirm_at, get_job_runner
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
@@ -103,6 +104,8 @@ def upload_meeting(
     title: str = Form(""),
     held_at: str = Form(..., alias="heldAt"),
     participant_ids: list[str] | None = Form(None, alias="participantIds"),
+    meeting_type: str | None = Form(None, alias="meetingType"),
+    project_id: int | None = Form(None, alias="projectId"),
     account: Account = Depends(get_current_account),
     session: Session = Depends(get_session),
     session_factory: sessionmaker = Depends(get_session_factory),
@@ -116,6 +119,9 @@ def upload_meeting(
     if ext not in settings.allowed_audio_extensions:
         allowed = ", ".join(sorted(settings.allowed_audio_extensions))
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=f"허용하지 않는 파일 형식입니다({allowed}).")
+
+    # 회의 유형·프로젝트 연결(선택): 파일 저장과 회의록 생성 전에 검증을 끝낸다
+    classified_type, classified_project = validate_classification(session, account, meeting_type, project_id)
 
     # 제목이 비어 있으면 원본 파일명(폴더 부분 제거)을 보조로 쓴다
     original_name = PurePath((file.filename or "").replace("\\", "/")).name
@@ -148,6 +154,7 @@ def upload_meeting(
         session.flush()
         for participant_id in ids:
             session.add(MeetingParticipant(meeting_id=meeting.id, account_id=participant_id))
+        save_classification(session, meeting, account, classified_type, classified_project)
         job = Job(tenant_id=account.tenant_id, meeting_id=meeting.id, status="queued")
         session.add(job)
         session.flush()
@@ -158,7 +165,7 @@ def upload_meeting(
             entity_id=meeting.id,
             event_type="meeting.created",
             actor_account_id=account.id,
-            payload={"origin": "audio_minutes", "job_id": job.id},
+            payload={"origin": "audio_minutes", "job_id": job.id, "meetingType": classified_type, "projectId": classified_project},
         )
         append_event(
             session,

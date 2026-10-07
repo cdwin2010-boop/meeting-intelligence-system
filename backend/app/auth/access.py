@@ -2,14 +2,14 @@
 
 - 모든 조회는 고객사 범위(tenant_id) 안에서만. 다른 고객사 회의록은 존재 여부도 알리지 않는다(404).
 - manager·executive: 고객사의 모든 회의록.
-- staff: 참석자이거나, 담당자로 지정된 업무(삭제 제외)가 있거나, 등록자인 회의록만.
+- staff: 참석자이거나, 담당자로 지정된 업무(삭제 제외)가 있거나, 등록자이거나, 연결된 활성 프로젝트의 참여자인 회의록만(보류·삭제 단계는 제외).
 확정·수정 권한(can_confirm_meeting·can_write_item)도 이 모듈에 둔다(맨 아래).
 """
 from sqlalchemy import ColumnElement, and_, exists, false, or_, select, true
 from sqlalchemy.orm import Session, aliased
 
 from app.auth.scope import scoped
-from app.models import Account, ActionItem, Meeting, MeetingParticipant, SourceDocument
+from app.models import Account, ActionItem, Meeting, MeetingClassification, MeetingParticipant, Project, ProjectMember, SourceDocument
 from app.models.item_conditions import not_deleted_item
 
 # 고객사 전체 회의록을 볼 수 있는 직급
@@ -37,6 +37,20 @@ def is_registrant(account: Account) -> ColumnElement[bool]:
     return exists().where(document.id == Meeting.source_document_id, document.registered_by == account.id)
 
 
+def is_project_member(account: Account) -> ColumnElement[bool]:
+    """그 회의록이 연결된 프로젝트(활성)의 참여자인가(회의록 열람 근거, 작업 66-3)."""
+    classification = aliased(MeetingClassification)
+    project = aliased(Project)
+    member = aliased(ProjectMember)
+    return exists().where(
+        classification.meeting_id == Meeting.id,
+        project.id == classification.project_id,
+        project.status == "active",
+        member.project_id == project.id,
+        member.account_id == account.id,
+    )
+
+
 def meeting_visibility(account: Account) -> ColumnElement[bool]:
     """Meeting 조회에 붙일 열람 조건(고객사 범위 포함)."""
     same_tenant = Meeting.tenant_id == account.tenant_id
@@ -45,7 +59,7 @@ def meeting_visibility(account: Account) -> ColumnElement[bool]:
     # 담당자는 보류·삭제된 회의록을 볼 수 없다(관리자 이상만)
     return and_(
         same_tenant,
-        or_(is_participant(account), has_assigned_item(account), is_registrant(account)),
+        or_(is_participant(account), has_assigned_item(account), is_registrant(account), is_project_member(account)),
         ~Meeting.on_hold,
         ~Meeting.deleted,
     )

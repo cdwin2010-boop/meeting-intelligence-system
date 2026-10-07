@@ -11,10 +11,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.action_schemas import ReasonBody
+from app.api.meeting_queries import MeetingStatus, build_meeting_page
+from app.api.meeting_schemas import MeetingListPage
 from app.api.schemas import CamelModel
 from app.auth.deps import get_current_account
 from app.db import get_session
-from app.models import Account, Department, Project, ProjectMember
+from app.models import Account, Department, MeetingClassification, Meeting, Project, ProjectMember
 from app.services import projects as svc
 from app.services.org import department_head
 
@@ -175,6 +177,27 @@ def project_candidates(
 @router.get("/{project_id}", response_model=ProjectDetail, response_model_by_alias=True)
 def get_project(project_id: int, account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> ProjectDetail:
     return _out(session, account, _visible_or_404(session, account, project_id), ProjectDetail)
+
+
+@router.get("/{project_id}/meetings", response_model=MeetingListPage, response_model_by_alias=True)
+def project_meetings(
+    project_id: int,
+    status_filter: MeetingStatus | None = Query(None, alias="status"),
+    phase: Literal["active", "ended", "on_hold", "deleted"] = Query("active"),
+    mine: Literal["registered", "assigned"] | None = Query(None),
+    needs_completion: bool | None = Query(None, alias="needsCompletion"),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    account: Account = Depends(get_current_account),
+    session: Session = Depends(get_session),
+) -> MeetingListPage:
+    """이 프로젝트에 연결된 회의록 중 내가 열람할 수 있는 것만(기존 회의록 목록과 같은 항목·쪽 나눔·단계 규칙). 프로젝트를 볼 수 없으면 404."""
+    project = _visible_or_404(session, account, project_id)
+    linked = Meeting.id.in_(select(MeetingClassification.meeting_id).where(MeetingClassification.project_id == project.id))
+    return build_meeting_page(
+        session, account, status_filter=status_filter, phase=phase, mine=mine, needs_completion=needs_completion,
+        page=page, size=size, extra_conditions=(linked,),
+    )
 
 
 @router.post("/{project_id}/approve", response_model=ProjectDetail, response_model_by_alias=True)

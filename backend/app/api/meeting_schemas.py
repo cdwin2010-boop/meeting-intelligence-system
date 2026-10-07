@@ -102,6 +102,11 @@ class ProcessingOut(CamelModel):
     finished_at: datetime | None = None
 
 
+class ProjectRef(CamelModel):
+    id: int
+    name: str
+
+
 class MeetingDetail(CamelModel):
     id: int
     title: str
@@ -140,6 +145,9 @@ class MeetingDetail(CamelModel):
     delete_reason: str | None = None
     # 회의록 5개 항목(추가 필드). summary·decisions 는 예전부터 있던 칸 그대로(이번에 바꾸지 않음)
     minutes: MinutesOut = MinutesOut()
+    # 회의 유형 코드(regular·irregular·project·external·other)와 연결된 프로젝트(추가 필드). 분류 기록이 없으면(미지정) None
+    meeting_type: str | None = None
+    project: ProjectRef | None = None
     # 가장 최근 처리 작업 정보(추가 필드). 작업이 없으면 None
     processing: ProcessingOut | None = None
     # 이 사용자가 이 회의록에서 지금 할 수 있는 동작(추가 필드, app/auth/actions.py). 화면 표시용이며 거부 판정은 각 API 가 한다

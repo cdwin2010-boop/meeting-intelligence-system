@@ -1,6 +1,7 @@
 # Changelog
 
 ## 미배포 (v2 개발 중)
+- v2 `backend/` 회의 유형·프로젝트 연결(작업 66-3): 표 `meeting_classifications`(마이그레이션 `d3a8f15c7e92`, meetings 표 변경 없음), 업로드 입력 `meetingType`·`projectId`(선택), 상세 응답에 `meetingType`·`project` 추가, 프로젝트 참여자 열람 규칙(`meeting_visibility` 한 줄), `GET /api/projects/{id}/meetings`. 승인 판정 불변. 프론트 변경 없음. **운영 DB 는 백업 후 `alembic upgrade head` 로 직접 적용**.
 - v2 `backend/` 조직·프로젝트(작업 66-2): 표 4개(departments·account_departments·projects·project_members, 마이그레이션 `c7e2a91d4b30`, 기존 표 변경 없음), 조직 조회 API(`/api/departments`·`/api/me/org`), 프로젝트 API(등록·승인·반려·참여자 관리·목록·상세·참여자 후보), 관리 스크립트 `scripts/manage_org.py`(기본 dry-run), 공통 이력 구분 추가. 회의록 연결·열람 규칙은 66-3. 프론트 변경 없음. **운영 DB 는 백업 후 `alembic upgrade head` 로 직접 적용**.
 - v2 `backend/` 기반 정비: SQLite 연결마다 WAL·synchronous=NORMAL·busy_timeout 적용(설정 `SQLITE_BUSY_TIMEOUT_MS`·`SQLITE_JOURNAL_MODE`, 기존 DB 는 다음 서버 시작 때 WAL 로 바뀜, 백업은 서버를 끄고), 업무 상태 조건을 `app/models/item_conditions.py` 한 곳으로 모음(동작 불변), 목록 보완 필요 수 int 보장, 메일 중복 방지의 unique 위반 처리, 테스트의 sqlite_master 조회 3곳을 inspect() 로 교체. 마이그레이션·프론트 변경 없음.
 - v3.0 UI: 데스크톱 패널 접기·펼치기 버튼을 헤더 로그아웃 옆으로 이동(패널·띠 안 토글 제거, 접어도 버튼 위치 유지). 프론트만 변경.

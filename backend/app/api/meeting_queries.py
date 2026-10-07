@@ -13,6 +13,7 @@ from app.api.meeting_schemas import (
     ActionItemOut,
     EventOut,
     MeetingDetail,
+    ProjectRef,
     MeetingListItem,
     MeetingListPage,
     MinutesOut,
@@ -26,8 +27,8 @@ from app.auth.deps import get_current_account
 from app.auth.scope import scoped
 from app.db import get_session
 from app.models import (
-    Account, ActionItem, Event, Job, Meeting, MeetingClosure, MeetingGuestParticipant, MeetingHold, MeetingMinutes, MeetingParticipant, SourceDocument,
-    Transcript,
+    Account, ActionItem, Event, Job, Meeting, MeetingClassification, MeetingClosure, MeetingGuestParticipant, MeetingHold, MeetingMinutes, MeetingParticipant, SourceDocument,
+    Project, Transcript,
 )
 from app.models.minutes import MINUTES_FIELDS
 from app.models.closure import meeting_phase, phase_condition
@@ -75,6 +76,24 @@ def list_meetings(
     account: Account = Depends(get_current_account),
     session: Session = Depends(get_session),
 ) -> MeetingListPage:
+    return build_meeting_page(
+        session, account, status_filter=status_filter, phase=phase, mine=mine, needs_completion=needs_completion, page=page, size=size,
+    )
+
+
+def build_meeting_page(
+    session: Session,
+    account: Account,
+    *,
+    status_filter: str | None,
+    phase: str,
+    mine: str | None,
+    needs_completion: bool | None,
+    page: int,
+    size: int,
+    extra_conditions: tuple = (),
+) -> MeetingListPage:
+    """회의록 목록 쪽(열람 가능한 것만, 최신 회의 일시순). 회의록 목록 API 와 프로젝트별 회의록 조회(extra_conditions 로 범위를 좁힘)가 함께 쓴다."""
     if not phase_allowed(account, phase):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="보류·삭제된 회의록은 관리자 이상만 볼 수 있습니다")
     counts = _item_counts()
@@ -94,7 +113,7 @@ def list_meetings(
         .join(SourceDocument, SourceDocument.id == Meeting.source_document_id)
         .join(registrant, registrant.id == SourceDocument.registered_by)
         .outerjoin(counts, counts.c.meeting_id == Meeting.id)
-        .where(meeting_visibility(account), phase_condition(phase))
+        .where(meeting_visibility(account), phase_condition(phase), *extra_conditions)
     )
     if status_filter is not None:
         stmt = stmt.where(Meeting.status == status_filter)
@@ -231,6 +250,8 @@ def get_meeting(
 
     hold = session.get(MeetingHold, meeting.id)
     closure = session.get(MeetingClosure, meeting.id)
+    classification = session.scalar(select(MeetingClassification).where(MeetingClassification.meeting_id == meeting.id))
+    linked_project = session.get(Project, classification.project_id) if classification and classification.project_id is not None else None
     detail = MeetingDetail(
         id=meeting.id,
         title=meeting.title,
@@ -266,6 +287,9 @@ def get_meeting(
         end_reason=latest_reason(session, meeting, "meeting.ended") if closure and closure.ended_at else None,
         delete_reason=latest_reason(session, meeting, "meeting.deleted") if closure and closure.deleted_at else None,
         minutes=minutes_out(session, meeting),
+        meeting_type=classification.meeting_type if classification else None,
+        # 프로젝트 이름은 열람 가능한 회의록에서만 나간다(프로젝트를 볼 수 없어도 회의록을 볼 수 있으면 나감)
+        project=ProjectRef(id=linked_project.id, name=linked_project.name) if linked_project else None,
         processing=processing_out(session, meeting),
         allowed_actions=meeting_allowed_actions(session, account, meeting),
     )

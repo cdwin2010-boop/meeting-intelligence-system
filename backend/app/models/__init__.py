@@ -1,6 +1,7 @@
 """v2 핵심 테이블(7개 + jobs·transcripts·meeting_views·notices·mail_outbox·meeting_speakers·meeting_holds·meeting_closures). Alembic autogenerate 가 모두 보도록 여기서 한꺼번에 불러온다."""
 from app.models.account import Account
 from app.models.action_item import ActionItem
+from app.models.classification import MeetingClassification
 from app.models.closure import MeetingClosure
 from app.models.event import Event, append_event
 from app.models.guest import MeetingGuestParticipant
@@ -26,6 +27,7 @@ __all__ = [
     "Job",
     "MailOutbox",
     "Meeting",
+    "MeetingClassification",
     "MeetingClosure",
     "MeetingGuestParticipant",
     "MeetingHold",

@@ -872,3 +872,12 @@ A·B·C·D는 팀장 회신 2026-10-01로 [확정]됐다(부록 B). 각 표에�
 - **이력**: 공통 이력(events, 대상 종류 department·project)에 `department.updated`(부서 변경), `project.registered`·`approved`·`rejected`, `project.member_added`·`member_removed`·`member_role_changed`를 남긴다(회의록 이력 조회에는 섞이지 않음).
 - **관리 스크립트**: `python scripts/manage_org.py list|create-dept|set-head|add-member|remove-member --tenant 고객사 ...`(backend 에서 실행). 기본은 변경 예정만 보여 주는 dry-run, `--apply` 일 때만 저장, 실행자는 이력에 "시스템"(행위자 없음). 조직 등록·수정 API 는 만들지 않았다.
 - **아직 구현하지 않은 것**: 회의 유형·회의록의 프로젝트 연결·프로젝트 참여자의 회의록 열람 규칙·총괄/임원 확정 권한 범위(작업 66-3), 조직 관리 화면과 API(시스템 관리자 기능), 승인 대기 알림.
+
+### D-20 회의 유형과 프로젝트 연결 [구현 기준, 작업 66-3]
+- **표**(마이그레이션 `d3a8f15c7e92`, meetings 표는 바꾸지 않는 별도 표): `meeting_classifications`(회의록당 한 행 — `meeting_id` 유니크, `meeting_type` CHECK 5종 regular·irregular·project·external·other 영문 코드, `project_id` null 가능 + 조회 인덱스, `created_by`, `created_at`). 행이 없으면 "미지정". downgrade 는 행이 있으면 거부한다.
+- **업로드 입력**(`POST /api/meetings/upload`, 모두 선택): `meetingType`·`projectId`. 유형 없이 projectId → 422(연결 행 없음), 허용 5종이 아니면 422, 프로젝트 유형인데 projectId 없음 → 422, 프로젝트 유형이 아닌데 projectId → 422. 프로젝트는 같은 고객사의 활성 프로젝트만: 없는·다른 고객사 → 404, 대기·반려 → 409, 올리는 사람이 참여자가 아니면 403. 검증은 파일 저장·회의록 생성 전에 끝내고, 연결 행은 회의록 생성과 같은 트랜잭션에서 저장한다. `meeting.created` 사건 payload 에 `meetingType`·`projectId` 추가(기존 키 유지).
+- **상세 응답**: `meetingType`(미지정이면 null)·`project`(`{id, name}` 또는 null) 추가. 목록 응답 항목은 바꾸지 않았다. 프로젝트 이름은 회의록을 열람할 수 있으면 나간다(프로젝트를 볼 수 없어도).
+- **열람 규칙**: `auth/access.py` 의 `meeting_visibility` 담당자용 조건에 `is_project_member`(연결된 활성 프로젝트의 참여자) 한 줄 추가. 보류·삭제 단계 제한은 같은 함수에서 그대로 적용되어 담당자 직급은 프로젝트 참여자여도 보류·삭제 회의록을 볼 수 없다. 반려·대기 프로젝트의 참여는 열람 근거가 아니다. 이 판정을 쓰는 곳(목록·상세·전사문·엑셀·오디오·이력·수정 요청·할 일·안내 등)은 수정 없이 따라온다. 관리자 이상은 기존대로 회사 전체.
+- **프로젝트별 회의록**: `GET /api/projects/{id}/meetings` — 연결된 회의록 중 내가 열람할 수 있는 것만, 최신 회의 일시순. 기존 회의록 목록의 쿼리 함수(`build_meeting_page`)를 재사용해 항목 형식·쪽 나눔·단계 인자(담당자의 보류·삭제 조회 403)가 같다. 프로젝트를 볼 수 없으면 404.
+- **승인 판정은 바꾸지 않았다**(`can_confirm_meeting`·`meeting_lead_condition`·`can_write_item`): 프로젝트 총괄의 확정 권한 범위는 정책 미결이며, 현재 동작을 고정하는 테스트만 있다.
+- **아직 하지 않은 것**: 프로젝트 총괄의 승인 권한 범위, 유형·소속 변경, 외부 회의의 고객 상담 정책, 유형별 AI 프롬프트 분기, 화면.
