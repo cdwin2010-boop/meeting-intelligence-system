@@ -32,9 +32,19 @@ export const ITEM_ACTION = {
   requestChange: "request_change",
 } as const;
 
+/** 프로젝트 단위 동작(프로젝트 상세 응답의 allowedActions). 회의록·업무 동작 상수와 섞지 않는다 */
+export const PROJECT_ACTION = {
+  changeLead: "change_lead",
+  manageMembers: "manage_members",
+  approveProject: "approve_project",
+  rejectProject: "reject_project",
+} as const;
+
+export type ProjectActionName = (typeof PROJECT_ACTION)[keyof typeof PROJECT_ACTION];
+
 export type ActionName = (typeof MEETING_ACTION)[keyof typeof MEETING_ACTION] | (typeof ITEM_ACTION)[keyof typeof ITEM_ACTION];
 
 /** 이 동작이 허용됐는지. 목록이 없거나 null 이면 false */
-export function can(actions: readonly string[] | null | undefined, name: ActionName): boolean {
+export function can(actions: readonly string[] | null | undefined, name: ActionName | ProjectActionName): boolean {
   return Array.isArray(actions) && actions.includes(name);
 }

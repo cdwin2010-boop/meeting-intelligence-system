@@ -29,10 +29,12 @@ import { RANK_LABEL } from "@/lib/v2/types";
 
 export const V2_MEETINGS = "/v2/meetings";
 export const V2_UPLOAD = "/v2/upload";
+export const V2_PROJECTS = "/v2/projects";
 
 const NAV_ITEMS = [
   { href: V2_HOME, label: "할 일" },
   { href: V2_MEETINGS, label: "회의록" },
+  { href: V2_PROJECTS, label: "프로젝트" },
 ];
 
 // 할 일(/v2)은 정확히 일치할 때만, 나머지는 하위 경로까지 현재 메뉴로 본다
