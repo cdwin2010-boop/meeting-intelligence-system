@@ -216,15 +216,12 @@ test.describe("업무 근거 → 전사문 딥링크", () => {
     await expect(c).toHaveAttribute("title", /근거 시각이 없어/);
   });
 
-  test("대응 구간이 없으면 안내(role=status)와 함께 창은 열린다", async ({ page }) => {
+  test("근거 시각이 첫 구간보다 앞이면 첫 구간으로 간다(안내 없음)", async ({ page }) => {
     await open(page);
     await deepLink(page, "업무 D", "00:00:05").click(); // 5 초: 첫 구간(10 초)보다 앞
-    await expect(panel(page).getByRole("button", { expanded: true })).toBeVisible();
-    await expect(page.getByRole("status").filter({ hasText: "근거 시각에 해당하는 전사문 위치를 찾지 못했습니다" })).toBeVisible();
-    await expect(page.locator("[data-segment-index]", { hasText: "근거 위치" })).toHaveCount(0);
-    // 다른 업무의 딥링크가 성공하면 안내가 사라진다
-    await deepLink(page, "업무 A", "00:50:00").click();
-    await expect(page.getByRole("status").filter({ hasText: "근거 시각에 해당하는 전사문 위치를 찾지 못했습니다" })).toHaveCount(0);
+    await expect(row(page, 0)).toBeFocused();
+    await expect(row(page, 0)).toContainText("근거 위치");
+    await expect(page.getByRole("status").filter({ hasText: "찾지 못했습니다" })).toHaveCount(0);
   });
 
   test("전사문 조회가 실패하면 기존 오류 표시를 그대로 쓴다", async ({ page }) => {
@@ -298,5 +295,154 @@ for (const width of [1280, 1024, 768, 375]) {
     }
     const [a, b] = m.buttons;
     expect(a.r <= b.l + 0.5 || b.r <= a.l + 0.5 || a.b <= b.t + 0.5 || b.b <= a.t + 0.5).toBe(true); // 겹치지 않음
+  });
+}
+
+// ================= 실제 데이터 형식(작업 68-2b) =================
+// 운영 DB 확인 결과: Gemini 전사는 segments 가 null 이고 본문이 "[mm:ss] 화자: 내용" 줄 형식 텍스트다. 근거 시각은 숫자 초(0.0, 15.0)다.
+const REAL_TEXT = [
+  "[00:00] 화자1: 안건 하나를 먼저 말씀드리겠습니다.", "[00:11] 임원: 네, 확인했습니다.", "[00:15] 화자1: 서류를 이번 주까지 정리해 주세요.",
+  "[00:21] 임원: 알겠습니다.", "[00:25] 직원: 일정은 어떻게 되나요?", "[00:30] 화자1: 그럼 열두 시에 보겠습니다.",
+].join("\n");
+const realTranscript = (route: Route) => json(route, { fullText: REAL_TEXT, segments: null, sttProvider: "gemini", displayText: REAL_TEXT, speakers: [] });
+const realDetail = (items: Record<string, unknown>[]) => ({ ...DETAIL, actionItems: items.map((i, n) => item({ id: 200 + n, ...i })) });
+const lineIn = (page: Page, index: number) => page.locator(`[data-segment-index="${index}"]`);
+
+test.describe("실제 데이터 형식(구간 목록 없음 + 줄머리 [mm:ss])", () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  test("숫자 초 근거 시각에서 해당 줄이 가시 영역 안에서 하이라이트·포커스되고 안내는 없다", async ({ page }) => {
+    await open(page, { detail: realDetail([{ title: "서류 정리", evidenceStartSec: 15, evidenceQuote: "인용" }]), transcript: realTranscript });
+    await deepLink(page, "서류 정리", "00:00:15").click();
+    await expect(lineIn(page, 2)).toBeFocused();
+    await expect.poll(() => rowInView(page, 2)).toBe(true);
+    await expect(lineIn(page, 2)).toContainText("근거 위치");
+    const styles = await page.evaluate(() => {
+      const t = getComputedStyle(document.querySelector('[data-segment-index="2"]')!), o = getComputedStyle(document.querySelector('[data-segment-index="1"]')!);
+      return { w: t.borderLeftWidth, ow: o.borderLeftWidth, c: t.borderLeftColor, oc: o.borderLeftColor, bg: t.backgroundColor, obg: o.backgroundColor };
+    });
+    expect(styles.w).toBe("4px");
+    expect(styles.c).not.toBe(styles.oc);
+    expect(styles.bg).not.toBe(styles.obg);
+    await expect(page.getByRole("status").filter({ hasText: "찾지 못했습니다" })).toHaveCount(0);
+    // 전사문 글자는 그대로 보인다(줄머리 시각과 화자 표기 포함)
+    await expect(panel(page)).toContainText("[00:15] 화자1: 서류를 이번 주까지 정리해 주세요.");
+  });
+
+  test("0초(00:00:00)도 유효해서 첫 줄로 간다", async ({ page }) => {
+    await open(page, { detail: realDetail([{ title: "시작 업무", evidenceStartSec: 0, evidenceQuote: "인용" }]), transcript: realTranscript });
+    const button = deepLink(page, "시작 업무", "00:00:00");
+    await expect(button).toBeEnabled();
+    await button.click();
+    await expect(lineIn(page, 0)).toBeFocused();
+    await expect(lineIn(page, 0)).toContainText("근거 위치");
+  });
+
+  test("일치하지 않는 시각은 이전의 가장 가까운 줄, 소수 초는 내림", async ({ page }) => {
+    await open(page, { detail: realDetail([{ title: "가까운 업무", evidenceStartSec: 23.9, evidenceQuote: "x" }, { title: "마지막 이후", evidenceStartSec: 999, evidenceQuote: "x" }]), transcript: realTranscript });
+    await deepLink(page, "가까운 업무", "00:00:23").click(); // 23.9 → 23 초 → [00:21] 줄(인덱스 3)
+    await expect(lineIn(page, 3)).toContainText("근거 위치");
+    await deepLink(page, "마지막 이후", "00:16:39").click();
+    await expect(lineIn(page, 5)).toContainText("근거 위치");
+    await expect(lineIn(page, 3)).not.toContainText("근거 위치");
+  });
+
+  test("형식 변형(mm:ss, HH:MM:SS, [mm:ss], 초 숫자 문자열, 소수 초)이 모두 같은 줄을 가리킨다", async ({ page }) => {
+    const variants = ["00:15", "00:00:15", "[00:15]", "15", 15.7, "15.2"];
+    await open(page, { detail: realDetail(variants.map((v, n) => ({ title: `변형 ${n}`, evidenceStartSec: v, evidenceQuote: "x" }))), transcript: realTranscript });
+    for (let n = 0; n < variants.length; n += 1) {
+      await page.getByRole("button", { name: new RegExp(`^근거 위치 보기: 변형 ${n}`) }).click();
+      await expect(lineIn(page, 2)).toContainText("근거 위치");
+      await expect(lineIn(page, 2)).toBeFocused();
+      await expect(page.locator("[data-segment-index]", { hasText: "근거 위치" })).toHaveCount(1);
+      await panel(page).getByRole("button", { expanded: true }).click(); // 접고 다음 변형으로
+    }
+  });
+
+  test("구간이 정렬돼 있지 않아도 올바른 줄을 찾는다(시각은 숫자·문자열 혼합)", async ({ page }) => {
+    const segments = [
+      { speaker: "화자1", start_sec: 30, text: "세 번째 시각 발언" }, { speaker: "화자2", start_sec: "00:00:10", text: "첫 번째 시각 발언" },
+      { speaker: "화자1", start_sec: "[00:20]", text: "두 번째 시각 발언" },
+    ];
+    await open(page, {
+      detail: realDetail([{ title: "정렬 업무", evidenceStartSec: 20, evidenceQuote: "x" }, { title: "앞선 업무", evidenceStartSec: 3, evidenceQuote: "x" }]),
+      transcript: (route) => json(route, { fullText: "x", segments, sttProvider: "fake", speakers: [] }),
+    });
+    await deepLink(page, "정렬 업무", "00:00:20").click();
+    await expect(lineIn(page, 2)).toContainText("근거 위치"); // 목록 순서상 세 번째지만 시작 시각 20 초인 구간
+    await deepLink(page, "앞선 업무", "00:00:03").click(); // 가장 이른 구간(10 초, 목록 순서상 두 번째)
+    await expect(lineIn(page, 1)).toContainText("근거 위치");
+  });
+
+  test("시각을 가진 줄이 없거나 시각을 해석할 수 없을 때만 안내(role=status)가 보인다", async ({ page }) => {
+    await open(page, {
+      detail: realDetail([{ title: "평문 업무", evidenceStartSec: 15, evidenceQuote: "x" }]),
+      transcript: (route) => json(route, { fullText: "시각이 없는 평범한 본문입니다.", segments: null, sttProvider: "fake", displayText: "시각이 없는 평범한 본문입니다.", speakers: [] }),
+    });
+    await deepLink(page, "평문 업무", "00:00:15").click();
+    const message = "근거 시각에 해당하는 전사문 위치를 찾지 못했습니다";
+    const status = page.getByRole("status").filter({ hasText: message });
+    await expect(status).toBeVisible();
+    await expect(panel(page).getByRole("button", { expanded: true })).toBeVisible();
+    // 보이는 문구는 정확히 안내 문구이고, 숨김 글자("근거 위치")는 화면에 보이지 않는다
+    expect((await status.innerText()).trim()).toBe(message);
+    expect(await page.evaluate(() => {
+      const hidden = Array.from(document.querySelectorAll(".sr-only")).filter((e) => (e.textContent ?? "").includes("근거 위치"));
+      return hidden.every((e) => { const c = getComputedStyle(e); return c.position === "absolute" && c.width === "1px" && c.height === "1px" && c.overflow === "hidden"; });
+    })).toBe(true);
+    await expect(page.locator("[data-segment-index]", { hasText: "근거 위치" })).toHaveCount(0);
+  });
+
+  test("해석할 수 없는 근거 시각(문자열)은 창을 열고 안내만 보인다", async ({ page }) => {
+    await open(page, { detail: realDetail([{ title: "이상한 업무", evidenceStartSec: "언젠가", evidenceQuote: "x" }]), transcript: realTranscript });
+    const button = page.getByRole("button", { name: "근거 위치 보기: 이상한 업무" });
+    await expect(button).toBeEnabled();
+    await button.click();
+    await expect(page.getByRole("status").filter({ hasText: "근거 시각에 해당하는 전사문 위치를 찾지 못했습니다" })).toBeVisible();
+    await expect(page.locator("[data-segment-index]", { hasText: "근거 위치" })).toHaveCount(0);
+  });
+
+  test("두 번째 업무의 딥링크에서 하이라이트가 옮겨지고, 접으면 누른 버튼으로 포커스가 돌아온다", async ({ page }) => {
+    await open(page, { detail: realDetail([{ title: "업무 하나", evidenceStartSec: 0, evidenceQuote: "x" }, { title: "업무 둘", evidenceStartSec: 25, evidenceQuote: "x" }]), transcript: realTranscript });
+    await deepLink(page, "업무 하나", "00:00:00").click();
+    await expect(lineIn(page, 0)).toContainText("근거 위치");
+    const second = deepLink(page, "업무 둘", "00:00:25");
+    await second.click();
+    await expect(lineIn(page, 4)).toBeFocused();
+    await expect(lineIn(page, 0)).not.toContainText("근거 위치");
+    await panel(page).getByRole("button", { expanded: true }).click();
+    await expect(second).toBeFocused();
+  });
+
+  test("기존 시각 버튼(오디오 이동)과 전사문 본문 표시가 그대로다", async ({ page }) => {
+    await open(page, { detail: realDetail([{ title: "시각 업무", evidenceStartSec: 15, evidenceQuote: "x" }]), transcript: realTranscript });
+    await expect(page.getByRole("button", { name: "00:00:15부터 재생" })).toBeVisible();
+    await panel(page).getByRole("button", { expanded: false }).click();
+    await expect(panel(page)).toContainText("[00:00] 화자1: 안건 하나를 먼저 말씀드리겠습니다.");
+    await expect(page.locator("[data-segment-index]", { hasText: "근거 위치" })).toHaveCount(0); // 딥링크 전에는 하이라이트 없음
+  });
+});
+
+for (const theme of ["light", "dark"] as const) {
+  test(`실제 형식 하이라이트가 ${theme} 테마에서 보이고 대비 4.5:1 이상, 콘솔 오류 없음`, async ({ page }) => {
+    const problems: string[] = [];
+    page.on("console", (m) => { if (m.type() === "error") problems.push(m.text()); });
+    page.on("pageerror", (e) => problems.push(e.message));
+    await page.addInitScript(([k, v]) => window.localStorage.setItem(k, v), [THEME_KEY, theme]);
+    await open(page, { detail: realDetail([{ title: "서류 정리", evidenceStartSec: 15, evidenceQuote: "x" }]), transcript: realTranscript });
+    await deepLink(page, "서류 정리", "00:00:15").click();
+    await expect(lineIn(page, 2)).toBeFocused();
+    const result = await page.evaluate(() => {
+      const parse = (c: string) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+      const lum = ([r, g, b]: number[]) => [r, g, b].map((v) => v / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)).reduce((acc, c, i) => acc + c * [0.2126, 0.7152, 0.0722][i], 0);
+      const ratio = (a: number[], b: number[]) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+      const t = document.querySelector('[data-segment-index="2"]')!, o = document.querySelector('[data-segment-index="1"]')!;
+      const bg = parse(getComputedStyle(t).backgroundColor);
+      return { differs: getComputedStyle(t).backgroundColor !== getComputedStyle(o).backgroundColor, text: ratio(parse(getComputedStyle(t).color), bg), line: ratio(parse(getComputedStyle(t).borderLeftColor), bg) };
+    });
+    expect(result.differs).toBe(true);
+    expect(result.text).toBeGreaterThanOrEqual(4.5);
+    expect(result.line).toBeGreaterThanOrEqual(3);
+    expect(problems).toEqual([]);
   });
 }

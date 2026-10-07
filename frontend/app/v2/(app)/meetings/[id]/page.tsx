@@ -51,6 +51,7 @@ import { ManualItemDialog } from "@/components/v2/ManualItemDialog";
 import { ProcessingBanner } from "@/components/v2/ProcessingBanner";
 import { useProcessingFinished } from "@/components/v2/ProcessingProvider";
 import { MinutesDialog, MinutesPanel } from "@/components/v2/MinutesPanel";
+import { findSegmentIndex, parseSeconds, parseTranscriptBlocks } from "@/lib/v2/transcript-time";
 import { UploadUpdateDialog } from "@/components/v2/UploadUpdateDialog";
 import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
 import { ChangeRequestDialog, type ChangeRequestTarget } from "@/components/v2/ChangeRequestDialog";
@@ -90,29 +91,9 @@ type LoadState =
 
 /** 업무 근거 → 전사문 딥링크 요청. nonce 가 바뀔 때마다 새 요청(같은 시각을 다시 눌러도 다시 이동) */
 interface DeepLinkRequest {
-  sec: number;
+  /** 정규화한 근거 시각(초). 시각을 해석할 수 없으면 null(전사문은 열고 안내만 보인다) */
+  sec: number | null;
   nonce: number;
-}
-
-/**
- * 근거 시각(초)에 대응하는 전사 구간 찾기. 근거 시각은 서버가 전사문 구간의 start_sec 으로 정하므로 보통 정확히 같다(같은 초 단위 숫자, 변환 없음).
- * 정확히 일치하는 구간이 있으면 그것, 없으면 근거 시각 이전(같거나 앞)에서 가장 가까운 구간. 앞선 구간이 없으면 -1(찾지 못함).
- */
-function findSegmentIndex(segments: { start_sec?: number | null }[], sec: number): number {
-  let exact = -1;
-  let before = -1;
-  let beforeStart = -Infinity;
-  segments.forEach((segment, index) => {
-    const start = segment.start_sec;
-    if (typeof start !== "number" || !Number.isFinite(start)) return;
-    if (Math.abs(start - sec) < 0.001) {
-      if (exact < 0) exact = index;
-    } else if (start < sec && start >= beforeStart) {
-      before = index;
-      beforeStart = start;
-    }
-  });
-  return exact >= 0 ? exact : before;
 }
 
 type TranscriptState =
@@ -192,16 +173,17 @@ function BackLink() {
 }
 
 /** 근거 칸의 "근거 위치 보기". 근거 시각이 없으면 비활성(이유는 title) */
-function ViewTranscriptButton({ item, onView }: { item: ActionItem; onView: (sec: number, trigger: HTMLElement) => void }) {
-  const sec = item.evidenceStartSec;
-  const has = sec !== null && sec !== undefined && Number.isFinite(sec) && sec >= 0;
+function ViewTranscriptButton({ item, onView }: { item: ActionItem; onView: (sec: number | null, trigger: HTMLElement) => void }) {
+  const raw: unknown = item.evidenceStartSec;
+  const has = raw !== null && raw !== undefined && raw !== ""; // 0 초는 유효한 시각이다(없음과 구분)
+  const sec = parseSeconds(raw);
   return (
     <Button
       size="sm"
       disabled={!has}
       title={has ? undefined : "근거 시각이 없어 전사문 위치를 알 수 없습니다"}
-      aria-label={`근거 위치 보기: ${item.title || "업무명 없음"}${has ? ` ${formatOffset(sec)}` : ""}`}
-      onClick={(event) => has && onView(sec as number, event.currentTarget)}
+      aria-label={`근거 위치 보기: ${item.title || "업무명 없음"}${sec !== null ? ` ${formatOffset(sec)}` : ""}`}
+      onClick={(event) => has && onView(sec, event.currentTarget)}
       className="shrink-0 whitespace-nowrap"
     >
       근거 위치 보기
@@ -348,7 +330,7 @@ interface LedgerTableProps {
   /** 근거 타임스탬프를 누르면 그 위치부터 재생 */
   onSeek: (sec: number) => void;
   /** "근거 위치 보기": 전사문을 열고 근거 시각의 줄로 이동·하이라이트(누른 버튼을 넘겨 닫을 때 포커스를 돌려준다) */
-  onViewTranscript: (sec: number, trigger: HTMLElement) => void;
+  onViewTranscript: (sec: number | null, trigger: HTMLElement) => void;
   /** 관리자 이상이면 머리의 "업무 추가"(수기 등록) */
   onAddItem: () => void;
   onRequestChange: (item: ActionItem) => void;
@@ -595,6 +577,25 @@ function TranscriptBody({ state, view, onRetry, onSeek, highlightIndex }: { stat
       // 구간이 있으면 시각·화자별로, 없으면 적용본은 displayText(없으면 원문), 원본은 fullText 를 그대로
       if (segments.length === 0) {
         const text = applied ? state.transcript.displayText ?? state.transcript.fullText : state.transcript.fullText;
+        // 구간 목록이 없는 전사문(Gemini 등)은 본문이 "[mm:ss] 화자: 내용" 줄 형식이다. 글자는 그대로 두고 줄(블록) 단위로 나눠 근거 위치를 하이라이트한다
+        const blocks = parseTranscriptBlocks(text);
+        if (blocks.length > 0) {
+          return (
+            <div className="whitespace-pre-wrap text-sm leading-6">
+              {blocks.map((block, index) => (
+                <span
+                  key={index}
+                  data-segment-index={index}
+                  tabIndex={-1}
+                  className={`mn-focus block border-l-4 pl-3 outline-none ${index === highlightIndex ? "border-mn-text bg-mn-selected" : "border-transparent"}`}
+                >
+                  {index === highlightIndex ? <span className="sr-only">근거 위치</span> : null}
+                  {block.text.replace(/\n$/, "")}
+                </span>
+              ))}
+            </div>
+          );
+        }
         return text.trim() ? (
           <p className="whitespace-pre-wrap text-sm leading-6">{text}</p>
         ) : (
@@ -692,8 +693,17 @@ function TranscriptPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLink]);
 
-  const readySegments = state.kind === "ready" ? (state.transcript.segments ?? []).filter((s) => (s.text ?? "").trim()) : [];
-  const hit = target && state.kind === "ready" ? findSegmentIndex(readySegments, target.sec) : -1;
+  // 구간 시작 시각(구간 목록이 있으면 start_sec, 없으면 본문 줄머리 "[mm:ss]")을 초(정수)로 바꿔 근거 시각과 짝짓는다
+  let starts: (number | null)[] = [];
+  if (state.kind === "ready") {
+    const readySegments = (state.transcript.segments ?? []).filter((s) => (s.text ?? "").trim());
+    if (readySegments.length > 0) starts = readySegments.map((s) => parseSeconds(s.start_sec));
+    else {
+      const text = shownView === "applied" ? state.transcript.displayText ?? state.transcript.fullText : state.transcript.fullText;
+      starts = parseTranscriptBlocks(text).map((block) => block.start);
+    }
+  }
+  const hit = target && target.sec !== null && state.kind === "ready" ? findSegmentIndex(starts, target.sec) : -1;
   const notFound = target !== null && state.kind === "ready" && hit < 0;
 
   // 조회가 끝나 해당 구간이 그려지면 가시 영역 안(가능하면 중앙)으로 스크롤하고 그 줄에 포커스(요청마다 한 번)
@@ -792,7 +802,7 @@ export default function V2MeetingDetailPage() {
   // 업무 근거 → 전사문 딥링크(누른 버튼은 전사문을 닫을 때 포커스를 돌려받는다)
   const [deepLink, setDeepLink] = useState<DeepLinkRequest | null>(null);
   const deepLinkTrigger = useRef<HTMLElement | null>(null);
-  const onViewTranscript = useCallback((sec: number, trigger: HTMLElement) => {
+  const onViewTranscript = useCallback((sec: number | null, trigger: HTMLElement) => {
     deepLinkTrigger.current = trigger;
     setDeepLink((prev) => ({ sec, nonce: (prev?.nonce ?? 0) + 1 }));
   }, []);
