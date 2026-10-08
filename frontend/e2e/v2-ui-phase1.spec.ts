@@ -371,7 +371,21 @@ for (const width of [1280, 768]) {
     test("Tab 순서가 화면 순서(헤더 → 본문 → 패널)와 같다", async ({ page }) => {
       await start(page);
       await page.goto("/v2");
-      await page.locator("body").click({ position: { x: 5, y: 5 } });
+      // 준비 상태 대기: 헤더(로그아웃)·본문(포커스할 수 있는 요소)·패널이 모두 그려진 뒤에 Tab 을 센다.
+      // 본문이 아직 비어 있으면 Tab 이 헤더 → 패널 → (브라우저 바깥) → 헤더로 돌아 순서가 어긋난다(전체 실행에서 간헐 실패하던 원인)
+      await expect(page.locator("header").getByRole("button", { name: "로그아웃" })).toBeVisible();
+      await expect(page.locator("main").locator("a[href], button").first()).toBeVisible();
+      await expect(aside(page).getByRole("link", { name: "회의록 올리기" })).toBeVisible();
+      // 시작 위치를 명시: 포커스를 문서 맨 앞(헤더 영역)에 두고 거기서부터 Tab
+      await page.evaluate(() => {
+        (document.activeElement as HTMLElement | null)?.blur();
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        const range = document.createRange();
+        range.setStart(document.body, 0);
+        range.collapse(true);
+        sel?.addRange(range);
+      });
       const seen: string[] = [];
       for (let i = 0; i < 30; i += 1) {
         await page.keyboard.press("Tab");
