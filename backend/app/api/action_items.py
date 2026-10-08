@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.action_schemas import ActionItemPatch, ReasonBody
+from app.api.action_schemas import ActionItemPatch, CloseBody, ReasonBody
 from app.auth.locks import reject_if_locked
 from app.api.meeting_schemas import AccountRef, ActionItemOut
 from app.auth.access import can_confirm_meeting, can_write_item, get_visible_meeting
@@ -18,6 +18,7 @@ from app.db import get_session
 from app.models import Account, ActionItem, Meeting, append_event
 from app.models.common import utcnow
 from app.services.history import KIND_ITEM_UPDATE, record_change
+from app.services.item_closure import closure_kinds, record_closure
 from app.services.lifecycle import auto_end_if_all_closed
 from app.services.notices import create_confirm_notices
 from app.services.supersession import reject_if_superseded
@@ -58,7 +59,10 @@ def get_writable_item(session: Session, account: Account, item_id: int) -> Actio
 
 def item_out(session: Session, item: ActionItem) -> ActionItemOut:
     assignee = session.get(Account, item.assignee_id) if item.assignee_id is not None else None
-    return ActionItemOut.from_item(item, AccountRef(id=assignee.id, name=assignee.name) if assignee else None)
+    out = ActionItemOut.from_item(item, AccountRef(id=assignee.id, name=assignee.name) if assignee else None)
+    if item.status == "closed":
+        out.closure_kind = closure_kinds(session, [item.id]).get(item.id)
+    return out
 
 
 def _snapshot(item: ActionItem) -> dict:
@@ -187,7 +191,7 @@ def confirm_action_item(
 @router.post("/{item_id}/close", response_model=ActionItemOut, response_model_by_alias=True)
 def close_action_item(
     item_id: int,
-    body: ReasonBody,
+    body: CloseBody,
     account: Account = Depends(require_rank("manager")),
     session: Session = Depends(get_session),
 ) -> ActionItemOut:
@@ -200,11 +204,16 @@ def close_action_item(
     if item.status != "confirmed":
         raise _http(status.HTTP_409_CONFLICT, "확정된 업무만 종결할 수 있습니다")
     item.status, item.closed_by, item.closed_at = "closed", account.id, utcnow()
+    payload = {"before": {"status": "confirmed"}, "after": {"status": "closed"}, "reason": body.reason}
+    if body.closure_kind is not None:
+        payload["closureKind"] = body.closure_kind  # 구분을 보낸 종결만 키를 더한다(기존 사건 모양 유지)
     append_event(
         session, tenant_id=item.tenant_id, entity_type="action_item", entity_id=item.id,
         event_type="item.closed", actor_account_id=account.id,
-        payload={"before": {"status": "confirmed"}, "after": {"status": "closed"}, "reason": body.reason},
+        payload=payload,
     )
+    if body.closure_kind is not None:
+        record_closure(session, item, body.closure_kind, account.id)
     # 삭제되지 않은 업무가 모두 종결이면 회의록 자동 종료(같은 트랜잭션)
     auto_end_if_all_closed(session, session.get(Meeting, item.meeting_id))
     session.commit()

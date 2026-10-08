@@ -910,3 +910,10 @@ A·B·C·D는 팀장 회신 2026-10-01로 [확정]됐다(부록 B). 각 표에�
 - **바꾸지 않은 것**: 프로젝트 참여자 관리(`manage_members`, 총괄만), 회의록 열람 규칙, 승인·반려 권한, 업무 대체 권한(`has_supersede_authority`, 프로젝트 총괄·지시자), 응답 형식, 표·마이그레이션, 프론트.
 
 - **부서장의 업무 대체 권한(작업 66-3d)**: 업무 대체 실행(`POST /api/action-items/{id}/supersede`), 대체 요청 수락 시 대체 실행, 허용 동작 `supersede_item` 에 대체 권한자로 등록 부서의 부서장(사용권한 manager 이상, 프로젝트 active)을 추가했다(`services/supersession.py` 의 `has_supersede_authority` 한 곳). 기존 권한자(프로젝트 총괄·지시자)는 그대로이고, 대체 요청 생성·유사 업무 검색·참여자 관리·열람 규칙은 바꾸지 않았다.
+
+### D-24 업무 종결 구분 [구현 기준, 작업 70-1]
+- **구분 값**: `completed`(정상 완료), `forced`(직권 종료). 업무 상태값은 늘리지 않았고 `action_items.status` 는 그대로 `closed` 이다. 구분은 별도 표 `item_closures`(마이그레이션 `f6c2d8a41b75`, 기존 표 변경 없음)에 둔다: id, tenant_id, item_id(유니크, 업무당 최대 1행), kind(CHECK completed·forced), closed_by, created_at.
+- **종결 API**: `POST /api/action-items/{id}/close` 입력에 `closureKind`(선택)를 추가했다. 값이 있으면 허용값만 받고(아니면 422) 종결과 같은 트랜잭션에서 행을 저장한다. 값이 없으면 행을 만들지 않는다(구분 없음). 이미 종결된 업무의 재호출은 기존대로 200이며 구분 행·사건을 바꾸지 않는다. 사유 필수 규칙, 종결 권한, 종결 가능 조건, 허용 동작 이름은 그대로다.
+- **구분 없음**: 구분 행이 없는 종결 업무(이전에 종결된 것, 구분 없이 종결된 것)는 "구분 없음"이며, 이후 실적 집계에서 완료로 세지 않는다(집계는 이번 범위 아님).
+- **응답·이벤트·엑셀**: 업무 응답(`ActionItemOut`)에 `closureKind`(null·completed·forced)를 추가했다. `item.closed` 사건 payload 는 구분을 보낸 종결에만 `closureKind` 키를 더한다(기존 키 유지). 엑셀 업무 시트 상태 라벨은 종결+completed=완료, 종결+forced=직권 종료, 구분 없음은 기존 "종결".
+- **하지 않은 것**: 실적 집계, 업무 대체, 회의록 단위 종료·보류·삭제의 구분, 구분 정정 기능. `models/item_conditions.py` 는 바꾸지 않았다. downgrade 는 행이 있으면 거부한다.

@@ -34,6 +34,7 @@ from app.models import (
 from app.models.minutes import MINUTES_FIELDS
 from app.models.closure import meeting_phase, phase_condition
 from app.models.common import MEETING_STATUSES
+from app.services.item_closure import closure_kinds
 from app.services.supersession import project_of_meeting, superseded_ids, supersession_refs
 from app.models.item_conditions import live_item, not_deleted_item
 from app.services.reasons import event_reason, latest_reason
@@ -249,12 +250,14 @@ def get_meeting(
     lead = can_confirm_meeting(session, account, meeting)
     item_ids = [row.ActionItem.id for row in item_rows]
     superseded_set = superseded_ids(session, item_ids)
+    kinds = closure_kinds(session, item_ids)
     superseded_by, supersedes = supersession_refs(session, account, item_ids)
     linked = project_of_meeting(session, meeting.id)
     for out, row in zip(action_items, item_rows):
         out.allowed_actions = item_allowed_actions(
             session, account, row.ActionItem, meeting, lead=lead, project=linked, superseded=row.ActionItem.id in superseded_set,
         )
+        out.closure_kind = kinds.get(row.ActionItem.id)
         ref = superseded_by.get(row.ActionItem.id)
         if ref is not None:
             out.superseded_by = SupersessionRef(item_id=ref["itemId"], meeting_id=ref["meetingId"], meeting_title=ref["meetingTitle"])

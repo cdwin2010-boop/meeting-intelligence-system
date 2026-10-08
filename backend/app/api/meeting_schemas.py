@@ -57,6 +57,8 @@ class ActionItemOut(CamelModel):
     # 대체 정보(추가 필드): 대체된 업무는 supersededBy, 대체하는 업무는 supersedes(목록)
     superseded_by: "SupersessionRef | None" = None
     supersedes: "list[SupersessionRef]" = []
+    # 종결 구분(추가 필드): completed(정상 완료) | forced(직권 종료) | None(종결 아님 또는 구분 없음)
+    closure_kind: str | None = None
     # 업무 출처(추가 필드): ai(AI 추출) | manual(수기·업로드 직권 등록, 근거는 "등록자 직권 지정")
     origin: str = "ai"
     # 이 사용자가 이 업무에서 지금 할 수 있는 동작(추가 필드, 회의록 상세 응답에서만 채움·그 밖의 응답은 None). 화면 표시용이며 거부 판정은 각 API 가 한다

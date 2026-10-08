@@ -70,6 +70,12 @@ class ReasonBody(CamelModel):
         return stripped
 
 
+class CloseBody(ReasonBody):
+    """업무 종결 입력: 사유(필수) + 종결 구분(선택). 구분은 completed(정상 완료)·forced(직권 종료)만, 아니면 422.
+    구분을 보내지 않으면 구분 행을 만들지 않는다(구분 없음, 기존 호환)."""
+    closure_kind: Literal["completed", "forced"] | None = None
+
+
 class ChangeRequestCreated(CamelModel):
     request_id: int
 

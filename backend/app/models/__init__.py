@@ -6,6 +6,7 @@ from app.models.closure import MeetingClosure
 from app.models.event import Event, append_event
 from app.models.guest import MeetingGuestParticipant
 from app.models.hold import MeetingHold
+from app.models.item_closure import ItemClosure
 from app.models.job import Job
 from app.models.supersession import ItemSupersession
 from app.models.mail import MailOutbox
@@ -26,6 +27,7 @@ __all__ = [
     "Department",
     "Event",
     "ItemSupersession",
+    "ItemClosure",
     "Job",
     "MailOutbox",
     "Meeting",
