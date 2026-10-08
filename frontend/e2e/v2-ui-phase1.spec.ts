@@ -370,6 +370,17 @@ for (const width of [1280, 768]) {
 
     test("Tab 순서가 화면 순서(헤더 → 본문 → 패널)와 같다", async ({ page }) => {
       await start(page);
+      // 본문에 포커스할 수 있는 요소(링크)가 하나 있도록 수정 요청 대기 1건을 준다(Tab 순서 header → main → aside 를 확인하려면 본문에 요소가 있어야 한다)
+      await page.route("**/api/me/todos", (route) =>
+        json(route, {
+          awaitingConfirmMeetings: { total: 0, items: [] },
+          needsCompletionItems: { total: 0, items: [] }, myItems: { total: 0, items: [] }, unreadAutoConfirmed: { total: 0, items: [] },
+          pendingChangeRequests: {
+            total: 1,
+            items: [{ requestId: 1, meetingId: 1, meetingTitle: "주간 생산 현안 회의", itemId: null, itemTitle: null, requester: { id: 8, name: "김대리" }, createdAt: "2026-10-02T01:00:00Z", commentPreview: "고쳐 주세요" }],
+          },
+        }),
+      );
       await page.goto("/v2");
       // 준비 상태 대기: 헤더(로그아웃)·본문(포커스할 수 있는 요소)·패널이 모두 그려진 뒤에 Tab 을 센다.
       // 본문이 아직 비어 있으면 Tab 이 헤더 → 패널 → (브라우저 바깥) → 헤더로 돌아 순서가 어긋난다(전체 실행에서 간헐 실패하던 원인)
