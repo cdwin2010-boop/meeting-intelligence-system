@@ -237,7 +237,7 @@ function UploadForm() {
       </header>
 
       <FakeEngineNotice show={engineIsFake} label="업로드 화면 처리 엔진 안내" />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <form
           onSubmit={onSubmit}
           noValidate
@@ -307,6 +307,7 @@ function UploadForm() {
               describedBy={fileHintId}
               disabled={submitting}
               className="justify-center"
+              wrapName
               onPick={pickFile}
             />
           </div>

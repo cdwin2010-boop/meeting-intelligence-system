@@ -35,6 +35,8 @@ interface FilePickerProps {
   /** 입력에 연결할 설명 요소 id(선택) */
   describedBy?: string;
   className?: string;
+  /** true 면 긴 파일 이름을 말줄임 없이 영역 안에서 줄바꿈한다(올리기 화면). 기본은 한 줄 말줄임(수정 회의록 업로드 팝업 등 기존 화면) */
+  wrapName?: boolean;
 }
 
 export function FilePicker({
@@ -47,11 +49,12 @@ export function FilePicker({
   disabled = false,
   describedBy,
   className = "",
+  wrapName = false,
 }: FilePickerProps) {
   const statusId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   return (
-    <div className={`flex flex-wrap items-center gap-3 ${className}`}>
+    <div className={`flex flex-wrap items-center gap-3 ${wrapName ? "min-w-0 max-w-full" : ""} ${className}`}>
       <input
         ref={inputRef}
         type="file"
@@ -71,10 +74,10 @@ export function FilePicker({
       <Button variant="secondary" aria-describedby={statusId} disabled={disabled} onClick={() => inputRef.current?.click()}>
         {file ? pickedButtonLabel : buttonLabel}
       </Button>
-      <span id={statusId} aria-live="polite" className="flex min-w-0 items-baseline gap-2 text-sm">
+      <span id={statusId} aria-live="polite" className={`flex min-w-0 gap-2 text-sm ${wrapName ? "max-w-full items-baseline" : "items-baseline"}`}>
         {file ? (
           <>
-            <span title={file.name} className="min-w-0 truncate text-mn-text">
+            <span title={file.name} className={`min-w-0 text-mn-text ${wrapName ? "[overflow-wrap:anywhere]" : "truncate"}`}>
               {file.name}
             </span>
             <span className="shrink-0 font-mn-mono text-[13px] text-mn-muted">{formatFileSize(file.size)}</span>

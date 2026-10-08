@@ -237,13 +237,51 @@ test.describe("상세 화면", () => {
   });
 });
 
+const LONG = "아주아주아주긴파일이름".repeat(7); // 공백 없는 60자 이상
+
+test.describe("긴 파일명(작업 73-2)", () => {
+  for (const width of [1280, 768, 375]) {
+    for (const kind of ["음성 파일", "자료 파일(txt)"] as const) {
+      test(`${width}px ${kind}: 60자 넘는 공백 없는 파일명도 가로 넘침 없이 영역 안에 보이고, 종류 전환·다시 선택이 동작한다`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await openUpload(page);
+        const txt = kind === "자료 파일(txt)";
+        if (txt) await kindLabel(page, kind).click();
+        const input = page.getByLabel(txt ? "자료 파일 선택" : "음성 파일 선택");
+        const long = txt ? { name: `${LONG}.txt`, mimeType: "text/plain", buffer: Buffer.from("화자1: 안녕") } : { name: `${LONG}.m4a`, mimeType: "audio/mp4", buffer: Buffer.from("x") };
+        await input.setInputFiles(long);
+        const nameEl = page.locator(`span[title="${long.name}"]`);
+        await expect(nameEl).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+        // 파일명 요소가 파일 선택 영역(점선 상자) 안에 있다
+        const inside = await nameEl.evaluate((el) => {
+          const box = el.closest("div.border-dashed")!.getBoundingClientRect();
+          const r = el.getBoundingClientRect();
+          return r.left >= box.left - 1 && r.right <= box.right + 1;
+        });
+        expect(inside).toBe(true);
+        // 줄바꿈으로 전체 이름이 보인다(말줄임이 아니다)
+        expect(await nameEl.evaluate((el) => getComputedStyle(el).textOverflow)).not.toBe("ellipsis");
+        // 종류를 바꾸면 선택이 비워지고, 다시 골라 선택할 수 있다
+        await kindLabel(page, txt ? "음성 파일" : "자료 파일(txt)").click();
+        await expect(page.getByText("선택한 파일 없음")).toBeVisible();
+        await kindLabel(page, kind).click();
+        await page.getByLabel(txt ? "자료 파일 선택" : "음성 파일 선택").setInputFiles(long);
+        await expect(nameEl).toBeVisible();
+        await page.getByLabel(txt ? "자료 파일 선택" : "음성 파일 선택").setInputFiles(txt ? { name: "다른.txt", mimeType: "text/plain", buffer: Buffer.from("화자1: 네") } : { name: "다른.m4a", mimeType: "audio/mp4", buffer: Buffer.from("x") });
+        await expect(page.getByText(txt ? "다른.txt" : "다른.m4a")).toBeVisible();
+      });
+    }
+  }
+});
+
 test.describe("반응형", () => {
   for (const width of [1280, 768, 375]) {
     test(`${width}px: 올리기·상세에 가로 넘침이 없다`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await openUpload(page);
       await kindLabel(page, "자료 파일(txt)").click();
-      await page.getByLabel("자료 파일 선택").setInputFiles({ name: "전사문.txt", mimeType: "text/plain", buffer: Buffer.from("화자1: 안녕") });
+      await page.getByLabel("자료 파일 선택").setInputFiles({ name: "아주아주아주긴파일이름".repeat(6) + ".txt", mimeType: "text/plain", buffer: Buffer.from("화자1: 안녕") });
       await expect(page.getByRole("status").filter({ hasText: NOTICE })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
       await page.goto("/v2/meetings/77");
