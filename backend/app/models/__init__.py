@@ -19,6 +19,7 @@ from app.models.source_document import SourceDocument
 from app.models.speaker import MeetingSpeaker
 from app.models.tenant import Tenant
 from app.models.transcript import Transcript
+from app.models.workload import WorkloadSnapshot
 
 __all__ = [
     "Account",
@@ -45,5 +46,6 @@ __all__ = [
     "SourceDocument",
     "Tenant",
     "Transcript",
+    "WorkloadSnapshot",
     "append_event",
 ]

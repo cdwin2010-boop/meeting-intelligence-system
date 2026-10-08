@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -6,10 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
     accounts, action_items, auth, departments, item_supersession, projects, me, meeting_actions, meeting_hold, meeting_lifecycle, meeting_queries, meeting_speakers,
-    meeting_audio, meeting_minutes, me_processing, meeting_reprocess, meeting_update, meetings, probe, system,
+    meeting_audio, meeting_minutes, me_processing, meeting_reprocess, meeting_update, meetings, probe, system, workload,
 )
 from app.config import settings
 from app.db import SessionLocal
+from app.jobs import workload_snapshot
 from app.services.reprocess import recover_interrupted_jobs
 
 log = logging.getLogger("app.main")
@@ -26,7 +28,13 @@ async def lifespan(_app: FastAPI):
             log.warning("서버 재시작으로 중단된 처리 작업 %d건을 실패(server_restarted)로 정리했습니다.", recovered)
     except Exception as exc:  # noqa: BLE001 — 복구 실패로 서버가 못 뜨면 안 된다
         log.warning("interrupted job recovery failed: %s", type(exc).__name__)
-    yield
+    # 업무 처리 현황 전일 집계: 백그라운드 작업(끄거나 test 환경이면 시작하지 않음). 켜질 때 바로 한 번 확인해 놓친 집계를 따라잡는다
+    task = asyncio.create_task(workload_snapshot.workload_loop(SessionLocal)) if workload_snapshot.should_start() else None
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
 
 
 app = FastAPI(title="Meeting Intelligence Backend (v2)", lifespan=lifespan)
@@ -53,6 +61,7 @@ app.include_router(meeting_lifecycle.router)
 app.include_router(action_items.router)
 app.include_router(item_supersession.router)
 app.include_router(me.router)
+app.include_router(workload.router)
 app.include_router(accounts.router)
 app.include_router(departments.router)
 app.include_router(departments.me_router)

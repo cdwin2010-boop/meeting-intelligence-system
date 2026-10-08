@@ -1,7 +1,7 @@
 """업무 종결 구분(item_closures) 읽기·쓰기. 이 표는 이 파일에서만 다룬다."""
 from collections.abc import Iterable
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, exists, select
 from sqlalchemy.orm import Session
 
 from app.models import ActionItem
@@ -13,6 +13,11 @@ def record_closure(session: Session, item: ActionItem, kind: str, account_id: in
     if session.scalar(select(ItemClosure.id).where(ItemClosure.item_id == item.id)) is not None:
         return
     session.add(ItemClosure(tenant_id=item.tenant_id, item_id=item.id, kind=kind, closed_by=account_id))
+
+
+def completed_closure(item: type[ActionItem] = ActionItem) -> ColumnElement[bool]:
+    """정상 완료(completed)로 종결된 업무 조건. 구분이 없거나 직권 종료(forced)인 종결 업무는 해당하지 않는다."""
+    return exists().where(ItemClosure.item_id == item.id, ItemClosure.kind == "completed")
 
 
 def closure_kinds(session: Session, item_ids: Iterable[int]) -> dict[int, str]:

@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     similar_min_score: int = Field(default=50, ge=0, le=100)
     similar_max_results: int = Field(default=10, ge=1)
     similar_scan_max: int = Field(default=300, ge=1)
+    # 업무 처리 현황(작업 69-3): 전일 통계 자동 집계(켬/끔), 집계 시각(APP_TIMEZONE 기준 HH:MM, 이 시각 이후 전일 집계가 없으면 실행),
+    # 미완료(진행 중+지연) 과다 주의 임계값, 집중 관리 목록 최대 건수(계정·부서 행마다)
+    workload_snapshot_enabled: bool = True
+    workload_snapshot_time: str = Field(default="00:10", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    workload_overload_threshold: int = Field(default=5, ge=1)
+    workload_urgent_max: int = Field(default=50, ge=1)
     # 실행 환경 구분: dev / test / prod
     app_env: str = "dev"
 

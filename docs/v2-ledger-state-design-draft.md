@@ -917,3 +917,24 @@ A·B·C·D는 팀장 회신 2026-10-01로 [확정]됐다(부록 B). 각 표에�
 - **구분 없음**: 구분 행이 없는 종결 업무(이전에 종결된 것, 구분 없이 종결된 것)는 "구분 없음"이며, 이후 실적 집계에서 완료로 세지 않는다(집계는 이번 범위 아님).
 - **응답·이벤트·엑셀**: 업무 응답(`ActionItemOut`)에 `closureKind`(null·completed·forced)를 추가했다. `item.closed` 사건 payload 는 구분을 보낸 종결에만 `closureKind` 키를 더한다(기존 키 유지). 엑셀 업무 시트 상태 라벨은 종결+completed=완료, 종결+forced=직권 종료, 구분 없음은 기존 "종결".
 - **하지 않은 것**: 실적 집계, 업무 대체, 회의록 단위 종료·보류·삭제의 구분, 구분 정정 기능. `models/item_conditions.py` 는 바꾸지 않았다. downgrade 는 행이 있으면 거부한다.
+
+### D-25 업무 처리 현황 집계 [구현 기준, 작업 69-3]
+- **표**: `workload_snapshots`(마이그레이션 `a7d3e9b52c16`, 기존 표 변경 없음): id, tenant_id, snapshot_date(집계 기준일), account_id, department_id, completed_count, in_progress_count, overdue_count, due_soon_count, urgent_items(JSON: itemId·title·dueDate·kind(overdue|due_soon)·meetingId·meetingTitle, 지연 먼저 기한 오래된 순, 최대 `WORKLOAD_URGENT_MAX` 건), generated_at. (tenant_id, snapshot_date, account_id, department_id) 유니크. downgrade 는 행이 있으면 거부한다.
+- **대상**: 활성 계정 중 `account_departments` 소속이 있는 사람. 겸직자는 소속 부서마다 행이 있고, 전사 합계는 계정 기준으로 한 번만 센다. 업무 0건 구성원도 행이 있다. 비활성 계정·소속 없는 계정은 제외.
+- **건수 기준**: `action_items.assignee_id`(계정 FK)가 있는 업무만. 계정이 없는 담당자(화자N·게스트)는 집계·표시에서 빠진다.
+- **제외**: 삭제된 업무, 대체된 업무, 보류·삭제 단계 회의록의 업무, 직권 종료(forced)로 종결된 업무, 종결 구분이 없는 종결 업무. 회의록 단계는 할 일 화면과 같은 모델 조건(`Meeting.on_hold`·`Meeting.deleted`)을 쓰되, 종료 단계 회의록은 포함한다(업무가 모두 종결돼 자동 종료된 회의록의 완료 업무를 세기 위해).
+- **정의(기준일 D)**: 완료 = 종결 + closureKind=completed. 진행 중 = 열린 업무(확정 대기·확정) 중 기한이 D 이후이거나 기한 미정. 지연 = 열린 업무 중 기한이 D 보다 이전(기한 당일은 지연 아님). D-3 임박 = 열린 업무 중 D <= 기한 <= D+3일(진행 중의 부분 집합). 완료율 = 완료 ÷ (완료+진행 중+지연), 누적(전체 기간). 1인당 평균 잔여 = (진행 중+지연) 합 ÷ 구성원 수.
+- **집계 시점**: 기준일 = 집계 실행일의 전일(`APP_TIMEZONE`, 기본 한국 시간). 서버 lifespan 의 백그라운드 작업이 10분마다 확인해, `WORKLOAD_SNAPSHOT_TIME`(기본 00:10) 이후에 전일 기준일 집계가 없는 고객사를 별도 스레드에서 집계한다(서버가 켜질 때도 바로 확인해 따라잡음). 같은 기준일 재집계는 그 기준일 행을 지우고 다시 쓰는 한 트랜잭션(멱등). 실패는 로그만 남긴다. `WORKLOAD_SNAPSHOT_ENABLED=false` 이거나 `APP_ENV=test` 이면 시작하지 않는다. 오늘 처리한 업무는 다음 날 반영된다.
+- **조회 API** `GET /api/workload?departmentId=`: 최신 기준일의 저장값만 읽는다. 응답 snapshotDate(없으면 null)·generatedAt·scope{kind, departments, department}·kpis{assigned, completionRate, overdue, avgOpenPerPerson, memberCount}·members[{accountId, name, completed, inProgress, overdue, open, overloaded}](미완료 많은 순)·urgentItems[{itemId, title, dueDate, kind, days, meetingId, meetingTitle, assignee}]. 집계가 없으면 200 과 빈 목록.
+- **권한(서버 강제)**:
+
+  | 사용권한 | 범위 | departmentId |
+  |---|---|---|
+  | 지시자(executive) | 전사(기본) 또는 고객사의 아무 부서 | 지정 가능 |
+  | 부서장(account_departments role=head) | 본인이 부서장인 부서(없으면 이름순 첫 부서) | 본인 부서만, 다른 부서 403 |
+  | 그 밖의 관리자·담당자 | 본인 개인 현황만(타인 이름·건수 없음) | 지정하면 403 |
+
+  다른 고객사·없는 부서는 404(범위 판정보다 먼저).
+- **설정**: `WORKLOAD_SNAPSHOT_ENABLED`(기본 true), `WORKLOAD_SNAPSHOT_TIME`(기본 00:10), `WORKLOAD_OVERLOAD_THRESHOLD`(기본 5, 진행 중+지연이 이 값 이상이면 `overloaded`), `WORKLOAD_URGENT_MAX`(기본 50).
+- **수동 도구**: `python scripts/run_workload_snapshot.py --tenant "고객사A" [--date YYYY-MM-DD] [--apply]`. 기본 dry-run(저장하지 않고 건수 요약만), `--apply` 일 때만 저장.
+- **아직 하지 않은 것**: 기간 선택, 개인 간 순위·점수화, 다운로드, 조직 관리 화면.
