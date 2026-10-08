@@ -2,6 +2,7 @@
  * v2 회의록 조회 API(읽기 전용: 목록·상세·전사문). 응답 모양은 backend/app/api/meeting_schemas.py(camelCase)와 맞춘다.
  * 열람 권한은 서버가 판정한다(관리자 이상은 고객사 전체, 담당자는 참석·담당·등록한 회의록만).
  */
+import type { ClosureKind } from "@/lib/v2/closure-kinds";
 import { request } from "./http";
 import type { MissingField } from "./errors";
 import type { ConfirmKind } from "./todos";
@@ -67,6 +68,8 @@ export interface ActionItem {
   evidenceQuote: string | null;
   needsCompletion: boolean;
   missingFields: MissingField[];
+  /** 종결 구분(추가 필드): completed(정상 완료) | forced(직권 종료). 종결 아님·구분 없음·필드 없음이면 null/undefined */
+  closureKind?: ClosureKind | null;
   /** 업무 출처(추가 필드): ai(AI 추출) | manual(수기·업로드 직권 등록). 없으면 ai */
   origin?: "ai" | "manual";
   /** 이 사용자가 이 업무에서 지금 할 수 있는 동작(상세 응답에서만 채워지고 다른 응답은 null). lib/v2/actions.ts 의 can() 으로 판정 */

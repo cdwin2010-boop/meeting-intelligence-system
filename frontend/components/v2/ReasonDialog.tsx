@@ -15,6 +15,13 @@ import { REASON_MAX } from "@/lib/v2/meetings";
 
 const errorMessage = (error: unknown, fallback: string) => (error instanceof Error && error.message ? error.message : fallback);
 
+export interface ReasonChoice {
+  legend: string;
+  options: { value: string; label: string }[];
+  /** 고르지 않고 확인했을 때 알림 문구 */
+  requiredMessage: string;
+}
+
 export interface ReasonAction {
   /** 팝업 제목(동작 이름). 예) "회의록 보류" */
   title: string;
@@ -26,8 +33,10 @@ export interface ReasonAction {
   notice?: ReactNode;
   /** 사유 입력 필수 여부(재개만 false) */
   requireReason: boolean;
-  /** 서버 요청. reason 은 앞뒤 공백을 지운 값(사유 없는 동작은 빈 문자열) */
-  run: (reason: string, signal: AbortSignal) => Promise<void>;
+  /** 필수 선택 그룹(예: 업무 종결의 종결 구분). 없으면 그리지 않는다 */
+  choice?: ReasonChoice;
+  /** 서버 요청. reason 은 앞뒤 공백을 지운 값(사유 없는 동작은 빈 문자열), choice 는 고른 값(choice 를 쓰는 동작만) */
+  run: (reason: string, signal: AbortSignal, choice: string) => Promise<void>;
 }
 
 interface ReasonDialogProps {
@@ -44,6 +53,9 @@ export function ReasonDialog({ action, onClose, onDone }: ReasonDialogProps) {
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [choice, setChoice] = useState("");
+  const choiceName = useId();
+  const firstChoiceRef = useRef<HTMLInputElement | null>(null);
   const runRef = useRef<AbortController | null>(null);
 
   // 열 때마다 입력을 비우고, 닫히면 진행 중인 요청을 취소한다
@@ -53,6 +65,7 @@ export function ReasonDialog({ action, onClose, onDone }: ReasonDialogProps) {
   useEffect(() => {
     if (!open) return;
     setReason("");
+    setChoice("");
     setError(null);
     setSaving(false);
     return () => runRef.current?.abort();
@@ -63,13 +76,19 @@ export function ReasonDialog({ action, onClose, onDone }: ReasonDialogProps) {
 
   async function onConfirm() {
     if (!action || saving || blocked) return;
+    // 필수 선택을 안 했으면 서버를 부르지 않고 알림 + 첫 선택지로 포커스
+    if (action.choice && !choice) {
+      setError(action.choice.requiredMessage);
+      firstChoiceRef.current?.focus();
+      return;
+    }
     runRef.current?.abort();
     const controller = new AbortController();
     runRef.current = controller;
     setSaving(true);
     setError(null);
     try {
-      await action.run(action.requireReason ? trimmed : "", controller.signal);
+      await action.run(action.requireReason ? trimmed : "", controller.signal, choice);
     } catch (err) {
       if (isAbortError(err)) return;
       // 입력값은 그대로 두고 서버 문구를 보여 준다
@@ -106,6 +125,46 @@ export function ReasonDialog({ action, onClose, onDone }: ReasonDialogProps) {
     >
       <div className="mt-3 flex flex-col gap-3">
         {action?.notice ? <p className="text-sm text-mn-text">{action.notice}</p> : null}
+        {action?.choice ? (
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-2 text-sm font-medium">
+              {action.choice.legend} <span className="font-normal text-mn-muted">(필수)</span>
+            </legend>
+            <div className="flex flex-wrap gap-2">
+              {action.choice.options.map((option, index) => {
+                const checked = choice === option.value;
+                return (
+                  <label
+                    key={option.value}
+                    className={[
+                      "inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-mn-control border px-3 py-1 text-[13px]",
+                      "has-[:focus-visible]:[box-shadow:var(--mn-focus-ring)] has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50",
+                      checked ? "border-mn-accent bg-mn-elevated font-semibold text-mn-text" : "border-mn-control text-mn-muted hover:text-mn-text",
+                    ].join(" ")}
+                  >
+                    <input
+                      ref={index === 0 ? firstChoiceRef : undefined}
+                      type="radio"
+                      name={choiceName}
+                      value={option.value}
+                      checked={checked}
+                      disabled={saving}
+                      onChange={() => {
+                        setError(null);
+                        setChoice(option.value);
+                      }}
+                      className="sr-only"
+                    />
+                    <span aria-hidden="true" className="font-mn-mono">
+                      {checked ? "●" : "○"}
+                    </span>
+                    {option.label}
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+        ) : null}
         {action?.requireReason ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">

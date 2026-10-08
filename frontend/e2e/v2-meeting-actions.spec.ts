@@ -194,11 +194,12 @@ test.describe("v2 회의록 동작과 사유 팝업", () => {
     await expect(box).toContainText("업무 종결");
     await expect(box).toContainText("설비 점검");
     await box.getByLabel("사유").fill("점검 완료");
+    await box.getByRole("group", { name: "종결 구분" }).locator("label").filter({ hasText: "정상 완료" }).click(); // 70-1: 종결 구분 선택
     await box.getByRole("button", { name: "업무 종결하기" }).click();
     await expect(box).toBeHidden();
     await expect(row(page, "설비 점검")).toContainText("종결");
     await expect(row(page, "설비 점검").getByRole("button", { name: /업무 종결/ })).toHaveCount(0);
-    expect(calls.bodies["item-close"]).toEqual([{ reason: "점검 완료" }]);
+    expect(calls.bodies["item-close"]).toEqual([{ reason: "점검 완료", closureKind: "completed" }]);
   });
 
   test("업무 삭제: 모든 업무에 버튼, 팝업에 업무명, 성공하면 원장에서 사라짐", async ({ page }) => {

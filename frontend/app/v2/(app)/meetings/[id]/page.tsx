@@ -60,6 +60,7 @@ import { useChangeRequests } from "@/components/v2/ChangeRequestHistory";
 import { MeetingActions, type MeetingActionKind } from "@/components/v2/MeetingActions";
 import { MeetingConfirmButton } from "@/components/v2/MeetingConfirmButton";
 import { ReasonDialog, type ReasonAction } from "@/components/v2/ReasonDialog";
+import { CLOSURE_KIND_OPTION_LABEL, CLOSURE_KINDS, closedChipLabel, type ClosureKind } from "@/lib/v2/closure-kinds";
 import { SpeakerDialog } from "@/components/v2/SpeakerDialog";
 import { ApiError, isAbortError, type MissingField } from "@/lib/v2/errors";
 import { closeActionItem, confirmActionItem, deleteActionItem } from "@/lib/v2/action-items";
@@ -116,7 +117,7 @@ const ORIGIN_LABEL: Record<string, string> = { audio_minutes: "음성", audio: "
 function itemStatus(item: ActionItem): { tone: StatusDotTone; label: string } {
   if (item.status === "pending") return item.needsCompletion ? { tone: "error", label: "보완 필요" } : { tone: "queued", label: "확정 대기" };
   if (item.status === "confirmed") return { tone: "ready", label: "확정됨" };
-  if (item.status === "closed") return { tone: "ready", label: "종결" };
+  if (item.status === "closed") return { tone: "ready", label: closedChipLabel(item.closureKind) };
   return { tone: "queued", label: String(item.status) };
 }
 
@@ -1094,8 +1095,13 @@ export default function V2MeetingDetailPage() {
   const openItemClose = (item: ActionItem) =>
     setReasonAction({
       title: "업무 종결", target: item.title || "(업무명 없음)", confirmLabel: "업무 종결하기", requireReason: true,
-      run: async (reason, signal) => {
-        await closeActionItem(item.id, reason, signal);
+      choice: {
+        legend: "종결 구분",
+        options: CLOSURE_KINDS.map((kind) => ({ value: kind, label: CLOSURE_KIND_OPTION_LABEL[kind] })),
+        requiredMessage: "종결 구분을 선택해 주세요",
+      },
+      run: async (reason, signal, kind) => {
+        await closeActionItem(item.id, reason, kind as ClosureKind, signal);
       },
     });
 
