@@ -16,7 +16,7 @@ from app.auth.locks import reject_if_locked
 from app.auth.scope import scoped
 from app.models import Account, ActionItem, ItemSupersession, Meeting, MeetingClassification, Project
 from app.services.history import KIND_ITEM_SUPERSEDED, record_change
-from app.services.projects import is_project_lead
+from app.services.projects import is_approver, is_project_lead
 
 OPEN_STATUSES = ("pending", "confirmed")
 
@@ -33,12 +33,14 @@ def project_of_meeting(session: Session, meeting_id: int) -> Project | None:
 
 
 def has_supersede_authority(session: Session, account: Account, project: Project | None) -> bool:
-    """대체 권한: 그 프로젝트의 총괄(활성 프로젝트, 직급 manager 이상) 또는 지시자."""
+    """대체 권한: 그 프로젝트의 총괄 또는 등록 부서의 부서장(활성 프로젝트, 사용권한 manager 이상, 작업 66-3d), 또는 지시자."""
     if project is None or project.tenant_id != account.tenant_id:
         return False
     if account.rank == "executive":
         return True
-    return account.rank == "manager" and project.status == "active" and is_project_lead(session, account, project)
+    if account.rank != "manager" or project.status != "active":
+        return False
+    return is_project_lead(session, account, project) or is_approver(session, account, project)
 
 
 def superseded_ids(session: Session, item_ids: list[int]) -> set[int]:
@@ -154,7 +156,7 @@ def supersede_item(
     if project is None:
         raise _http(status.HTTP_409_CONFLICT, "프로젝트 회의록이 아닙니다")
     if not has_supersede_authority(session, account, project):
-        raise _http(status.HTTP_403_FORBIDDEN, "프로젝트 총괄 또는 지시자만 업무를 대체할 수 있습니다")
+        raise _http(status.HTTP_403_FORBIDDEN, "프로젝트 총괄, 등록 부서의 부서장 또는 지시자만 업무를 대체할 수 있습니다")
     prepared = prepare_supersede(session, account, new_item, old_item_id)
     if prepared.already:
         return False

@@ -908,3 +908,5 @@ A·B·C·D는 팀장 회신 2026-10-01로 [확정]됐다(부록 B). 각 표에�
 - **총괄 변경 권한**: `POST /api/projects/{id}/change-lead` 는 현재 총괄 본인·지시자에 더해 등록 부서의 부서장(사용권한 manager 이상)이 할 수 있다(`services/projects.py` 의 `can_change_lead`, 프로젝트 상세 `change_lead` 허용 동작도 같은 함수). 새 총괄 검증(같은 고객사 활성 계정, 사용권한 manager 이상, 사유 필수)은 그대로.
 - **용어**: 서버 문구에서 지시자·관리자·담당자 값을 가리키는 "직급"을 "사용권한"으로 고쳤다(오류 메시지 7곳(관리 스크립트 부서장 지정 오류 포함)).
 - **바꾸지 않은 것**: 프로젝트 참여자 관리(`manage_members`, 총괄만), 회의록 열람 규칙, 승인·반려 권한, 업무 대체 권한(`has_supersede_authority`, 프로젝트 총괄·지시자), 응답 형식, 표·마이그레이션, 프론트.
+
+- **부서장의 업무 대체 권한(작업 66-3d)**: 업무 대체 실행(`POST /api/action-items/{id}/supersede`), 대체 요청 수락 시 대체 실행, 허용 동작 `supersede_item` 에 대체 권한자로 등록 부서의 부서장(사용권한 manager 이상, 프로젝트 active)을 추가했다(`services/supersession.py` 의 `has_supersede_authority` 한 곳). 기존 권한자(프로젝트 총괄·지시자)는 그대로이고, 대체 요청 생성·유사 업무 검색·참여자 관리·열람 규칙은 바꾸지 않았다.
