@@ -50,7 +50,6 @@ async function open(page: Page, setup: Setup = {}, path = "/v2/meetings/41"): Pr
   const requests: unknown[] = setup.changeRequests ? [...setup.changeRequests] : [];
   let similarAttempts = 0;
   let supersedeAttempts = 0;
-  await page.route("**/api/**", (route) => json(route, 200, []));
   await page.route("**/api/auth/me", (route) =>
     route.request().headers()["authorization"] === `Bearer ${FAKE_TOKEN}` ? json(route, 200, MANAGER) : json(route, 401, { detail: "x" }),
   );

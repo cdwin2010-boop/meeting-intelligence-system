@@ -1,6 +1,7 @@
 # Changelog
 
 ## 미배포 (v2 개발 중)
+- 테스트 보강(작업 73-2): E2E 공용 `test`(e2e/helpers/test.ts)가 가로채지 않은 /api 요청에 경로별 최소 유효 응답을 주고(가장 낮은 우선순위), 실제 네트워크로 나가는 /api 요청이 있으면 테스트를 실패시킨다. 백엔드가 꺼져 있을 때 "콘솔 오류 없음" 계열이 연결 거부로 실패하던 문제 해소(`/apiundefined` 요청 포함). 제품 코드 변경 없음.
 - v3.0 UI 자료 파일(txt) 등록 선택과 오디오 없는 회의록 표시(작업 73-1): 올리기 화면에 "자료 종류"(음성 파일 기본 | 자료 파일(txt)) 라디오, txt 선택 시 .txt 만 받고 안내(role=status), 제출 본문 `sourceKind`, 확장자 불일치 알림, 임시 저장·복원에 `sourceKind` 포함, 상세에 "자료 종류" 항목과 `hasAudio=false` 일 때 플레이어 대신 안내. 라벨 상수 `lib/v2/source-kind.ts`. 프론트만 변경.
 - v2 `backend/` 자료 파일(txt) 등록(작업 73-1): 업로드 입력 `sourceKind`(audio 기본 | transcript_txt), txt 는 STT 를 건너뛰고 전사문으로 읽어 이후 추출 단계는 음성과 동일(인코딩 UTF-8/CP949, 형식 해석, 검증 422, 상한 설정 `TRANSCRIPT_UPLOAD_MAX_BYTES`·`TRANSCRIPT_MAX_CHARS`), 상세 응답에 `sourceKind`·`hasAudio`, 자료 파일 회의록은 음성 재생 404. 자료 종류는 저장 파일 확장자로 판별(새 표·마이그레이션 없음). 프론트 변경 없음.
 - v3.0 UI 유사 업무 검색·대체·대체 요청 화면(작업 71-1 파트 B): 업무 원장에 [유사 업무 검색](allowedActions `find_similar_items`), 유사 업무 검색 팝업(점수순 카드·이유·회의록 링크, 대체 요청·직권 대체는 사유 팝업, 서버 거부는 팝업 안 알림), "대체됨" 칩과 대체 정보 링크(제목 null 은 열람 권한 없음 안내), 수정 요청 화면에 "대체 요청" 표시. 동작 상수와 E2E 허용 동작 헬퍼 확장, 문서 `docs/v3-ui-supersede.md`. 프론트만 변경.

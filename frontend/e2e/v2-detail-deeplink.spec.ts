@@ -43,7 +43,6 @@ const DETAIL = {
 interface Options { transcript?: (route: Route) => unknown; detail?: unknown }
 
 async function open(page: Page, options: Options = {}) {
-  await page.route("**/api/**", (route) => json(route, []));
   await page.route("**/api/auth/me", (route) => (route.request().headers()["authorization"] === `Bearer ${FAKE_TOKEN}` ? json(route, ME) : json(route, { detail: "x" }, 401)));
   await page.route("**/api/meetings?*", (route) => json(route, { items: [], total: 0, page: 1, size: 20, availablePhases: ["active"] }));
   await page.route(/\/api\/meetings\/\d+$/, (route) => json(route, withAllowed((options.detail ?? DETAIL) as never, ME)));

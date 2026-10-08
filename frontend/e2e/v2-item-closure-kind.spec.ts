@@ -33,7 +33,6 @@ const detail = () => ({
 async function open(page: Page, theme?: "light" | "dark") {
   const closeBodies: unknown[] = [];
   const data = detail();
-  await page.route("**/api/**", (route) => json(route, 200, [])); // 가로채지 않은 요청이 실제 백엔드로 가지 않게(나중에 등록한 것이 우선)
   await page.route("**/api/auth/me", (route) =>
     route.request().headers()["authorization"] === `Bearer ${FAKE_TOKEN}` ? json(route, 200, MANAGER) : json(route, 401, { detail: "x" }),
   );

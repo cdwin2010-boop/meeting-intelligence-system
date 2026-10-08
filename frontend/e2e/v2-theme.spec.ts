@@ -28,8 +28,7 @@ const DETAIL = {
 };
 
 async function start(page: Page) {
-  // 처리되지 않은 요청은 빈 배열로(콘솔 오류 방지). 나중에 등록한 라우트가 먼저 적용된다
-  await page.route("**/api/**", (route) => json(route, []));
+  // 처리되지 않은 요청은 공용 기본 응답(e2e/helpers/test.ts)이 맡는다. 나중에 등록한 라우트가 먼저 적용된다
   await page.route("**/api/auth/me", (route) => (route.request().headers()["authorization"] === `Bearer ${FAKE_TOKEN}` ? json(route, ME) : json(route, { detail: "x" }, 401)));
   await page.route("**/api/me/todos", (route) => json(route, EMPTY_TODOS));
   await page.route("**/api/meetings?*", (route) => json(route, { items: [], total: 0, page: 1, size: 20, availablePhases: ["active", "ended", "on_hold", "deleted"] }));
