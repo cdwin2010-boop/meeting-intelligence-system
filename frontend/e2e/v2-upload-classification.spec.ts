@@ -168,7 +168,7 @@ test.describe("프로젝트 선택", () => {
     await pickType(page, "프로젝트 회의");
     const select = page.locator("#meeting-project");
     await expect(select.locator("option")).toHaveText(["프로젝트를 선택하세요", "가동률 개선", "하반기 설비 교체"]);
-    await expect(page.getByRole("link", { name: "새 프로젝트 등록" })).toHaveAttribute("href", "/v2/projects/new");
+    await expect(page.getByRole("link", { name: "새 프로젝트 등록" })).toHaveAttribute("href", "/v2/projects/new?returnTo=/v2/upload");
   });
 
   test("고르지 않으면 제출 막힘(서버 호출 없음)", async ({ page }) => {
@@ -192,7 +192,7 @@ test.describe("프로젝트 선택", () => {
     await fillBase(page);
     await pickType(page, "프로젝트 회의");
     await expect(page.getByText("참여 중인 진행 중 프로젝트가 없습니다")).toBeVisible();
-    await expect(page.getByRole("link", { name: "새 프로젝트 등록" })).toHaveAttribute("href", "/v2/projects/new");
+    await expect(page.getByRole("link", { name: "새 프로젝트 등록" })).toHaveAttribute("href", "/v2/projects/new?returnTo=/v2/upload");
     await submitButton(page).click();
     await expect(formAlert(page)).toHaveText("프로젝트를 선택해 주세요");
     expect(calls).toBe(0);

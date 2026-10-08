@@ -9,8 +9,8 @@
  * - 제출 POST /api/projects(name, description, departmentId, memberIds). 성공하면 상세로 이동, 서버 거부(403·409·422)는 폼 위 알림(role="alert").
  */
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useId, useRef, useState } from "react";
 
 import { Button, StatusDot } from "@/components/mono";
 import { useAuth } from "@/components/v2/AuthProvider";
@@ -20,6 +20,7 @@ import {
   type CandidateGroup, type Candidates, type OrgMembership,
 } from "@/lib/v2/projects";
 import { RANK_LABEL } from "@/lib/v2/types";
+import { parseReturnTo, RETURN_WITHOUT_PROJECT, returnAfterCreate } from "@/lib/v2/upload-return";
 
 const inputClass =
   "mn-focus w-full rounded-mn-control border border-mn-control bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50";
@@ -76,8 +77,19 @@ function MemberGroup({
   );
 }
 
+// useSearchParams 를 쓰는 화면은 Suspense 경계가 필요하다(Next 15)
 export default function V2ProjectNewPage() {
+  return (
+    <Suspense fallback={null}>
+      <ProjectNewForm />
+    </Suspense>
+  );
+}
+
+function ProjectNewForm() {
   const router = useRouter();
+  // 허용 목록(올리기 화면)에 든 returnTo 만 인정한다. 아니면 null → 기존 동작(상세로 이동)
+  const returnTo = parseReturnTo(useSearchParams().get("returnTo"));
   const { account } = useAuth();
   const myId = account?.id ?? null;
   const nameId = useId();
@@ -139,7 +151,7 @@ export default function V2ProjectNewPage() {
     setError(null);
     try {
       const created = await createProject({ name: trimmed, description: description.trim(), departmentId, memberIds });
-      router.push(`/v2/projects/${created.id}`);
+      router.push(returnTo ? returnAfterCreate(returnTo, created.id) : `/v2/projects/${created.id}`);
     } catch (e) {
       setError(errorMessage(e, "서버 오류"));
       setSubmitting(false);
@@ -155,6 +167,11 @@ export default function V2ProjectNewPage() {
         <Link href="/v2/projects" className="mn-focus rounded-mn-control text-sm text-mn-muted hover:text-mn-text">
           ← 프로젝트 목록으로
         </Link>
+        {returnTo ? (
+          <Link href={RETURN_WITHOUT_PROJECT} className="mn-focus ml-4 rounded-mn-control text-sm text-mn-muted hover:text-mn-text">
+            올리기로 돌아가기
+          </Link>
+        ) : null}
         <h1 title="프로젝트 등록" className="mn-page-title mt-2 text-mn-text">프로젝트 등록</h1>
       </header>
 

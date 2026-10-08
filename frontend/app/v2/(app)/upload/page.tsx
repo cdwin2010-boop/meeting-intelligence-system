@@ -9,8 +9,8 @@
  * - 회의 유형은 필수(화면에서만 강제, 서버는 선택 입력). 프로젝트 회의면 내가 참여자인 진행 중 프로젝트를 함께 보낸다
  */
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useId, useRef, useState, type DragEvent, type FormEvent } from "react";
 
 import { Button, StatusDot } from "@/components/mono";
 import { FakeEngineNotice, useEngineIsFake } from "@/components/v2/EngineNotice";
@@ -22,6 +22,8 @@ import { useProcessing } from "@/components/v2/ProcessingProvider";
 import { isAbortError } from "@/lib/v2/errors";
 import type { MeetingType } from "@/lib/v2/meeting-types";
 import { uploadMeeting } from "@/lib/v2/meetings";
+import { getProject } from "@/lib/v2/projects";
+import { clearUploadDraft, loadUploadDraft, saveUploadDraft, UPLOAD_PATH } from "@/lib/v2/upload-return";
 
 const inputClass =
   "mn-focus h-10 w-full rounded-mn-control border border-mn-control bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50";
@@ -45,8 +47,18 @@ function toOffsetIso(date: string, time: string): string | null {
   return `${date}T${time}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
 
+// useSearchParams 를 쓰는 화면은 Suspense 경계가 필요하다(Next 15)
 export default function V2UploadPage() {
+  return (
+    <Suspense fallback={null}>
+      <UploadForm />
+    </Suspense>
+  );
+}
+
+function UploadForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const engineIsFake = useEngineIsFake(true);
   const { refresh: refreshProcessing } = useProcessing();
   const titleId = useId();
@@ -57,6 +69,7 @@ export default function V2UploadPage() {
   const typeRef = useRef<HTMLInputElement | null>(null);
   const projectRef = useRef<HTMLSelectElement | null>(null);
   const submittingRef = useRef(false); // 빠른 연타로 두 번 보내는 것을 막는다
+  const handledQueryRef = useRef<string | null>(null); // 같은 주소 인자를 두 번 처리하지 않는다(개발 모드 이중 실행 포함)
 
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
@@ -69,13 +82,59 @@ export default function V2UploadPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [restoredNotice, setRestoredNotice] = useState(false);
+  const [pendingNotice, setPendingNotice] = useState<string | null>(null);
 
   // 기본 일시는 화면을 연 시각(서버 렌더링과 어긋나지 않도록 마운트 후 채움)
   useEffect(() => {
     const parts = nowParts();
-    setDate(parts.date);
-    setTime(parts.time);
+    // 이미 값이 있으면(복원된 값, 개발 모드 이중 실행) 덮어쓰지 않는다
+    setDate((prev) => prev || parts.date);
+    setTime((prev) => prev || parts.time);
   }, []);
+
+  // 새 프로젝트 등록에서 돌아온 경우(resume=1)만 임시 저장값을 복원한다. 메뉴로 들어오면 저장값을 버린다.
+  // 처리한 인자(resume, newProject)는 주소에서 지워 새로고침해도 다시 적용되지 않게 한다.
+  useEffect(() => {
+    const key = searchParams.toString();
+    if (handledQueryRef.current === key) return;
+    handledQueryRef.current = key;
+    const resume = searchParams.get("resume") === "1";
+    const newProject = searchParams.get("newProject");
+    if (!resume) {
+      clearUploadDraft();
+    } else {
+      const draft = loadUploadDraft();
+      if (draft) {
+        setTitle(draft.title);
+        if (draft.date) setDate(draft.date);
+        if (draft.time) setTime(draft.time);
+        setParticipantIds(draft.participantIds);
+        setMeetingType(draft.meetingType);
+        setRestoredNotice(true);
+      }
+      clearUploadDraft();
+    }
+    if (resume && newProject && /^\d+$/.test(newProject)) {
+      // 방금 만든 프로젝트: 진행 중이고 내 역할이 있으면 자동 선택, 승인 대기면 안내만. 조회 실패는 조용히 무시
+      getProject(Number(newProject))
+        .then((p) => {
+          if (p.status === "active" && p.myRole) {
+            setMeetingType("project");
+            setProjectId(String(p.id));
+          } else if (p.status === "pending_approval") {
+            setPendingNotice(`새 프로젝트 '${p.name}'은 승인 대기 중입니다. 부서장 승인 후 선택할 수 있습니다.`);
+          }
+        })
+        .catch(() => undefined);
+    }
+    if (key) router.replace(UPLOAD_PATH);
+  }, [searchParams, router]);
+
+  // 새 프로젝트 등록으로 떠나기 전에 입력값 저장(파일은 저장하지 않는다)
+  function saveDraftForNewProject() {
+    saveUploadDraft({ title, date, time, participantIds, meetingType });
+  }
 
   // 화면을 떠나면 진행 중인 전송 취소
   useEffect(() => () => controllerRef.current?.abort(), []);
@@ -137,6 +196,7 @@ export default function V2UploadPage() {
           meetingType,
           projectId: meetingType === "project" ? Number(projectId) : undefined,
         }, controller.signal);
+      clearUploadDraft();
       refreshProcessing(); // 왼쪽 메뉴 처리 현황에 바로 나타나게 한다(같은 상태 저장소)
       router.push(detailPath(accepted.meetingId));
     } catch (err) {
@@ -245,7 +305,18 @@ export default function V2UploadPage() {
           </fieldset>
 
           <MeetingTypeField value={meetingType} onChange={pickType} disabled={submitting} firstRef={typeRef} />
-          {meetingType === "project" ? <ProjectField value={projectId} onChange={setProjectId} disabled={submitting} selectRef={projectRef} /> : null}
+          {meetingType === "project" ? <ProjectField value={projectId} onChange={setProjectId} disabled={submitting} selectRef={projectRef} onLeaveForNewProject={saveDraftForNewProject} /> : null}
+
+          {restoredNotice ? (
+            <p role="status" className="text-sm text-mn-text">
+              입력하던 내용을 복원했습니다. 파일은 다시 선택해 주세요.
+            </p>
+          ) : null}
+          {pendingNotice ? (
+            <p role="status" className="text-sm text-mn-text">
+              {pendingNotice}
+            </p>
+          ) : null}
 
           <ParticipantPicker selected={participantIds} onChange={setParticipantIds} disabled={submitting} />
 

@@ -13,6 +13,7 @@ import { Button, StatusDot } from "@/components/mono";
 import { isAbortError } from "@/lib/v2/errors";
 import { MEETING_TYPE_LABEL, MEETING_TYPES, type MeetingType } from "@/lib/v2/meeting-types";
 import { listProjects, type ProjectListItem } from "@/lib/v2/projects";
+import { newProjectHref, UPLOAD_PATH } from "@/lib/v2/upload-return";
 
 const selectClass =
   "mn-focus h-10 w-full rounded-mn-control border border-mn-control bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50";
@@ -74,10 +75,12 @@ interface ProjectFieldProps {
   onChange: (value: string) => void;
   disabled?: boolean;
   selectRef?: Ref<HTMLSelectElement>;
+  /** "새 프로젝트 등록"으로 떠나기 직전(올리기 화면이 입력값을 임시 저장한다) */
+  onLeaveForNewProject?: () => void;
 }
 
 /** 내가 참여자인 진행 중 프로젝트만 이름순으로 고르는 선택 컨트롤(필수) */
-export function ProjectField({ value, onChange, disabled = false, selectRef }: ProjectFieldProps) {
+export function ProjectField({ value, onChange, disabled = false, selectRef, onLeaveForNewProject }: ProjectFieldProps) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const controllerRef = useRef<AbortController | null>(null);
 
@@ -125,7 +128,8 @@ export function ProjectField({ value, onChange, disabled = false, selectRef }: P
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-mn-card border border-mn-border p-3">
           <span className="text-sm text-mn-muted">참여 중인 진행 중 프로젝트가 없습니다</span>
           <Link
-            href="/v2/projects/new"
+            href={newProjectHref(UPLOAD_PATH)}
+            onClick={onLeaveForNewProject}
             className="mn-focus inline-flex h-8 items-center rounded-mn-control border border-mn-control px-3 text-[13px] font-medium hover:bg-mn-elevated"
           >
             새 프로젝트 등록
@@ -149,7 +153,7 @@ export function ProjectField({ value, onChange, disabled = false, selectRef }: P
               </option>
             ))}
           </select>
-          <Link href="/v2/projects/new" className="mn-focus w-fit text-xs text-mn-muted underline underline-offset-2 hover:text-mn-text">
+          <Link href={newProjectHref(UPLOAD_PATH)} onClick={onLeaveForNewProject} className="mn-focus w-fit text-xs text-mn-muted underline underline-offset-2 hover:text-mn-text">
             새 프로젝트 등록
           </Link>
         </>
