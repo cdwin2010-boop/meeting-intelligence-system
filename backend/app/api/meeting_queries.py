@@ -35,6 +35,7 @@ from app.models.minutes import MINUTES_FIELDS
 from app.models.closure import meeting_phase, phase_condition
 from app.models.common import MEETING_STATUSES
 from app.services.item_closure import closure_kinds
+from app.services.source_kind import SOURCE_AUDIO, source_kind_of_path
 from app.services.supersession import project_of_meeting, superseded_ids, supersession_refs
 from app.models.item_conditions import live_item, not_deleted_item
 from app.services.reasons import event_reason, latest_reason
@@ -269,6 +270,7 @@ def get_meeting(
     closure = session.get(MeetingClosure, meeting.id)
     classification = session.scalar(select(MeetingClassification).where(MeetingClassification.meeting_id == meeting.id))
     linked_project = session.get(Project, classification.project_id) if classification and classification.project_id is not None else None
+    kind = source_kind_of_path(document.file_path if document is not None else None)
     detail = MeetingDetail(
         id=meeting.id,
         title=meeting.title,
@@ -308,6 +310,8 @@ def get_meeting(
         # 프로젝트 이름은 열람 가능한 회의록에서만 나간다(프로젝트를 볼 수 없어도 회의록을 볼 수 있으면 나감)
         project=ProjectRef(id=linked_project.id, name=linked_project.name) if linked_project else None,
         processing=processing_out(session, meeting),
+        source_kind=kind,
+        has_audio=kind == SOURCE_AUDIO and bool(document is not None and document.file_path),
         allowed_actions=meeting_allowed_actions(session, account, meeting),
     )
     # 상세 조회가 성공한 경우에만 열람 기록(첫 열람 유지, 마지막 열람 갱신)

@@ -1,4 +1,4 @@
-"""음성 회의록 업로드. 접수(파일 저장 + 원천 문서·회의록·작업 생성) 후 즉시 202, 처리는 백그라운드."""
+"""음성 회의록 업로드(sourceKind=transcript_txt 이면 자료 파일 txt 등록: STT 없이 전사문으로 읽는다). 접수(파일 저장 + 원천 문서·회의록·작업 생성) 후 즉시 202, 처리는 백그라운드."""
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -15,7 +15,9 @@ from app.db import get_session, get_session_factory
 from app.models import Account, Job, Meeting, MeetingParticipant, SourceDocument, Tenant, append_event
 from app.models.common import utcnow
 from app.services.classification import save_classification, validate_classification
+from app.pipeline.transcript_text import TranscriptTextError, decode_transcript
 from app.services.processing import auto_confirm_at, get_job_runner
+from app.services.source_kind import SOURCE_AUDIO, SOURCE_KINDS, SOURCE_TRANSCRIPT_TXT
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
@@ -97,6 +99,27 @@ def _save_upload(file: UploadFile, tenant_id: int, ext: str) -> str:
     return f"{tenant_id}/{name}"
 
 
+def _unprocessable(message: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=message)
+
+
+def _save_transcript_upload(file: UploadFile, tenant_id: int) -> str:
+    """자료 파일(txt) 저장: 크기·인코딩·내용을 먼저 검사(전사 본문은 로그·문구에 넣지 않는다)하고 UPLOAD_DIR/{tenant_id}/{uuid}.txt 로 쓴다."""
+    limit = settings.transcript_upload_max_bytes
+    raw = file.file.read(limit + 1)
+    if len(raw) > limit:
+        raise _unprocessable(f"txt 파일이 너무 큽니다(최대 {limit // 1024}KB).")
+    try:
+        decode_transcript(raw)
+    except TranscriptTextError as exc:
+        raise _unprocessable(str(exc)) from None
+    folder = Path(settings.upload_dir) / str(tenant_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"{uuid.uuid4().hex}.txt"
+    (folder / name).write_bytes(raw)
+    return f"{tenant_id}/{name}"
+
+
 @router.post("/upload", status_code=status.HTTP_202_ACCEPTED, response_model=UploadAccepted, response_model_by_alias=True)
 def upload_meeting(
     background_tasks: BackgroundTasks,
@@ -106,6 +129,7 @@ def upload_meeting(
     participant_ids: list[str] | None = Form(None, alias="participantIds"),
     meeting_type: str | None = Form(None, alias="meetingType"),
     project_id: int | None = Form(None, alias="projectId"),
+    source_kind: str = Form(SOURCE_AUDIO, alias="sourceKind"),
     account: Account = Depends(get_current_account),
     session: Session = Depends(get_session),
     session_factory: sessionmaker = Depends(get_session_factory),
@@ -115,8 +139,14 @@ def upload_meeting(
     ids = _parse_participant_ids(participant_ids)
     _check_participants(session, account, ids)
 
+    if source_kind not in SOURCE_KINDS:
+        raise _unprocessable("sourceKind 는 audio 또는 transcript_txt 여야 합니다.")
     ext = _extension(file.filename or "")
-    if ext not in settings.allowed_audio_extensions:
+    transcript_txt = source_kind == SOURCE_TRANSCRIPT_TXT
+    if transcript_txt:
+        if ext != "txt":
+            raise _unprocessable("자료 파일은 .txt 파일만 올릴 수 있습니다.")
+    elif ext not in settings.allowed_audio_extensions:
         allowed = ", ".join(sorted(settings.allowed_audio_extensions))
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=f"허용하지 않는 파일 형식입니다({allowed}).")
 
@@ -127,7 +157,7 @@ def upload_meeting(
     original_name = PurePath((file.filename or "").replace("\\", "/")).name
     meeting_title = (title.strip() or original_name or "제목 없음")[:300]
 
-    relative_path = _save_upload(file, account.tenant_id, ext)
+    relative_path = _save_transcript_upload(file, account.tenant_id) if transcript_txt else _save_upload(file, account.tenant_id, ext)
     try:
         now = utcnow()
         tenant = session.get(Tenant, account.tenant_id)
@@ -165,7 +195,8 @@ def upload_meeting(
             entity_id=meeting.id,
             event_type="meeting.created",
             actor_account_id=account.id,
-            payload={"origin": "audio_minutes", "job_id": job.id, "meetingType": classified_type, "projectId": classified_project},
+            payload={"origin": "audio_minutes", "job_id": job.id, "meetingType": classified_type, "projectId": classified_project}
+            | ({"sourceKind": source_kind} if transcript_txt else {}),  # 기존 음성 회의록의 사건 모양은 그대로
         )
         append_event(
             session,

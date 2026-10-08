@@ -16,6 +16,7 @@ from app.auth.tokens import AUDIO_TOKEN_MINUTES, InvalidTokenError, create_audio
 from app.config import settings
 from app.db import get_session
 from app.models import Account, Meeting, SourceDocument
+from app.services.source_kind import SOURCE_AUDIO, source_kind_of_path
 
 router = APIRouter(prefix="/api/meetings", tags=["meeting-audio"])
 
@@ -39,8 +40,8 @@ def _not_found(message: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=message)
 
 
-def _audio_file(session: Session, meeting: Meeting) -> Path:
-    """DB 에 저장된 상대 경로를 UPLOAD_DIR 안의 실제 파일로. 비었거나 폴더 밖이거나 파일이 없으면 404."""
+def _source_file(session: Session, meeting: Meeting) -> tuple[Path, str]:
+    """DB 에 저장된 상대 경로를 UPLOAD_DIR 안의 실제 파일로(경로, 자료 종류). 비었거나 폴더 밖이거나 파일이 없으면 404."""
     document = session.get(SourceDocument, meeting.source_document_id)
     if document is None or not document.file_path:
         raise _not_found(NO_AUDIO)
@@ -48,13 +49,21 @@ def _audio_file(session: Session, meeting: Meeting) -> Path:
     path = (root / document.file_path).resolve()
     if not path.is_relative_to(root) or not path.is_file():
         raise _not_found(NO_AUDIO)
+    return path, source_kind_of_path(document.file_path)
+
+
+def _audio_file(session: Session, meeting: Meeting) -> Path:
+    """음성 재생용 원본 경로. 자료 파일(txt)로 등록된 회의록은 음성이 없어 404(기존 "음성 파일이 없습니다")."""
+    path, kind = _source_file(session, meeting)
+    if kind != SOURCE_AUDIO:
+        raise _not_found(NO_AUDIO)
     return path
 
 
 def audio_file_or_none(session: Session, meeting: Meeting) -> Path | None:
-    """보관된 음성 원본 경로(없거나 저장 폴더 밖이면 None). 재처리가 같은 판정을 쓴다."""
+    """보관된 원본 경로(음성 또는 자료 파일 txt. 없거나 저장 폴더 밖이면 None). 재처리가 같은 판정을 쓴다."""
     try:
-        return _audio_file(session, meeting)
+        return _source_file(session, meeting)[0]
     except HTTPException:
         return None
 

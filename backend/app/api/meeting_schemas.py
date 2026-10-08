@@ -161,6 +161,9 @@ class MeetingDetail(CamelModel):
     # 회의 유형 코드(regular·irregular·project·external·other)와 연결된 프로젝트(추가 필드). 분류 기록이 없으면(미지정) None
     meeting_type: str | None = None
     project: ProjectRef | None = None
+    # 자료 종류(추가 필드): audio(음성 파일) | transcript_txt(자료 파일 txt, STT 없음). 기존 회의록은 audio. hasAudio 는 재생할 음성이 있는지
+    source_kind: str = "audio"
+    has_audio: bool = True
     # 가장 최근 처리 작업 정보(추가 필드). 작업이 없으면 None
     processing: ProcessingOut | None = None
     # 이 사용자가 이 회의록에서 지금 할 수 있는 동작(추가 필드, app/auth/actions.py). 화면 표시용이며 거부 판정은 각 API 가 한다

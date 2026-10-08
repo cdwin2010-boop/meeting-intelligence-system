@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # 수정 회의록 업로드(엑셀) 상한: 파일 크기(KB)와 업무 행 수
     update_max_file_kb: int = 2048
     update_max_rows: int = 1000
+    # 자료 파일(txt) 등록(작업 73-1): 파일 크기 상한(바이트)과 글자 수 상한. 넘으면 422
+    transcript_upload_max_bytes: int = Field(default=2 * 1024 * 1024, ge=1)
+    transcript_max_chars: int = Field(default=300000, ge=1)
     # 회의 일시를 현지 시각으로 바꿀 때 쓰는 시간대(추출기의 날짜·요일 기준)
     app_timezone: str = "Asia/Seoul"
 

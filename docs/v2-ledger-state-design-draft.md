@@ -938,3 +938,12 @@ A·B·C·D는 팀장 회신 2026-10-01로 [확정]됐다(부록 B). 각 표에�
 - **설정**: `WORKLOAD_SNAPSHOT_ENABLED`(기본 true), `WORKLOAD_SNAPSHOT_TIME`(기본 00:10), `WORKLOAD_OVERLOAD_THRESHOLD`(기본 5, 진행 중+지연이 이 값 이상이면 `overloaded`), `WORKLOAD_URGENT_MAX`(기본 50).
 - **수동 도구**: `python scripts/run_workload_snapshot.py --tenant "고객사A" [--date YYYY-MM-DD] [--apply]`. 기본 dry-run(저장하지 않고 건수 요약만), `--apply` 일 때만 저장.
 - **아직 하지 않은 것**: 기간 선택, 개인 간 순위·점수화, 다운로드, 조직 관리 화면.
+
+### D-26 자료 파일(txt) 등록 [구현 기준, 작업 73-1]
+- **입력**: `POST /api/meetings/upload` 에 선택 입력 `sourceKind`(`audio` 기본, `transcript_txt`)를 추가했다. `transcript_txt` 인데 확장자가 `.txt` 가 아니면 422, 알 수 없는 값도 422. `audio`(또는 생략)로 `.txt` 를 올리면 기존대로 415(허용 음성 확장자에 txt 가 없다).
+- **검증(422, 업로드 때 바로)**: 크기 `TRANSCRIPT_UPLOAD_MAX_BYTES`(기본 2MB), 인코딩(UTF-8 BOM 허용 → 실패하면 CP949 → "txt 파일의 문자 인코딩을 읽을 수 없습니다"), 빈 파일·공백뿐, NUL 바이트(바이너리), 글자 수 `TRANSCRIPT_MAX_CHARS`(기본 300000). 전사 본문은 로그·오류 문구·사건에 넣지 않는다. 저장은 `UPLOAD_DIR/{tenant_id}/{uuid}.txt`.
+- **해석 규칙**(`app/pipeline/transcript_text.py`): `[mm:ss] 화자N: 내용`·`[hh:mm:ss] 이름: 내용`은 `[hh:mm:ss] 화자: 내용` 줄로 맞춰 저장한다. 시각 없는 `화자N: 내용`·`이름: 내용`도 읽는다(시각 없는 줄의 라벨은 공백·문장부호 없는 짧은 이름 또는 "화자 N"만 인정). 라벨 없는 줄은 직전 발언의 연속, 첫 줄부터 라벨이 없으면 `화자1`. 시각이 없는 줄이 있으면 구간(segments, 화자만·시각 null)을 함께 저장해 화자 목록이 만들어진다. 시각이 하나도 없으면 업무의 근거 시각은 null(엔진이 준 시각은 버린다).
+- **파이프라인 차이**: STT 단계만 건너뛴다(저장 파일 확장자가 `.txt` 이면 올린 전사문을 읽음). 전사문은 `transcripts.stt_provider = "자료 파일(STT 없음)"` 로 저장, 5개 항목·업무 추출·근거 시각 산정·자동 확정 기간·상태 전이는 음성과 같다. 회의록 5개 항목의 생성 엔진(`meeting_minutes.engine`)은 추출기(STT_PROVIDER)를 따른다. 재처리는 저장된 전사문(없으면 보관된 txt)으로 추출 단계만 다시 한다.
+- **자료 종류 판별**: 새 표 없이 원천 문서의 저장 파일 확장자로 판별한다(`services/source_kind.py`). 기존 회의록은 모두 audio. 마이그레이션 없음.
+- **응답**: 회의록 상세에 `sourceKind`(audio|transcript_txt)·`hasAudio` 추가. 자료 파일 회의록의 `GET /audio-url` 은 404("음성 파일이 없습니다"). `meeting.created` 사건 payload 에는 txt 일 때만 `sourceKind` 를 더한다.
+- **아직 하지 않은 것**: 엑셀 자료 등록, 워드·pdf 등 다른 형식, 시각 없는 전사문의 화자 표시 이름 치환(원문 줄머리 치환은 시각 표기가 있는 줄만).

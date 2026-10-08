@@ -9,6 +9,7 @@
 """
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -27,6 +28,9 @@ from app.services.mail import queue_immediate_new_minutes
 from app.services.notices import create_confirm_notices
 from app.services.reprocess import recompute_auto_confirm_after_reprocess
 from app.pipeline.extractor import ActionItemCandidate, ExtractionResult, Extractor, FakeExtractor, make_gemini_extractor
+from app.services.source_kind import SOURCE_TRANSCRIPT_TXT, TRANSCRIPT_TXT_ENGINE, source_kind_of_path
+from app.pipeline.transcript_text import has_timestamps
+from app.services.transcript_source import read_source_transcript
 from app.pipeline.stt import FakeStt, SttEngine, TranscriptResult, as_transcript_result, is_no_speech, make_gemini_stt
 
 log = logging.getLogger("app.processing")
@@ -100,7 +104,7 @@ def _start(factory: sessionmaker, job_id: int) -> dict | None:
         document = session.get(SourceDocument, meeting.source_document_id)
         _event(session, job, "job", job.id, "job.started", attempt=job.attempts)
         session.commit()
-        return {"file_path": document.file_path or "", "held_at": meeting.held_at}
+        return {"file_path": document.file_path or "", "held_at": meeting.held_at, "meeting_id": meeting.id}
 
 
 def _save_transcript(factory: sessionmaker, job_id: int, result: TranscriptResult, provider: str) -> None:
@@ -238,14 +242,19 @@ def process_meeting(
         audio_path = Path(settings.upload_dir) / started["file_path"]
         if not started["file_path"] or not audio_path.is_file():
             raise FileNotFoundError("uploaded audio is missing")
-        mime_type = AUDIO_MIME_TYPES.get(audio_path.suffix.lower().lstrip("."), "application/octet-stream")
-
-        stt = (stt_factory or default_stt)()
-        try:
-            stt_result = as_transcript_result(stt.transcribe(audio_path, mime_type))
-        finally:
-            stt.release()
-        provider = getattr(stt, "provider_name", None) or settings.stt_provider
+        if source_kind_of_path(started["file_path"]) == SOURCE_TRANSCRIPT_TXT:
+            # 자료 파일(txt): STT 를 건너뛰고 올린 전사문을 쓴다. 이후 단계는 음성과 같다(생성 엔진은 추출기를 따른다)
+            stt_result = read_source_transcript(factory, started["meeting_id"], audio_path)
+            provider, engine = TRANSCRIPT_TXT_ENGINE, settings.stt_provider
+        else:
+            mime_type = AUDIO_MIME_TYPES.get(audio_path.suffix.lower().lstrip("."), "application/octet-stream")
+            stt = (stt_factory or default_stt)()
+            try:
+                stt_result = as_transcript_result(stt.transcribe(audio_path, mime_type))
+            finally:
+                stt.release()
+            provider = getattr(stt, "provider_name", None) or settings.stt_provider
+            engine = provider
 
         # 말소리 없음 판정·업무 추출보다 먼저 원문을 보존한다
         _save_transcript(factory, job_id, stt_result, provider)
@@ -260,12 +269,15 @@ def process_meeting(
         result = (extractor_factory or default_extractor)().extract(transcript, local_held_at)
         # 근거 시각은 Gemini 응답이 아니라 저장된 전사문과 인용문을 서버가 대조해 정한다(실패한 업무도 시각만 비우고 그대로 저장)
         items = apply_evidence_times(result.items, stt_result.text, stt_result.segments)
+        if provider == TRANSCRIPT_TXT_ENGINE and not has_timestamps(stt_result):
+            # 시각 표기가 없는 자료 파일: 엔진이 준 시각은 근거가 없으므로 비운다("근거 위치 보기" 비활성)
+            items = [replace(item, evidence_start_sec=None) for item in items]
         provenance = {
             "extract_model": result.extract_model,
             "prompt_version": result.prompt_version,
             "extracted_at": result.extracted_at,
         }
-        _finish_completed(factory, job_id, items, provenance, minutes=result, engine=provider)
+        _finish_completed(factory, job_id, items, provenance, minutes=result, engine=engine)
         return "completed"
     except Exception as exc:  # noqa: BLE001 — 백그라운드 작업은 예외를 밖으로 던지지 않고 failed 로 기록한다
         code = error_code(exc)
