@@ -108,7 +108,7 @@ def save_speakers(
         .where(MeetingSpeaker.meeting_id == meeting.id)
     ).all()
     if previous_ranks and RANK_ORDER[account.rank] < max(RANK_ORDER.get(r, 0) for r in previous_ranks):
-        raise _http(status.HTTP_409_CONFLICT, "더 높은 직급이 정한 화자 매핑은 바꿀 수 없습니다")
+        raise _http(status.HTTP_409_CONFLICT, "더 높은 사용권한이 정한 화자 매핑은 바꿀 수 없습니다")
 
     # 입력 검사(하나라도 어긋나면 아무것도 저장하지 않음)
     known = set(transcript_labels(transcript))

@@ -9,7 +9,7 @@ from sqlalchemy import ColumnElement, and_, exists, false, or_, select, true
 from sqlalchemy.orm import Session, aliased
 
 from app.auth.scope import scoped
-from app.models import Account, ActionItem, Meeting, MeetingClassification, MeetingParticipant, Project, ProjectMember, SourceDocument
+from app.models import Account, AccountDepartment, ActionItem, Meeting, MeetingClassification, MeetingParticipant, Project, ProjectMember, SourceDocument
 from app.models.item_conditions import not_deleted_item
 
 # 고객사 전체 회의록을 볼 수 있는 직급
@@ -76,6 +76,7 @@ def get_visible_meeting(session: Session, account: Account, meeting_id: int) -> 
 #  - 관리자(manager)가 그 회의록의 "총괄"이면 회의록 확정과 모든 업무 수정·확정.
 #    총괄 = 회의록을 등록한 관리자. 담당자(staff)가 등록한 회의록이면 그 회의에 참석한 관리자가 총괄.
 #    추가로, 회의록이 연결된 활성 프로젝트의 총괄(role=lead)인 관리자도 그 회의록의 총괄
+#    또한 그 프로젝트를 등록한 부서의 부서장(작업 66-3c)도 같은 총괄(참여자 등록 여부·별도 총괄 유무와 무관)
 #  - 총괄이 아닌 관리자: 본인이 담당자인 업무만 수정·확정(회의록 확정은 불가)
 #  - 담당자(staff): 확정·수정 불가
 def registrant_id(session: Session, meeting: Meeting) -> int | None:
@@ -97,6 +98,23 @@ def is_project_lead_of_meeting(account: Account) -> ColumnElement[bool]:
     )
 
 
+def is_project_department_head_of_meeting(account: Account) -> ColumnElement[bool]:
+    """그 회의록이 연결된 활성 프로젝트를 등록한 부서(projects.department_id)의 부서장(account_departments 의 role="head")인가.
+    직급 조건(manager 이상)은 meeting_lead_condition 이 함께 건다. 부서장이 바뀌면 이 조회 결과가 곧바로 바뀐다."""
+    classification = aliased(MeetingClassification)
+    project = aliased(Project)
+    head = aliased(AccountDepartment)
+    return exists().where(
+        classification.meeting_id == Meeting.id,
+        project.id == classification.project_id,
+        project.status == "active",
+        project.tenant_id == account.tenant_id,
+        head.department_id == project.department_id,
+        head.account_id == account.id,
+        head.role == "head",
+    )
+
+
 def meeting_lead_condition(account: Account) -> ColumnElement[bool]:
     """Meeting 조회에 붙일 '이 관리자가 총괄' 조건(등록한 관리자, 또는 담당자 등록 회의록의 참석 관리자).
     총괄 규칙은 여기 한 곳에만 둔다(is_meeting_lead·할 일 목록이 함께 쓴다)."""
@@ -109,8 +127,12 @@ def meeting_lead_condition(account: Account) -> ColumnElement[bool]:
         registrant.id == document.registered_by,
         registrant.rank == "staff",
     )
-    # 프로젝트 총괄(작업 66-3b)은 추가 경로: 연결된 활성 프로젝트의 lead 이고 현재 직급이 manager 이상(위에서 확인)일 때만
-    return or_(is_registrant(account), and_(staff_registered, is_participant(account)), is_project_lead_of_meeting(account))
+    # 프로젝트 총괄(작업 66-3b)은 추가 경로: 연결된 활성 프로젝트의 lead 이고 현재 직급이 manager 이상(위에서 확인)일 때만.
+    # 부서장(작업 66-3c)도 같은 경로로 합친다: 등록 부서의 부서장이고 현재 직급이 manager 이상일 때
+    return or_(
+        is_registrant(account), and_(staff_registered, is_participant(account)),
+        is_project_lead_of_meeting(account), is_project_department_head_of_meeting(account),
+    )
 
 
 def can_confirm_condition(account: Account) -> ColumnElement[bool]:

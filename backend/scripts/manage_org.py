@@ -4,7 +4,7 @@
 사용법 (backend 폴더에서, 먼저 `alembic upgrade head`):
     python scripts/manage_org.py list --tenant "고객사A"
     python scripts/manage_org.py create-dept --tenant "고객사A" --name "개발팀" [--parent "본부"] [--executive] [--apply]
-    python scripts/manage_org.py set-head --tenant "고객사A" --dept "개발팀" --login-id kim [--apply]      # 기존 부서장은 부서원으로, 관리자 이상 직급만
+    python scripts/manage_org.py set-head --tenant "고객사A" --dept "개발팀" --login-id kim [--apply]      # 기존 부서장은 부서원으로, 관리자 이상 사용권한만
     python scripts/manage_org.py add-member --tenant "고객사A" --dept "개발팀" --login-id lee [--apply]
     python scripts/manage_org.py remove-member --tenant "고객사A" --dept "개발팀" --login-id lee [--apply]
 """

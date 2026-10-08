@@ -14,7 +14,7 @@ from app.auth.deps import has_rank
 from app.auth.locks import HOLDABLE_STATUSES, reject_if_locked
 from app.models import Account, ActionItem, Meeting, Project
 from app.models.closure import PHASES
-from app.services.projects import is_approver, is_project_lead
+from app.services.projects import can_change_lead, is_approver, is_project_lead
 from app.services.supersession import has_supersede_authority
 from app.services.reprocess import active_job_exists
 
@@ -132,7 +132,7 @@ def item_allowed_actions(
 def project_allowed_actions(session: Session, account: Account, project: Project) -> list[str]:
     """프로젝트 단위 허용 동작(PROJECT_ACTIONS 순서). 판정은 services/projects.py 의 기존 함수와 같은 규칙을 호출한다."""
     allowed = []
-    if project.status == "active" and (account.rank == "executive" or project.lead_account_id == account.id):
+    if project.status == "active" and can_change_lead(session, account, project):
         allowed.append(CHANGE_LEAD)
     if project.status == "active" and is_project_lead(session, account, project):
         allowed.append(MANAGE_MEMBERS)

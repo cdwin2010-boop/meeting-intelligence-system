@@ -228,7 +228,7 @@ class ChangeLeadBody(ReasonBody):
 def change_lead(
     project_id: int, body: ChangeLeadBody, account: Account = Depends(get_current_account), session: Session = Depends(get_session)
 ) -> ProjectDetail:
-    """총괄 변경(현재 총괄 본인 또는 지시자). 사유 필수. 이전 총괄은 manager 참여자로 남는다. 이미 그 계정이 총괄이면 200(변경 없음)."""
+    """총괄 변경(현재 총괄 본인, 지시자, 등록 부서의 부서장). 사유 필수. 이전 총괄은 manager 참여자로 남는다. 이미 그 계정이 총괄이면 200(변경 없음)."""
     project = _visible_or_404(session, account, project_id)
     svc.change_project_lead(session, account, project, body.new_lead_id, body.reason)
     session.commit()

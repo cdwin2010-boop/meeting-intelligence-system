@@ -105,7 +105,7 @@ def register_project(
 
     if mine.role == "head":
         if not _is_manager_rank(account):
-            raise _http(status.HTTP_409_CONFLICT, "프로젝트 총괄은 관리자 이상 직급이어야 합니다")
+            raise _http(status.HTTP_409_CONFLICT, "프로젝트 총괄은 관리자 이상 사용권한이어야 합니다")
         state, lead_id, my_role_name = "active", account.id, "lead"
     else:
         if department_head(session, department.id) is None:
@@ -143,7 +143,7 @@ def approve_project(session: Session, account: Account, project: Project) -> boo
     if project.status != "pending_approval":
         raise _http(status.HTTP_409_CONFLICT, "승인 대기 중인 프로젝트만 승인할 수 있습니다")
     if not _is_manager_rank(account):
-        raise _http(status.HTTP_409_CONFLICT, "프로젝트 총괄은 관리자 이상 직급이어야 합니다")
+        raise _http(status.HTTP_409_CONFLICT, "프로젝트 총괄은 관리자 이상 사용권한이어야 합니다")
     now = utcnow()
     project.status, project.lead_account_id, project.decided_by, project.decided_at = "active", account.id, account.id, now
     row = member_row(session, project.id, account.id)
@@ -179,7 +179,7 @@ def add_project_member(session: Session, account: Account, project: Project, tar
     targets = _valid_member_accounts(session, account, [target_id])
     target = targets[0]
     if role in MANAGER_ROLES and not _is_manager_rank(target):
-        raise _http(status.HTTP_409_CONFLICT, "총괄·관리자 역할은 관리자 이상 직급만 맡을 수 있습니다")
+        raise _http(status.HTTP_409_CONFLICT, "총괄·관리자 역할은 관리자 이상 사용권한만 맡을 수 있습니다")
     row = member_row(session, project.id, target.id)
     if row is None:
         session.add(ProjectMember(project_id=project.id, account_id=target.id, role=role, added_by=account.id))
@@ -210,16 +210,23 @@ def remove_project_member(session: Session, account: Account, project: Project, 
 
 
 # ---------------- 총괄 변경 ----------------
+def can_change_lead(session: Session, account: Account, project: Project) -> bool:
+    """총괄 변경 권한: 지시자, 현재 총괄 본인, 또는 등록 부서의 부서장(사용권한 manager 이상, 작업 66-3c). 허용 동작(change_lead)도 이 함수를 쓴다."""
+    if account.rank == "executive" or project.lead_account_id == account.id:
+        return True
+    return _is_manager_rank(account) and is_approver(session, account, project)
+
+
 def change_project_lead(session: Session, account: Account, project: Project, new_lead_id: int, reason: str) -> bool:
-    """총괄을 바꾼다(현재 총괄 본인 또는 지시자만). 이미 그 계정이 총괄이면 변경 없이 False.
+    """총괄을 바꾼다(현재 총괄 본인, 지시자, 등록 부서의 부서장만). 이미 그 계정이 총괄이면 변경 없이 False.
     새 총괄은 lead 로 만들고(참여자가 아니면 추가) 이전 총괄은 manager 참여자로 남긴다. 이미 확정된 건은 건드리지 않는다. 커밋은 호출부."""
-    if not (account.rank == "executive" or project.lead_account_id == account.id):
-        raise _http(status.HTTP_403_FORBIDDEN, "현재 총괄 또는 지시자만 총괄을 바꿀 수 있습니다")
+    if not can_change_lead(session, account, project):
+        raise _http(status.HTTP_403_FORBIDDEN, "현재 총괄, 지시자 또는 등록 부서의 부서장만 총괄을 바꿀 수 있습니다")
     if project.status != "active":
         raise _http(status.HTTP_409_CONFLICT, "진행 중인 프로젝트만 총괄을 바꿀 수 있습니다")
     target = _valid_member_accounts(session, account, [new_lead_id])[0]
     if not _is_manager_rank(target):
-        raise _http(status.HTTP_409_CONFLICT, "프로젝트 총괄은 관리자 이상 직급이어야 합니다")
+        raise _http(status.HTTP_409_CONFLICT, "프로젝트 총괄은 관리자 이상 사용권한이어야 합니다")
     previous_id = project.lead_account_id
     if previous_id == target.id:
         return False

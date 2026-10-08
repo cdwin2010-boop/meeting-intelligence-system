@@ -901,3 +901,10 @@ A·B·C·D는 팀장 회신 2026-10-01로 [확정]됐다(부록 B). 각 표에�
 - **응답**: 회의록 상세의 업무 항목에 `supersededBy`(대체된 업무)·`supersedes`(대체하는 업무, 목록) 추가(`itemId`·`meetingId`·`meetingTitle`, 상대 회의록을 열람할 수 없으면 제목 null).
 - **허용 동작**(업무 단위): `find_similar_items`·`request_supersede`(프로젝트 회의록의 열려 있고 잠기지 않은 업무, 열람 가능자), `supersede_item`(위에 더해 프로젝트 총괄·지시자). 대체된 업무에는 `request_change` 만 나온다.
 - **아직 하지 않은 것**: 화면(프론트 동작 이름 상수·E2E 헬퍼 포함), pgvector 의미 검색, 실적 집계 규칙.
+
+### D-23 부서장의 프로젝트 총괄 기능 [구현 기준, 작업 66-3c]
+- **권한 범위**: 부서장(`account_departments` 의 role="head")은 본인 부서가 등록한 프로젝트(`projects.department_id`)에 연결된 회의록(`meeting_classifications`)에서 프로젝트 총괄과 같은 권한 전체를 가진다. 판정은 `auth/access.py` 의 `meeting_lead_condition` 에 `is_project_department_head_of_meeting` 한 조건을 더한 것이라 확정·업무 확정·보류·재개·직권 종료·삭제·5개 항목 수정·업로드 갱신·수기 업무 추가·재처리·화자 지정·할 일 목록·허용 동작이 수정 없이 따른다.
+- **적용 조건**: 프로젝트 active, 부서장의 현재 사용권한 manager 이상(`meeting_lead_condition` 의 관리자 확인), 같은 고객사. 프로젝트 참여자 등록이나 별도 총괄 유무와 무관하고 동시에 가진다. 다른 부서·대기·반려·미연결 회의록에는 없다. 부서장이 바뀌면 조회 결과가 바로 바뀌어 새 부서장에게 넘어간다. 지시자 우선 규칙은 그대로.
+- **총괄 변경 권한**: `POST /api/projects/{id}/change-lead` 는 현재 총괄 본인·지시자에 더해 등록 부서의 부서장(사용권한 manager 이상)이 할 수 있다(`services/projects.py` 의 `can_change_lead`, 프로젝트 상세 `change_lead` 허용 동작도 같은 함수). 새 총괄 검증(같은 고객사 활성 계정, 사용권한 manager 이상, 사유 필수)은 그대로.
+- **용어**: 서버 문구에서 지시자·관리자·담당자 값을 가리키는 "직급"을 "사용권한"으로 고쳤다(오류 메시지 7곳(관리 스크립트 부서장 지정 오류 포함)).
+- **바꾸지 않은 것**: 프로젝트 참여자 관리(`manage_members`, 총괄만), 회의록 열람 규칙, 승인·반려 권한, 업무 대체 권한(`has_supersede_authority`, 프로젝트 총괄·지시자), 응답 형식, 표·마이그레이션, 프론트.

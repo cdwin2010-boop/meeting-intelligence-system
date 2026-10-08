@@ -200,8 +200,9 @@ def test_lead_changes_lead_old_lead_stays_as_manager(env, team, project):
     mid, _ = fresh(env, team, project)
     assert call(env, "GET", team["head"], f"/api/projects/{project}").status_code == 200
     assert call(env, "GET", team["head"], f"/api/meetings/{mid}").status_code == 200
-    # 변경 직후: 새 총괄은 권한을 갖고 이전 총괄은 잃는다
-    assert call(env, "POST", team["head"], f"/api/meetings/{mid}/confirm").status_code == 403
+    # 변경 직후: 새 총괄은 권한을 갖는다. 이전 총괄(head)은 개발팀 부서장이라 작업 66-3c 정책으로 부서장 권한이 남는다
+    assert call(env, "POST", team["head"], f"/api/meetings/{mid}/confirm").status_code == 200
+    mid, _ = fresh(env, team, project)
     assert call(env, "POST", team["mgr"], f"/api/meetings/{mid}/confirm").status_code == 200
 
 

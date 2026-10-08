@@ -91,7 +91,7 @@ def set_head(session: Session, department: Department, account: Account, actor_i
     """부서장으로 지정한다(기존 부서장은 부서원으로 내림, 소속이 없으면 함께 추가). 이미 부서장이면 False."""
     _check_account(department, account)
     if RANK_ORDER.get(account.rank, -1) < RANK_ORDER[HEAD_MIN_RANK]:
-        raise OrgError("부서장은 관리자 이상 직급 계정만 될 수 있습니다.")
+        raise OrgError("부서장은 관리자 이상 사용권한 계정만 될 수 있습니다.")
     rows = session.scalars(
         select(AccountDepartment).where(AccountDepartment.department_id == department.id, AccountDepartment.role == "head")
     ).all()

@@ -259,7 +259,7 @@ def resolve_change_request(
         # 상위 직급 우선: 결정 당시 직급(payload.rank)보다 낮으면 덮어쓸 수 없다
         previous_rank = previous.payload.get("rank", "staff")
         if RANK_ORDER[account.rank] < RANK_ORDER.get(previous_rank, 0):
-            raise _http(status.HTTP_409_CONFLICT, "더 높은 직급이 이미 결정한 요청입니다")
+            raise _http(status.HTTP_409_CONFLICT, "더 높은 사용권한이 이미 결정한 요청입니다")
 
     if body.decision == "accepted" and request.payload.get("kind") == "supersede":
         # 대체 요청 수락: 같은 트랜잭션에서 대체를 실행한다(권한 없으면 403, 조건이 안 맞으면 409 로 거부되고 요청은 대기로 남는다).
