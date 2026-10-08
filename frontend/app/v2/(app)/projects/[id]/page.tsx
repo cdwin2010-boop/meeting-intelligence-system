@@ -364,7 +364,7 @@ export default function V2ProjectDetailPage() {
             <thead>
               <tr className="h-10 border-b border-mn-border text-left text-xs text-mn-muted">
                 <th scope="col" className="px-3 font-medium">이름</th>
-                <th scope="col" className="px-3 font-medium">직급</th>
+                <th scope="col" className="px-3 font-medium">사용권한</th>
                 <th scope="col" className="px-3 font-medium">역할</th>
                 {canManage ? <th scope="col" className="px-3 font-medium">동작</th> : null}
               </tr>

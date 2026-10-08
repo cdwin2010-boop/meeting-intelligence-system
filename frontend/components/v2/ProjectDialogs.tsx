@@ -99,7 +99,7 @@ export function AddMemberDialog({ project, open, onClose, onSaved }: AddMemberDi
       open={open}
       onClose={onClose}
       title="참여자 추가"
-      description="프로젝트에 참여할 사람과 역할을 고르세요. 관리자 역할은 관리자 이상 직급만 맡을 수 있습니다."
+      description="프로젝트에 참여할 사람과 역할을 고르세요. 관리자 역할은 관리자 이상 사용권한만 맡을 수 있습니다."
       confirmLabel="참여자 추가"
       cancelLabel="취소"
       initialFocus="cancel"
@@ -221,7 +221,7 @@ export function ChangeLeadDialog({ project, open, onClose, onSaved }: ChangeLead
       open={open}
       onClose={onClose}
       title="총괄 변경"
-      description="새 총괄은 관리자 이상 직급이어야 합니다. 이전 총괄은 관리자 역할로 프로젝트에 남고, 이미 확정된 건은 그대로입니다."
+      description="새 총괄은 관리자 이상 사용권한이어야 합니다. 이전 총괄은 관리자 역할로 프로젝트에 남고, 이미 확정된 건은 그대로입니다."
       confirmLabel="총괄 변경"
       cancelLabel="취소"
       initialFocus="cancel"

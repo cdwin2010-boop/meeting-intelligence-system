@@ -242,7 +242,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           `md:static md:z-auto md:flex md:h-auto md:overflow-visible md:border-l md:bg-transparent ${folded ? "md:w-12 md:items-center md:px-0" : "md:w-[248px]"}`,
         ].join(" ")}
       >
-        <div className={`flex items-center justify-between gap-2 ${folded ? "hidden" : ""}`}>
+        {/* 접힌 상태에서는 아예 그리지 않는다("flex" 와 "hidden" 이 함께 있으면 flex 가 이겨 글자가 남았다) */}
+        {folded ? null : (
+        <div className="flex items-center justify-between gap-2">
           <Link href={V2_HOME} className="mn-focus rounded-mn-control text-base font-semibold tracking-tight">
             회의록 추적
           </Link>
@@ -252,6 +254,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Button>
           ) : null}
         </div>
+        )}
         {folded ? (
           <>
             {activeCount > 0 ? (
