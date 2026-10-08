@@ -60,6 +60,8 @@ import { useChangeRequests } from "@/components/v2/ChangeRequestHistory";
 import { MeetingActions, type MeetingActionKind } from "@/components/v2/MeetingActions";
 import { MeetingConfirmButton } from "@/components/v2/MeetingConfirmButton";
 import { ReasonDialog, type ReasonAction } from "@/components/v2/ReasonDialog";
+import { SimilarItemsDialog } from "@/components/v2/SimilarItemsDialog";
+import { NO_ACCESS_MEETING_LABEL } from "@/lib/v2/supersede";
 import { CLOSURE_KIND_OPTION_LABEL, CLOSURE_KINDS, closedChipLabel, type ClosureKind } from "@/lib/v2/closure-kinds";
 import { SpeakerDialog } from "@/components/v2/SpeakerDialog";
 import { ApiError, isAbortError, type MissingField } from "@/lib/v2/errors";
@@ -353,9 +355,56 @@ interface LedgerTableProps {
   allowed: readonly string[] | undefined;
   onCloseItem: (item: ActionItem) => void;
   onDeleteItem: (item: ActionItem) => void;
+  /** "유사 업무 검색" 팝업을 연다(find_similar_items) */
+  onFindSimilar: (item: ActionItem) => void;
 }
 
-function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, onSeek, onViewTranscript, onAddItem, onRequestChange, allowed, onCloseItem, onDeleteItem }: LedgerTableProps) {
+/** 대체 연결 표시: 대체된 업무는 "대체한 업무" 링크, 대체하는 업무는 "대체한 과거 업무 N건"과 항목별 링크(상대 회의록을 열람할 수 없으면 링크 없이 안내) */
+function SupersessionInfo({ item }: { item: ActionItem }) {
+  const by = item.supersededBy;
+  const olds = item.supersedes ?? [];
+  if (!by && olds.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-col gap-1 text-xs text-mn-muted">
+      {by ? (
+        <span>
+          대체한 업무:{" "}
+          {by.meetingTitle === null ? (
+            <span>{NO_ACCESS_MEETING_LABEL}</span>
+          ) : (
+            <Link href={`${V2_MEETINGS_PATH}/${by.meetingId}`} className="mn-focus rounded-mn-control underline underline-offset-2 hover:text-mn-text">
+              {by.meetingTitle || "(제목 없음)"}
+            </Link>
+          )}
+        </span>
+      ) : null}
+      {olds.length > 0 ? (
+        <div>
+          대체한 과거 업무 <span className="font-mn-mono">{olds.length}</span>건
+          <ul className="mt-1 flex flex-col gap-1">
+            {olds.map((old) => (
+              <li key={old.itemId}>
+                {old.meetingTitle === null ? (
+                  <span>{NO_ACCESS_MEETING_LABEL}</span>
+                ) : (
+                  <Link
+                    href={`${V2_MEETINGS_PATH}/${old.meetingId}`}
+                    aria-label={`대체한 과거 업무 보기: ${old.meetingTitle || "제목 없음"}`}
+                    className="mn-focus rounded-mn-control underline underline-offset-2 hover:text-mn-text"
+                  >
+                    {old.meetingTitle || "(제목 없음)"}
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, onSeek, onViewTranscript, onAddItem, onRequestChange, allowed, onCloseItem, onDeleteItem, onFindSimilar }: LedgerTableProps) {
   const needsCount = items.filter((item) => item.needsCompletion).length;
   // 업무 확정: 한 번에 한 건. 거부되면 서버 문구(보완 필요 409·권한 403 등)를 원장 위에 보여 준다
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
@@ -452,7 +501,11 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                 return (
                   <tr key={item.id} className="h-12 border-b border-mn-border align-middle last:border-b-0">
                     <td className="px-3">
-                      <StatusDot tone={status.tone} label={status.label} />
+                      {item.supersededBy ? (
+                        <span className="mn-chip mn-chip-superseded whitespace-nowrap">대체됨</span>
+                      ) : (
+                        <StatusDot tone={status.tone} label={status.label} />
+                      )}
                     </td>
                     <td className="px-3 py-3 [overflow-wrap:anywhere] break-keep">
                       {item.origin === "manual" ? (
@@ -461,6 +514,7 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                         </span>
                       ) : null}
                       {item.title || <span className="text-mn-muted">(업무명 없음)</span>}
+                      <SupersessionInfo item={item} />
                     </td>
                     <td className="px-3">
                       <span className="flex flex-wrap items-center justify-between gap-2">
@@ -531,6 +585,11 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                             onClick={() => onRequestChange(item)}
                           >
                             수정 요청
+                          </Button>
+                        ) : null}
+                        {can(item.allowedActions, ITEM_ACTION.findSimilarItems) ? (
+                          <Button size="sm" aria-label={`유사 업무 검색: ${item.title || "업무명 없음"}`} onClick={() => onFindSimilar(item)}>
+                            유사 업무 검색
                           </Button>
                         ) : null}
                         {can(item.allowedActions, ITEM_ACTION.closeItem) ? (
@@ -804,6 +863,8 @@ export default function V2MeetingDetailPage() {
   const [speakerNotice, setSpeakerNotice] = useState<string | null>(null);
   const [assigneeTarget, setAssigneeTarget] = useState<ActionItem | null>(null);
   const [changeTarget, setChangeTarget] = useState<ChangeRequestTarget | null>(null);
+  // 유사 업무 검색 팝업의 기준 업무
+  const [similarTarget, setSimilarTarget] = useState<ActionItem | null>(null);
   const [seek, setSeek] = useState<SeekRequest | null>(null);
   // 5개 항목 수정·변경 이력·업로드 갱신·업무 추가 팝업, 그 결과 안내
   const [minutesOpen, setMinutesOpen] = useState(false);
@@ -1194,6 +1255,7 @@ export default function V2MeetingDetailPage() {
         allowed={meeting.allowedActions}
         onCloseItem={openItemClose}
         onDeleteItem={openItemDelete}
+        onFindSimilar={setSimilarTarget}
       />
       <MinutesDialog meetingId={meeting.id} open={minutesOpen} minutes={meeting.minutes} onClose={() => setMinutesOpen(false)} onSaved={onMinutesSaved} />
       <HistoryDialog meetingId={meeting.id} open={historyOpen} onClose={() => setHistoryOpen(false)} />
@@ -1218,6 +1280,16 @@ export default function V2MeetingDetailPage() {
         }}
       />
       <ReasonDialog action={reasonAction} onClose={() => setReasonAction(null)} onDone={refreshAfterAction} />
+      <SimilarItemsDialog
+        meetingId={meeting.id}
+        item={similarTarget}
+        onClose={() => setSimilarTarget(null)}
+        onCompleted={async (message) => {
+          setActionNotice({ tone: "ready", text: `${similarTarget?.title || "(업무명 없음)"}: ${message}` });
+          await refreshAfterAction();
+          await changeRequests.reload();
+        }}
+      />
       <AssigneeDialog item={assigneeTarget} onClose={() => setAssigneeTarget(null)} onSaved={onAssigneeSaved} />
       <SpeakerDialog
         meetingId={meeting.id}

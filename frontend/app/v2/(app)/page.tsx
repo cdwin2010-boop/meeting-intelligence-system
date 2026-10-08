@@ -110,9 +110,13 @@ function ChangeRequestRow({ request }: { request: PendingChangeRequest }) {
       >
         <div className="min-w-0">
           <p className="truncate font-medium">{request.meetingTitle || "(제목 없음)"}</p>
-          <p className="mt-1 truncate text-sm">{request.commentPreview}</p>
+          <p className="mt-1 truncate text-sm">
+            {request.kind === "supersede" ? <><Badge>대체 요청</Badge> </> : null}
+            {request.commentPreview}
+          </p>
           <p className="mt-1 text-xs text-mn-muted">
-            {target} · {request.requester?.name ?? "알 수 없음"} · <Mono>{formatDateTime(request.createdAt)}</Mono>
+            {target}
+            {request.kind === "supersede" ? <> · 대체될 업무 <Mono>#{request.supersedesItemId ?? "?"}</Mono></> : null} · {request.requester?.name ?? "알 수 없음"} · <Mono>{formatDateTime(request.createdAt)}</Mono>
           </p>
         </div>
         <span className="shrink-0">

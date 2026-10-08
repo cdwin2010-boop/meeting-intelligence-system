@@ -4,19 +4,21 @@
  * 상세 객체를 테스트가 바꾸면(업무 확정 등) 응답을 낼 때마다 다시 계산하므로 "동작 직후 서버 기준으로 갱신"도 흉내 낸다.
  */
 type Account = { id: number; rank: string };
-type Item = { id?: number; status?: string; assignee?: { id: number } | null } & Record<string, unknown>;
+type Item = { id?: number; status?: string; assignee?: { id: number } | null; supersededBy?: unknown } & Record<string, unknown>;
 type Detail = { status?: string; phase?: string; actionItems?: Item[] } & Record<string, unknown>;
 
 export interface AllowOptions {
   /** 관리자일 때 이 회의록의 총괄인지(기본 true). false 면 "총괄 아닌 관리자" */
   lead?: boolean;
+  /** 유사 업무 대체(71-1): "request"=검색·대체 요청만(참여자), "direct"=직권 대체까지(프로젝트 총괄·부서장·지시자). 없으면 대체 동작이 나오지 않는다 */
+  supersede?: "request" | "direct";
 }
 
 const MEETING_ORDER = [
   "confirm_meeting", "hold_meeting", "resume_meeting", "end_meeting", "delete_meeting", "edit_minutes", "upload_update", "add_item",
   "edit_speakers", "reprocess_meeting", "resolve_change_request", "request_change", "download_excel", "view_history",
 ];
-const ITEM_ORDER = ["confirm_item", "close_item", "delete_item", "set_assignee", "set_due", "request_change"];
+const ITEM_ORDER = ["confirm_item", "close_item", "delete_item", "set_assignee", "set_due", "request_change", "find_similar_items", "request_supersede", "supersede_item"];
 
 const order = (names: string[], all: string[]) => all.filter((n) => names.includes(n));
 
@@ -43,6 +45,8 @@ export function meetingActions(detail: Detail, account: Account, options: AllowO
 
 export function itemActions(item: Item, detail: Detail, account: Account, options: AllowOptions = {}): string[] {
   if (item.status === "deleted") return [];
+  // 대체된 업무에는 수정 요청 외 동작이 나오지 않는다
+  if (item.supersededBy) return ["request_change"];
   const lead = account.rank === "executive" || (account.rank === "manager" && options.lead !== false);
   const locked = (detail.phase ?? "active") !== "active";
   const out = ["request_change"];
@@ -54,6 +58,10 @@ export function itemActions(item: Item, detail: Detail, account: Account, option
       if (item.status === "pending" || item.status === "confirmed") out.push("set_assignee", "set_due");
     }
     if (lead) out.push("delete_item");
+    if (options.supersede && (item.status === "pending" || item.status === "confirmed")) {
+      out.push("find_similar_items", "request_supersede");
+      if (options.supersede === "direct") out.push("supersede_item");
+    }
   }
   return order(out, ITEM_ORDER);
 }

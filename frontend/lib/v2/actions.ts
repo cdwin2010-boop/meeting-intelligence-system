@@ -30,6 +30,9 @@ export const ITEM_ACTION = {
   setAssignee: "set_assignee",
   setDue: "set_due",
   requestChange: "request_change",
+  findSimilarItems: "find_similar_items",
+  requestSupersede: "request_supersede",
+  supersedeItem: "supersede_item",
 } as const;
 
 /** 프로젝트 단위 동작(프로젝트 상세 응답의 allowedActions). 회의록·업무 동작 상수와 섞지 않는다 */

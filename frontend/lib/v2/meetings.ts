@@ -3,6 +3,7 @@
  * 열람 권한은 서버가 판정한다(관리자 이상은 고객사 전체, 담당자는 참석·담당·등록한 회의록만).
  */
 import type { ClosureKind } from "@/lib/v2/closure-kinds";
+import type { SupersessionRef } from "@/lib/v2/supersede";
 import { request } from "./http";
 import type { MissingField } from "./errors";
 import type { ConfirmKind } from "./todos";
@@ -72,6 +73,10 @@ export interface ActionItem {
   closureKind?: ClosureKind | null;
   /** 업무 출처(추가 필드): ai(AI 추출) | manual(수기·업로드 직권 등록). 없으면 ai */
   origin?: "ai" | "manual";
+  /** 대체된 업무면 대체한 업무(상대 회의록을 열람할 수 없으면 meetingTitle 이 null). 없으면 null/undefined */
+  supersededBy?: SupersessionRef | null;
+  /** 이 업무가 대체한 과거 업무들 */
+  supersedes?: SupersessionRef[] | null;
   /** 이 사용자가 이 업무에서 지금 할 수 있는 동작(상세 응답에서만 채워지고 다른 응답은 null). lib/v2/actions.ts 의 can() 으로 판정 */
   allowedActions?: string[] | null;
 }
@@ -208,6 +213,10 @@ export interface ChangeRequest {
   requester: AccountRef | null;
   comment: string;
   itemId: number | null;
+  /** 요청 종류: edit(수정, 기본) | supersede(대체 요청). 필드가 없으면 edit */
+  kind?: "edit" | "supersede";
+  /** 대체 요청이면 대체될 과거 업무 id */
+  supersedesItemId?: number | null;
   createdAt: string;
   resolution: { decision: "accepted" | "rejected"; reason: string | null; resolvedBy: AccountRef | null; resolvedAt: string } | null;
 }
@@ -223,7 +232,7 @@ export function listChangeRequests(id: number, signal?: AbortSignal): Promise<Ch
 /** POST /api/meetings/{id}/change-requests (201 {requestId}). 회의록을 볼 수 있으면 누구나. 다른 회의록 업무는 400 */
 export function createChangeRequest(
   id: number,
-  input: { comment: string; itemId: number | null },
+  input: { comment: string; itemId: number | null; kind?: "edit" | "supersede"; supersedesItemId?: number },
   signal?: AbortSignal,
 ): Promise<{ requestId: number }> {
   return request<{ requestId: number }>(`/meetings/${encodeURIComponent(String(id))}/change-requests`, {

@@ -101,12 +101,18 @@ export function ChangeRequestEntries({ list, label, onRetry, targetLabel, render
             <span className="text-mn-text">{req.requester?.name ?? "알 수 없음"}</span>
             <span className="font-mn-mono">{formatDateTime(req.createdAt)}</span>
             {targetLabel ? <Badge>{targetLabel(req.itemId)}</Badge> : null}
+            {req.kind === "supersede" ? <Badge>대체 요청</Badge> : null}
             {req.resolution ? (
               <Badge>{DECISION_LABEL[req.resolution.decision] ?? req.resolution.decision}</Badge>
             ) : (
               <Badge>해결 대기</Badge>
             )}
           </div>
+          {req.kind === "supersede" ? (
+            <p className="text-xs text-mn-muted">
+              대체될 업무 <span className="font-mn-mono">#{req.supersedesItemId ?? "?"}</span>
+            </p>
+          ) : null}
           <p className="whitespace-pre-wrap leading-6">{req.comment}</p>
           {req.resolution ? (
             <div aria-label="처리 정보" className="mt-1 flex flex-col gap-1 border-l border-mn-border pl-3">

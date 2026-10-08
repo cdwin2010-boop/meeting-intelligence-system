@@ -52,6 +52,9 @@ export interface PendingChangeRequest {
   /** null 이면 회의록 전체 */
   itemId: number | null;
   itemTitle: string | null;
+  /** 요청 종류: edit(기본) | supersede(대체 요청) */
+  kind?: "edit" | "supersede";
+  supersedesItemId?: number | null;
   requester: { id: number; name: string } | null;
   createdAt: string;
   /** 코멘트 앞부분(서버가 자름) */
