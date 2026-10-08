@@ -5,6 +5,7 @@
  *   저장소가 막히거나 값이 깨져도 오류 없이 "저장 없음"으로 동작한다.
  */
 import { MEETING_TYPES, type MeetingType } from "@/lib/v2/meeting-types";
+import { sourceKindOf, type SourceKind } from "@/lib/v2/source-kind";
 
 export const UPLOAD_PATH = "/v2/upload";
 export const UPLOAD_DRAFT_KEY = "mi.v2.uploadDraft";
@@ -30,6 +31,8 @@ export interface UploadDraft {
   time: string;
   participantIds: number[];
   meetingType: MeetingType | "";
+  /** 자료 종류(73-1). 이전 버전이 저장한 값에는 없으므로 읽을 때 audio 로 본다 */
+  sourceKind: SourceKind;
   savedAt: number;
 }
 
@@ -63,7 +66,7 @@ export function loadUploadDraft(): UploadDraft | null {
     if (!Array.isArray(v.participantIds) || !v.participantIds.every((id) => Number.isInteger(id))) return null;
     const meetingType = v.meetingType === "" || MEETING_TYPES.includes(v.meetingType as MeetingType) ? (v.meetingType as MeetingType | "") : null;
     if (meetingType === null) return null;
-    return { title: v.title, date: v.date, time: v.time, participantIds: v.participantIds, meetingType, savedAt: v.savedAt };
+    return { title: v.title, date: v.date, time: v.time, participantIds: v.participantIds, meetingType, sourceKind: sourceKindOf(v.sourceKind), savedAt: v.savedAt };
   } catch {
     return null;
   }

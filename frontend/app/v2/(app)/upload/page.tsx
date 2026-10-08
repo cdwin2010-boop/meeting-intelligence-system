@@ -22,6 +22,7 @@ import { useProcessing } from "@/components/v2/ProcessingProvider";
 import { isAbortError } from "@/lib/v2/errors";
 import type { MeetingType } from "@/lib/v2/meeting-types";
 import { uploadMeeting } from "@/lib/v2/meetings";
+import { isTranscriptTxtName, SOURCE_KIND_LABEL, SOURCE_KINDS, type SourceKind } from "@/lib/v2/source-kind";
 import { getProject } from "@/lib/v2/projects";
 import { clearUploadDraft, loadUploadDraft, saveUploadDraft, UPLOAD_PATH } from "@/lib/v2/upload-return";
 
@@ -77,6 +78,7 @@ function UploadForm() {
   const [time, setTime] = useState("");
   const [meetingType, setMeetingType] = useState<MeetingType | "">("");
   const [projectId, setProjectId] = useState("");
+  const [sourceKind, setSourceKind] = useState<SourceKind>("audio");
   const [participantIds, setParticipantIds] = useState<number[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -111,6 +113,7 @@ function UploadForm() {
         if (draft.time) setTime(draft.time);
         setParticipantIds(draft.participantIds);
         setMeetingType(draft.meetingType);
+        setSourceKind(draft.sourceKind);
         setRestoredNotice(true);
       }
       clearUploadDraft();
@@ -133,7 +136,7 @@ function UploadForm() {
 
   // 새 프로젝트 등록으로 떠나기 전에 입력값 저장(파일은 저장하지 않는다)
   function saveDraftForNewProject() {
-    saveUploadDraft({ title, date, time, participantIds, meetingType });
+    saveUploadDraft({ title, date, time, participantIds, meetingType, sourceKind });
   }
 
   // 화면을 떠나면 진행 중인 전송 취소
@@ -153,6 +156,15 @@ function UploadForm() {
     if (dropped) pickFile(dropped);
   }
 
+  // 자료 종류를 바꾸면 고른 파일을 비운다(종류마다 받는 파일이 다르다)
+  function pickSourceKind(next: SourceKind) {
+    if (next === sourceKind) return;
+    setSourceKind(next);
+    setFile(null);
+    setError(null);
+    setFormError(null);
+  }
+
   // 유형을 바꾸면 프로젝트 선택은 초기화한다(프로젝트 회의가 아니면 projectId 를 보내지 않는다)
   function pickType(next: MeetingType) {
     setMeetingType(next);
@@ -163,7 +175,11 @@ function UploadForm() {
   async function submit() {
     if (submittingRef.current) return;
     if (!file) {
-      setFormError("음성 파일을 선택하세요.");
+      setFormError(sourceKind === "transcript_txt" ? "자료 파일(txt)을 선택하세요." : "음성 파일을 선택하세요.");
+      return;
+    }
+    if (sourceKind === "transcript_txt" && !isTranscriptTxtName(file.name)) {
+      setFormError("자료 파일은 .txt 파일만 올릴 수 있습니다."); // 서버를 부르지 않는다
       return;
     }
     const heldAt = toOffsetIso(date, time);
@@ -195,6 +211,7 @@ function UploadForm() {
           participantIds,
           meetingType,
           projectId: meetingType === "project" ? Number(projectId) : undefined,
+          sourceKind,
         }, controller.signal);
       clearUploadDraft();
       refreshProcessing(); // 왼쪽 메뉴 처리 현황에 바로 나타나게 한다(같은 상태 저장소)
@@ -227,6 +244,44 @@ function UploadForm() {
           aria-label="회의록 올리기"
           className="flex flex-col gap-5 rounded-mn-card border border-mn-border bg-mn-surface p-6"
         >
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-2 text-sm font-medium">자료 종류</legend>
+            <div className="flex flex-wrap gap-2">
+              {SOURCE_KINDS.map((code) => {
+                const checked = sourceKind === code;
+                return (
+                  <label
+                    key={code}
+                    className={[
+                      "inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-mn-control border px-3 py-1 text-[13px]",
+                      "has-[:focus-visible]:[box-shadow:var(--mn-focus-ring)] has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50",
+                      checked ? "border-mn-accent bg-mn-elevated font-semibold text-mn-text" : "border-mn-control text-mn-muted hover:text-mn-text",
+                    ].join(" ")}
+                  >
+                    <input
+                      type="radio"
+                      name="sourceKind"
+                      value={code}
+                      checked={checked}
+                      disabled={submitting}
+                      onChange={() => pickSourceKind(code)}
+                      className="sr-only"
+                    />
+                    <span aria-hidden="true" className="font-mn-mono">
+                      {checked ? "●" : "○"}
+                    </span>
+                    {SOURCE_KIND_LABEL[code]}
+                  </label>
+                );
+              })}
+            </div>
+            {sourceKind === "transcript_txt" ? (
+              <p role="status" className="text-xs text-mn-text">
+                전사문(txt)을 올리면 음성 인식 없이 바로 업무를 추출합니다. 시각 표기가 없으면 "근거 위치 보기"는 쓸 수 없습니다.
+              </p>
+            ) : null}
+          </fieldset>
+
           {/* 파일: 끌어다 놓기 영역 + 공용 FilePicker(버튼·상태 글자·숨긴 입력) */}
           <div
             onDragOver={(event) => {
@@ -240,15 +295,15 @@ function UploadForm() {
               dragOver ? "border-mn-accent bg-mn-elevated" : "border-mn-control",
             ].join(" ")}
           >
-            <p className="text-sm font-medium">음성 파일을 끌어다 놓거나 선택하세요</p>
+            <p className="text-sm font-medium">{sourceKind === "transcript_txt" ? "자료 파일(txt)을 끌어다 놓거나 선택하세요" : "음성 파일을 끌어다 놓거나 선택하세요"}</p>
             <p id={fileHintId} className="text-xs text-mn-muted">
               허용 형식과 최대 용량은 서버 설정을 따르며, 벗어나면 올릴 때 알려 드립니다.
             </p>
             <FilePicker
               file={file}
-              buttonLabel="음성 파일 선택"
-              inputLabel="음성 파일 선택"
-              accept="audio/*,video/mp4,video/webm"
+              buttonLabel={sourceKind === "transcript_txt" ? "자료 파일 선택" : "음성 파일 선택"}
+              inputLabel={sourceKind === "transcript_txt" ? "자료 파일 선택" : "음성 파일 선택"}
+              accept={sourceKind === "transcript_txt" ? ".txt,text/plain" : "audio/*,video/mp4,video/webm"}
               describedBy={fileHintId}
               disabled={submitting}
               className="justify-center"

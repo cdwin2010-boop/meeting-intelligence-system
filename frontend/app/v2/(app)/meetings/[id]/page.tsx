@@ -47,6 +47,7 @@ import {
 } from "@/components/v2/meeting-display";
 import { DueEditor } from "@/components/v2/DueEditor";
 import { AudioPlayer, type SeekRequest } from "@/components/v2/AudioPlayer";
+import { SOURCE_KIND_LABEL, sourceKindOf } from "@/lib/v2/source-kind";
 import { HistoryDialog } from "@/components/v2/HistoryDialog";
 import { ManualItemDialog } from "@/components/v2/ManualItemDialog";
 import { ProcessingBanner } from "@/components/v2/ProcessingBanner";
@@ -251,6 +252,7 @@ function Overview({ meeting, speakerSummary, minutesPanel }: { meeting: MeetingD
           {meeting.registeredBy.name} · {ORIGIN_LABEL[meeting.origin] ?? meeting.origin}
         </Field>
         <Field label="회의 유형">{meetingTypeLabel(meeting.meetingType)}</Field>
+        <Field label="자료 종류">{SOURCE_KIND_LABEL[sourceKindOf(meeting.sourceKind)]}</Field>
         {meeting.project?.name ? (
           <Field label="프로젝트">
             <Link
@@ -1242,7 +1244,13 @@ export default function V2MeetingDetailPage() {
           />
         }
       />
-      <AudioPlayer key={`audio-${meeting.id}`} meetingId={meeting.id} seek={seek} />
+      {meeting.hasAudio === false ? (
+        <p role="status" className="text-sm text-mn-muted">
+          자료 파일로 등록된 회의록입니다(음성 없음)
+        </p>
+      ) : (
+        <AudioPlayer key={`audio-${meeting.id}`} meetingId={meeting.id} seek={seek} />
+      )}
       <LedgerTable
         items={meeting.actionItems}
         onEditAssignee={setAssigneeTarget}

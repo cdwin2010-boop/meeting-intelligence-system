@@ -4,6 +4,7 @@
  */
 import type { ClosureKind } from "@/lib/v2/closure-kinds";
 import type { SupersessionRef } from "@/lib/v2/supersede";
+import type { SourceKind } from "@/lib/v2/source-kind";
 import { request } from "./http";
 import type { MissingField } from "./errors";
 import type { ConfirmKind } from "./todos";
@@ -84,6 +85,10 @@ export interface ActionItem {
 /** GET /api/meetings/{id} (권한 없음·다른 고객사·없음은 모두 404) */
 export interface MeetingDetail {
   id: number;
+  /** 자료 종류(추가 필드): audio(음성 파일) | transcript_txt(자료 파일 txt, STT 없음). 필드가 없으면 audio */
+  sourceKind?: SourceKind;
+  /** 재생할 음성이 있는가. false 면 플레이어를 보이지 않는다(필드가 없으면 true 로 본다) */
+  hasAudio?: boolean;
   title: string;
   heldAt: string;
   summary: string;
@@ -278,13 +283,15 @@ const UPLOAD_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_V2_UPLOAD_TIMEOUT_MS) |
  * 허용 형식(415)·용량(413)은 서버 설정이 판정하고, 오류 문구도 서버가 준 것을 그대로 쓴다.
  */
 export function uploadMeeting(
-  input: { file: File; title: string; heldAt: string; participantIds?: number[]; meetingType?: string; projectId?: number },
+  input: { file: File; title: string; heldAt: string; participantIds?: number[]; meetingType?: string; projectId?: number; sourceKind?: SourceKind },
   signal?: AbortSignal,
 ): Promise<UploadAccepted> {
   const form = new FormData();
   form.append("file", input.file);
   form.append("title", input.title);
   form.append("heldAt", input.heldAt);
+  // 자료 종류: 음성 파일(기본) | 자료 파일(txt, STT 없이 전사문으로 읽음)
+  form.append("sourceKind", input.sourceKind ?? "audio");
   // 참석자는 같은 이름(participantIds)으로 여러 번 보낸다(서버는 반복·쉼표 묶음 모두 받음). 없으면 보내지 않는다
   for (const id of input.participantIds ?? []) form.append("participantIds", String(id));
   // 회의 유형은 화면에서 필수로 강제하고, projectId 는 프로젝트 회의일 때만 보낸다(서버는 둘 다 선택 입력)

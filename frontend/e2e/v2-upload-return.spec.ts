@@ -124,7 +124,7 @@ test.describe("새 프로젝트 등록 링크와 임시 저장", () => {
     await newProjectLink(page).click();
     await expect(page).toHaveURL(/\/v2\/projects\/new\?returnTo=\/v2\/upload$/);
     const draft = JSON.parse((await draftOf(page))!);
-    expect(Object.keys(draft).sort()).toEqual(["date", "meetingType", "participantIds", "savedAt", "time", "title"]);
+    expect(Object.keys(draft).sort()).toEqual(["date", "meetingType", "participantIds", "savedAt", "sourceKind", "time", "title"]); // 73-1: 자료 종류 포함
     expect(draft).toMatchObject({ title: "설비 점검 주간 회의", date: "2026-10-01", time: "13:20", participantIds: [8], meetingType: "project" });
     expect(JSON.stringify(draft)).not.toContain(FAKE_TOKEN);
     expect(JSON.stringify(draft)).not.toContain("weekly_1001");
