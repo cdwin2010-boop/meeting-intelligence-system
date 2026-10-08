@@ -1,6 +1,7 @@
 # Changelog
 
 ## 미배포 (v2 개발 중)
+- v3.0 UI 업무 처리 현황 화면(작업 69-3): 왼쪽 메뉴 "할 일" 아래 "업무 현황"(`/v2/workload`), KPI 4개·구성원별 가로 스택 바(완료·진행 중·지연, 글자 라벨·건수·스크린리더 대체 텍스트, 미완료 과다 배지)·집중 관리(지연·D-3 임박, 회의록 링크)·"전일(YY년 MM월 DD일 기준) 통계 실적입니다." 안내, 서버 scope 에 따른 부서 선택·개인 현황, 로딩·오류·403 상태, 768 미만 카드 변환. 문서 `docs/v3-ui-workload.md`. 프론트만 변경.
 - v2 `backend/` 업무 처리 현황 전일 집계(작업 69-3): 표 `workload_snapshots`(마이그레이션 `a7d3e9b52c16`, 기존 표 변경 없음, downgrade 는 행이 있으면 거부), 집계 서비스(완료=종결+completed, 진행 중·지연·D-3 임박, 삭제·대체·보류/삭제 회의록·직권 종료·구분 없는 종결 제외, 겸직 중복 제거), 서버 시작 시 따라잡는 하루 한 번 자동 집계(lifespan 백그라운드 작업, 기본 한국 시간 00:10), 수동 도구 `scripts/run_workload_snapshot.py`, `GET /api/workload`(지시자 전사·부서, 부서장 본인 부서, 그 밖 개인), 설정 `WORKLOAD_*` 4개. 프론트 변경 없음. **운영 DB 는 백업 후 `alembic upgrade head` 로 직접 적용**.
 - v3.0 UI 업무 종결 구분(작업 70-1): 종결 팝업에 "종결 구분"(정상 완료·직권 종료) 필수 라디오(미선택 시 서버 호출 없이 알림·포커스 이동, 제출 본문에 `closureKind`), 종결 업무 칩 라벨 완료·직권 종료·종결(구분 없음), 라벨 상수 `lib/v2/closure-kinds.ts`, `ReasonDialog` 에 선택 그룹 옵션 추가. 기존 종결 E2E 1건에 구분 선택 단계 추가. 프론트만 변경.
 - v2 `backend/` 업무 종결 구분 기록(작업 70-1): 표 `item_closures`(마이그레이션 `f6c2d8a41b75`, 기존 표 변경 없음, downgrade 는 행이 있으면 거부), 종결 API 입력 `closureKind`(선택, completed·forced, 아니면 422, 없으면 행 없음=구분 없음), 업무 응답 `closureKind` 추가, 종결 사건 payload 에 구분을 보낸 경우만 `closureKind`, 엑셀 상태 라벨(완료·직권 종료, 구분 없음은 종결). 상태값·권한·종결 조건 불변. 설계 문서 D-24. 프론트 변경 없음. **운영 DB 는 백업 후 `alembic upgrade head` 로 직접 적용**.

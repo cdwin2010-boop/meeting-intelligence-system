@@ -150,7 +150,7 @@ test.describe("메뉴", () => {
     await page.goto("/v2");
     await expect(mainNav(page).getByRole("link", { name: "프로젝트" })).toBeVisible();
     const names = await mainNav(page).getByRole("link").allTextContents();
-    expect(names).toEqual(["할 일", "회의록", "프로젝트"]);
+    expect(names).toEqual(["할 일", "업무 현황", "회의록", "프로젝트"]); // 69-3: 할 일 아래에 업무 현황 추가
     await mainNav(page).getByRole("link", { name: "프로젝트" }).click();
     await expect(page).toHaveURL(/\/v2\/projects$/);
     await expect(mainNav(page).getByRole("link", { name: "프로젝트" })).toHaveAttribute("aria-current", "page");
