@@ -31,6 +31,7 @@
  */
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { meetingTypeLabel } from "@/lib/v2/meeting-types";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Badge, Button, StatusDot, type StatusDotTone } from "@/components/mono";
@@ -246,6 +247,18 @@ function Overview({ meeting, speakerSummary, minutesPanel }: { meeting: MeetingD
         <Field label="등록자">
           {meeting.registeredBy.name} · {ORIGIN_LABEL[meeting.origin] ?? meeting.origin}
         </Field>
+        <Field label="회의 유형">{meetingTypeLabel(meeting.meetingType)}</Field>
+        {meeting.project?.name ? (
+          <Field label="프로젝트">
+            <Link
+              href={`/v2/projects/${meeting.project.id}`}
+              aria-label={`프로젝트: ${meeting.project.name}`}
+              className="mn-focus underline underline-offset-2 hover:text-mn-muted"
+            >
+              {meeting.project.name}
+            </Link>
+          </Field>
+        ) : null}
         <Field label="참석자">
           <span className="block">{participantNames(meeting) || "—"}</span>
           {speakerSummary}

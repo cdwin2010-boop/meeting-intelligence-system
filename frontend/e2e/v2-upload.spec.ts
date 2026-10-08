@@ -65,6 +65,7 @@ async function fillForm(page: Page, file: typeof AUDIO) {
   await page.getByLabel("회의명").fill("설비 점검 주간 회의");
   await page.getByLabel("회의 날짜").fill("2026-10-01");
   await page.getByLabel("회의 시각").fill("13:20");
+  await page.getByRole("radio", { name: "정기회의", exact: true }).check({ force: true }); // 회의 유형은 필수(69-2)
 }
 
 const submitButton = (page: Page) => page.getByRole("button", { name: "올리고 분석 시작" });

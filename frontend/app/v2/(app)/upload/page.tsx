@@ -5,7 +5,8 @@
  * - 입력: 음성 파일(선택 또는 끌어다 놓기), 회의명(비우면 서버가 파일명으로 채움), 회의 일시(브라우저 현지 시각 → 오프셋 붙은 ISO)
  * - POST /api/meetings/upload(202) 성공 시 /v2/meetings/{meetingId} 로 이동. 처리(전사·추출)는 서버 백그라운드
  * - 허용 형식(415)·용량(413)은 서버 설정이 판정한다. 오류는 서버 문구로 보여 주고 같은 입력으로 다시 시도할 수 있다
- * - 참석자는 같은 고객사 계정 중 여러 명 선택(선택 사항, 목록 조회 실패해도 올리기는 가능). 회의 유형 선택은 v2.0 이후
+ * - 참석자는 같은 고객사 계정 중 여러 명 선택(선택 사항, 목록 조회 실패해도 올리기는 가능)
+ * - 회의 유형은 필수(화면에서만 강제, 서버는 선택 입력). 프로젝트 회의면 내가 참여자인 진행 중 프로젝트를 함께 보낸다
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -14,10 +15,12 @@ import { useEffect, useId, useRef, useState, type DragEvent, type FormEvent } fr
 import { Button, StatusDot } from "@/components/mono";
 import { FakeEngineNotice, useEngineIsFake } from "@/components/v2/EngineNotice";
 import { FilePicker } from "@/components/v2/FilePicker";
+import { MeetingTypeField, ProjectField } from "@/components/v2/MeetingClassFields";
 import { detailPath, V2_MEETINGS_PATH } from "@/components/v2/meeting-display";
 import { ParticipantPicker } from "@/components/v2/ParticipantPicker";
 import { useProcessing } from "@/components/v2/ProcessingProvider";
 import { isAbortError } from "@/lib/v2/errors";
+import type { MeetingType } from "@/lib/v2/meeting-types";
 import { uploadMeeting } from "@/lib/v2/meetings";
 
 const inputClass =
@@ -51,12 +54,16 @@ export default function V2UploadPage() {
   const timeId = useId();
   const fileHintId = useId();
   const controllerRef = useRef<AbortController | null>(null);
+  const typeRef = useRef<HTMLInputElement | null>(null);
+  const projectRef = useRef<HTMLSelectElement | null>(null);
   const submittingRef = useRef(false); // 빠른 연타로 두 번 보내는 것을 막는다
 
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
+  const [meetingType, setMeetingType] = useState<MeetingType | "">("");
+  const [projectId, setProjectId] = useState("");
   const [participantIds, setParticipantIds] = useState<number[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -87,6 +94,13 @@ export default function V2UploadPage() {
     if (dropped) pickFile(dropped);
   }
 
+  // 유형을 바꾸면 프로젝트 선택은 초기화한다(프로젝트 회의가 아니면 projectId 를 보내지 않는다)
+  function pickType(next: MeetingType) {
+    setMeetingType(next);
+    setProjectId("");
+    setFormError(null);
+  }
+
   async function submit() {
     if (submittingRef.current) return;
     if (!file) {
@@ -98,6 +112,16 @@ export default function V2UploadPage() {
       setFormError("회의 일시를 입력하세요.");
       return;
     }
+    if (!meetingType) {
+      setFormError("회의 유형을 선택해 주세요");
+      typeRef.current?.focus();
+      return;
+    }
+    if (meetingType === "project" && !projectId) {
+      setFormError("프로젝트를 선택해 주세요");
+      projectRef.current?.focus();
+      return;
+    }
     setFormError(null);
     setError(null);
     submittingRef.current = true;
@@ -105,7 +129,14 @@ export default function V2UploadPage() {
     const controller = new AbortController();
     controllerRef.current = controller;
     try {
-      const accepted = await uploadMeeting({ file, title: title.trim(), heldAt, participantIds }, controller.signal);
+      const accepted = await uploadMeeting({
+          file,
+          title: title.trim(),
+          heldAt,
+          participantIds,
+          meetingType,
+          projectId: meetingType === "project" ? Number(projectId) : undefined,
+        }, controller.signal);
       refreshProcessing(); // 왼쪽 메뉴 처리 현황에 바로 나타나게 한다(같은 상태 저장소)
       router.push(detailPath(accepted.meetingId));
     } catch (err) {
@@ -212,6 +243,9 @@ export default function V2UploadPage() {
             </div>
             <span className="text-xs text-mn-muted">상대 날짜(다음 주 화요일 등)를 이 일시 기준으로 계산합니다.</span>
           </fieldset>
+
+          <MeetingTypeField value={meetingType} onChange={pickType} disabled={submitting} firstRef={typeRef} />
+          {meetingType === "project" ? <ProjectField value={projectId} onChange={setProjectId} disabled={submitting} selectRef={projectRef} /> : null}
 
           <ParticipantPicker selected={participantIds} onChange={setParticipantIds} disabled={submitting} />
 

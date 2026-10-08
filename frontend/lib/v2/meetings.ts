@@ -89,6 +89,10 @@ export interface MeetingDetail {
   registeredBy: AccountRef;
   origin: string;
   participants: AccountRef[];
+  /** 회의 유형 코드(추가 필드). 이전 회의록·필드 없는 서버 응답은 null/undefined → "미지정" */
+  meetingType?: string | null;
+  /** 연결된 프로젝트(추가 필드). 없으면 null/undefined */
+  project?: { id: number; name: string } | null;
   /** 계정이 없는 참석자 이름(추가 필드, 화면에는 "이름(미등록)"). 없는 서버 응답이면 빈 목록 */
   guestParticipants?: string[];
   /** 회의록 5개 항목(추가 필드). 없는 서버 응답이면 아직 생성되지 않은 것으로 본다 */
@@ -262,7 +266,7 @@ const UPLOAD_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_V2_UPLOAD_TIMEOUT_MS) |
  * 허용 형식(415)·용량(413)은 서버 설정이 판정하고, 오류 문구도 서버가 준 것을 그대로 쓴다.
  */
 export function uploadMeeting(
-  input: { file: File; title: string; heldAt: string; participantIds?: number[] },
+  input: { file: File; title: string; heldAt: string; participantIds?: number[]; meetingType?: string; projectId?: number },
   signal?: AbortSignal,
 ): Promise<UploadAccepted> {
   const form = new FormData();
@@ -271,6 +275,9 @@ export function uploadMeeting(
   form.append("heldAt", input.heldAt);
   // 참석자는 같은 이름(participantIds)으로 여러 번 보낸다(서버는 반복·쉼표 묶음 모두 받음). 없으면 보내지 않는다
   for (const id of input.participantIds ?? []) form.append("participantIds", String(id));
+  // 회의 유형은 화면에서 필수로 강제하고, projectId 는 프로젝트 회의일 때만 보낸다(서버는 둘 다 선택 입력)
+  if (input.meetingType) form.append("meetingType", input.meetingType);
+  if (input.meetingType === "project" && input.projectId !== undefined) form.append("projectId", String(input.projectId));
   return request<UploadAccepted>("/meetings/upload", { method: "POST", body: form, signal, timeoutMs: UPLOAD_TIMEOUT_MS });
 }
 

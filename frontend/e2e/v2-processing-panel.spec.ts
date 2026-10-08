@@ -90,6 +90,7 @@ test.describe("처리 현황: 표시와 복원", () => {
     await page.getByLabel("회의명").fill("업로드한 회의");
     await page.getByLabel("회의 날짜").fill("2026-10-01");
     await page.getByLabel("회의 시각").fill("13:20");
+    await page.getByRole("radio", { name: "정기회의", exact: true }).check({ force: true }); // 회의 유형은 필수(69-2)
     await page.getByRole("button", { name: "올리고 분석 시작" }).click();
     await expect(page).toHaveURL(/\/v2\/meetings\/77$/);
     // 업로드 직후 바로 조회해 항목이 즉시 나타난다
