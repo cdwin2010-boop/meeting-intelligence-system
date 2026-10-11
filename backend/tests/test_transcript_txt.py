@@ -1,4 +1,5 @@
 """자료 파일(txt) 등록(작업 73-1): 해석 규칙, 인코딩, 검증, STT 건너뛰기, 추출 결과·근거 시각, 화자, 재처리, 응답 필드, 음성 회귀 불변."""
+import re
 import pytest
 from sqlalchemy import select
 
@@ -90,7 +91,7 @@ def test_upload_txt_accepted_and_stored(env, mgr):
     res = post_txt(env, mgr, TIMED.encode("utf-8"))
     assert res.status_code == 202
     [saved] = saved_files(env)
-    assert saved.suffix == ".txt" and len(saved.stem) == 32 and saved.read_bytes() == TIMED.encode("utf-8")
+    assert saved.suffix == ".txt" and re.fullmatch(r"\d+_\d{10}_001", saved.stem) and saved.read_bytes() == TIMED.encode("utf-8")
     with env["factory"]() as s:
         meeting = s.get(Meeting, res.json()["meetingId"])
         document = s.get(SourceDocument, meeting.source_document_id)

@@ -17,6 +17,7 @@ from app.models.common import utcnow
 from app.services.classification import save_classification, validate_classification
 from app.pipeline.transcript_text import TranscriptTextError, decode_transcript
 from app.services.processing import auto_confirm_at, get_job_runner
+from app.services.upload_storage import claim_stored_file
 from app.services.source_kind import SOURCE_AUDIO, SOURCE_KINDS, SOURCE_TRANSCRIPT_TXT
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
@@ -71,14 +72,13 @@ def _extension(filename: str) -> str:
     return PurePath(filename or "").suffix.lower().lstrip(".")
 
 
-def _save_upload(file: UploadFile, tenant_id: int, ext: str) -> str:
-    """UPLOAD_DIR/{tenant_id}/{uuid}.{ext} 로 저장하고 UPLOAD_DIR 기준 상대 경로를 돌려준다.
+def _stage_upload(file: UploadFile, tenant_id: int) -> Path:
+    """업로드 본문을 UPLOAD_DIR/{tenant_id}/{uuid}.part 에 임시 저장한다(검증 단계). 최종 이름은 회의록 id 를 얻은 뒤 정한다.
     원본 파일명은 경로에 쓰지 않는다. 크기 초과·빈 파일이면 지우고 거절한다."""
     limit = settings.max_upload_mb * 1024 * 1024
     folder = Path(settings.upload_dir) / str(tenant_id)
     folder.mkdir(parents=True, exist_ok=True)
-    name = f"{uuid.uuid4().hex}.{ext}"
-    partial = folder / f"{name}.part"
+    partial = folder / f"{uuid.uuid4().hex}.part"
     size = 0
     try:
         with partial.open("wb") as out:
@@ -92,19 +92,18 @@ def _save_upload(file: UploadFile, tenant_id: int, ext: str) -> str:
                 out.write(chunk)
         if size == 0:
             raise _bad_request("빈 파일입니다.")
-        partial.replace(folder / name)
     except BaseException:
         partial.unlink(missing_ok=True)
         raise
-    return f"{tenant_id}/{name}"
+    return partial
 
 
 def _unprocessable(message: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=message)
 
 
-def _save_transcript_upload(file: UploadFile, tenant_id: int) -> str:
-    """자료 파일(txt) 저장: 크기·인코딩·내용을 먼저 검사(전사 본문은 로그·문구에 넣지 않는다)하고 UPLOAD_DIR/{tenant_id}/{uuid}.txt 로 쓴다."""
+def _stage_transcript_upload(file: UploadFile, tenant_id: int) -> Path:
+    """자료 파일(txt) 임시 저장: 크기·인코딩·내용을 먼저 검사(전사 본문은 로그·문구에 넣지 않는다)하고 {uuid}.part 로 쓴다."""
     limit = settings.transcript_upload_max_bytes
     raw = file.file.read(limit + 1)
     if len(raw) > limit:
@@ -115,9 +114,9 @@ def _save_transcript_upload(file: UploadFile, tenant_id: int) -> str:
         raise _unprocessable(str(exc)) from None
     folder = Path(settings.upload_dir) / str(tenant_id)
     folder.mkdir(parents=True, exist_ok=True)
-    name = f"{uuid.uuid4().hex}.txt"
-    (folder / name).write_bytes(raw)
-    return f"{tenant_id}/{name}"
+    partial = folder / f"{uuid.uuid4().hex}.part"
+    partial.write_bytes(raw)
+    return partial
 
 
 @router.post("/upload", status_code=status.HTTP_202_ACCEPTED, response_model=UploadAccepted, response_model_by_alias=True)
@@ -157,7 +156,9 @@ def upload_meeting(
     original_name = PurePath((file.filename or "").replace("\\", "/")).name
     meeting_title = (title.strip() or original_name or "제목 없음")[:300]
 
-    relative_path = _save_transcript_upload(file, account.tenant_id) if transcript_txt else _save_upload(file, account.tenant_id, ext)
+    # 검증(크기·빈 파일·txt 내용)은 임시 저장 단계에서 끝낸다. 최종 이름({회의록id}_{일시}_{순번})은 회의록 id 를 얻은 뒤 정한다
+    staged = _stage_transcript_upload(file, account.tenant_id) if transcript_txt else _stage_upload(file, account.tenant_id)
+    final_path: Path | None = None
     try:
         now = utcnow()
         tenant = session.get(Tenant, account.tenant_id)
@@ -166,7 +167,7 @@ def upload_meeting(
             origin="audio_minutes",
             doc_type="회의록",
             title=meeting_title,
-            file_path=relative_path,
+            file_path=None,  # 회의록 id 를 얻은 뒤 최종 이름으로 채운다
             registered_by=account.id,
         )
         session.add(document)
@@ -182,6 +183,8 @@ def upload_meeting(
         )
         session.add(meeting)
         session.flush()
+        final_path = claim_stored_file(staged, staged.parent, meeting.id, now, ext)
+        document.file_path = f"{account.tenant_id}/{final_path.name}"
         for participant_id in ids:
             session.add(MeetingParticipant(meeting_id=meeting.id, account_id=participant_id))
         save_classification(session, meeting, account, classified_type, classified_project)
@@ -209,7 +212,9 @@ def upload_meeting(
         session.commit()
     except BaseException:
         session.rollback()
-        (Path(settings.upload_dir) / relative_path).unlink(missing_ok=True)
+        staged.unlink(missing_ok=True)
+        if final_path is not None:
+            final_path.unlink(missing_ok=True)
         raise
 
     background_tasks.add_task(job_runner, job.id, session_factory)

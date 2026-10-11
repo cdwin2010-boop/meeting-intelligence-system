@@ -1,5 +1,6 @@
 """4b-1단계: 음성 업로드 API + 처리 작업(process_meeting) + 회의록·업무 생성.
 네트워크 없음: STT_PROVIDER=fake(가짜 대본) 또는 테스트용 가짜 엔진만 쓴다. 업로드 파일은 tmp_path 아래에만 저장한다."""
+import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -171,7 +172,7 @@ def test_upload_accepted_202_and_records(env):
 
     [saved] = saved_files(env)
     assert saved.parent.name == str(mgr.tenant_id) and saved.suffix == ".m4a"
-    assert "회의" not in saved.name and len(saved.stem) == 32  # 원본 파일명이 아닌 uuid
+    assert "회의" not in saved.name and re.fullmatch(r"\d+_\d{10}_001", saved.stem)  # 원본 파일명이 아닌 {회의록id}_{일시}_{순번}
     assert saved.read_bytes() == M4A
 
     with env["factory"]() as s:
