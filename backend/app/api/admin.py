@@ -6,15 +6,17 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import Field
+from pydantic import Field, StrictBool
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.schemas import CamelModel
+from app.config import settings
 from app.auth.deps import require_system_admin
 from app.db import get_session
 from app.models import Account, AccountDepartment, Department, Event
 from app.services import admin_accounts as svc
+from app.services import system_settings as sys_settings
 from app.services.history import ADMIN_AUDIT_KINDS, HISTORY_KINDS
 from app.services.org import (
     UNSET, OrgError, add_member, create_department, find_department, members_of, remove_member, set_head, update_department,
@@ -352,3 +354,55 @@ def get_audit(
             reason=reason if isinstance(reason, str) else None,
         ))
     return AuditPage(items=items, total=total, page=page, size=size)
+
+
+# ---------------- 외부 연동 설정(작업 82-1 파트 C) ----------------
+class SettingOut(CamelModel):
+    key: str
+    value: bool
+    source: str  # default(기본값) | env(.env 에 명시) | admin(시스템 관리자 설정)
+    updated_at: datetime | None
+    updated_by: dict[str, Any] | None
+
+
+class SettingsOut(CamelModel):
+    enforced: bool  # EXTERNAL_POLICY_ENFORCED: 거짓이면 이 설정은 아직 처리에 적용되지 않는다(현행 동작)
+    items: list[SettingOut]
+
+
+class SettingPut(CamelModel):
+    value: StrictBool
+    reason: str = ""
+
+
+def _setting_out(session: Session, item: sys_settings.EffectiveSetting) -> SettingOut:
+    actor = session.get(Account, item.updated_by) if item.updated_by is not None else None
+    return SettingOut(
+        key=item.key, value=item.value, source=item.source, updated_at=item.updated_at,
+        updated_by={"id": actor.id, "name": actor.name} if actor is not None else None,
+    )
+
+
+@router.get("/settings", response_model=SettingsOut, response_model_by_alias=True)
+def get_settings(admin: Account = Depends(require_system_admin), session: Session = Depends(get_session)) -> SettingsOut:
+    """현재 유효값과 출처. 키·주소 같은 비밀 값은 다루지 않는다(참·거짓 두 개뿐)."""
+    return SettingsOut(
+        enforced=settings.external_policy_enforced,
+        items=[_setting_out(session, i) for i in sys_settings.all_effective(session, admin.tenant_id)],
+    )
+
+
+@router.put("/settings/{key}", response_model=SettingOut, response_model_by_alias=True)
+def put_setting(
+    key: str, body: SettingPut, admin: Account = Depends(require_system_admin), session: Session = Depends(get_session)
+) -> SettingOut:
+    """참·거짓 변경(사유 1~500자 필수, 이력에 기록). 즉시 반영된다(재시작 불필요). 허용 목록 밖 키는 404."""
+    try:
+        item = sys_settings.set_value(
+            session, tenant_id=admin.tenant_id, key=key, value=body.value, reason=body.reason, actor_id=admin.id
+        )
+        session.commit()
+    except sys_settings.SettingError as exc:
+        session.rollback()
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from None
+    return _setting_out(session, item)

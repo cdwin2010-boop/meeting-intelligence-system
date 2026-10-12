@@ -27,6 +27,7 @@ from app.pipeline.audio_preprocess import preprocess_audio
 from app.pipeline.gpu import release_gpu_memory
 from app.pipeline.evidence_time import apply_evidence_times
 from app.services.extraction_engine import select_extractor
+from app.services.external_policy import enforce_external_policy
 from app.services.mail import queue_immediate_new_minutes
 from app.services.processing_warnings import record_processing_warnings
 from app.services.notices import create_confirm_notices
@@ -249,6 +250,7 @@ def process_meeting(
     _progress(on_progress, 10)
 
     try:
+        enforce_external_policy(factory, started["meeting_id"])  # 외부 LLM 허용 설정(스위치가 꺼져 있으면 아무것도 하지 않음)
         audio_path = Path(settings.upload_dir) / started["file_path"]
         if not started["file_path"] or not audio_path.is_file():
             raise FileNotFoundError("uploaded audio is missing")

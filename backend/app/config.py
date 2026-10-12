@@ -119,6 +119,11 @@ class Settings(BaseSettings):
     license_public_key_path: Path = Path("config/license_public.pem")
     license_warn_days: int = Field(30, ge=0)
     license_require_hardware_match: bool = False
+    # 외부 연동 허용 정책(작업 82-1 파트 C): 기본 false 는 현행 동작(개발 호환). true 면 Gemini 등 외부 LLM 은 시스템 관리자의
+    # external_llm_enabled 가 참일 때만 실행하고, 로컬 LLM 의 외부 주소는 local_llm_external_host_allowed 가 참일 때만 허용한다.
+    # external_llm_enabled 는 시스템 관리자 설정 행이 없을 때 쓰는 초기값(기본 거짓)이다.
+    external_policy_enforced: bool = False
+    external_llm_enabled: bool = False
     # 관리자가 설정하는 비밀번호(계정 생성·재설정·본인 변경)의 최소 글자 수(작업 82-1)
     password_min_length: int = Field(10, ge=8)
     # 회의 일시를 현지 시각으로 바꿀 때 쓰는 시간대(추출기의 날짜·요일 기준)

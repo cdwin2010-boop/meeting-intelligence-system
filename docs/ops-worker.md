@@ -101,3 +101,18 @@ LOCAL_LLM_API_KEY=not-needed
 - 호스트 판정은 DNS 조회 없이 문자열·IP 기준이다(한계는 설계 문서 D-31).
 - 설정 변경 후에는 서버(와 워커)를 재시작해야 반영된다.
 
+## 최초 시스템 관리자 지정 (작업 82-1)
+
+시스템 관리자는 회의록 내용을 볼 수 없는 전용 계정이다(사용권한 staff). 최초 1명은 서버에서 도구로 지정한다(이후는 관리 API).
+
+```
+cd backend
+alembic upgrade head        # 먼저 DB 를 최신으로(운영 DB 는 백업 후)
+python scripts/create_system_admin.py --tenant "고객사" --login-id sysadmin --create --name "시스템 관리자" --email a@example.com
+python scripts/create_system_admin.py --tenant "고객사" --login-id sysadmin --create --name "시스템 관리자" --email a@example.com --apply
+```
+
+- 첫 명령은 dry-run(저장 안 함), `--apply` 를 붙여야 저장한다. 비밀번호는 `--apply` 때 터미널에서 직접 입력한다(인자·로그·출력에 남지 않음, 최소 `PASSWORD_MIN_LENGTH` 자).
+- 기존 담당자(staff) 계정을 지정하려면 `--create` 와 이름·이메일 없이 `--login-id` 만 준다. 상위 권한 계정은 지정할 수 없다.
+- 외부 연동 허용은 기본 꺼짐이다. 협의된 프로젝트만 시스템 관리자가 `PUT /api/admin/settings/external_llm_enabled` 로 켠다(`.env` 의 `EXTERNAL_POLICY_ENFORCED=true` 일 때 처리에 적용).
+

@@ -43,6 +43,8 @@ KIND_ACCOUNT_CREATED = "admin.account_created"
 KIND_ACCOUNT_UPDATED = "admin.account_updated"
 KIND_ACCOUNT_PASSWORD_RESET = "admin.password_reset"
 KIND_ACCOUNT_PASSWORD_CHANGED = "account.password_changed"  # 본인 변경
+# 시스템 설정 변경(작업 82-1 파트 C): 대상 종류 system_setting, 사유는 payload.reason
+KIND_SETTING_CHANGED = "admin.setting_changed"
 HISTORY_KINDS: dict[str, str] = {
     KIND_MINUTES_OVERRIDE: "직권 수정",
     KIND_PARTICIPANTS_OVERRIDE: "직권 수정",
@@ -66,11 +68,12 @@ HISTORY_KINDS: dict[str, str] = {
     KIND_ACCOUNT_UPDATED: "계정 수정",
     KIND_ACCOUNT_PASSWORD_RESET: "비밀번호 재설정",
     KIND_ACCOUNT_PASSWORD_CHANGED: "비밀번호 변경",
+    KIND_SETTING_CHANGED: "시스템 설정 변경",
 }
 # GET /api/admin/audit 이 보여 주는 관리 변경 구분(회의록 내용 이력은 포함하지 않는다)
 ADMIN_AUDIT_KINDS: frozenset[str] = frozenset({
     KIND_SYSTEM_ADMIN_SET, KIND_SYSTEM_ADMIN_UNSET, KIND_ACCOUNT_CREATED, KIND_ACCOUNT_UPDATED, KIND_ACCOUNT_PASSWORD_RESET,
-    KIND_ACCOUNT_PASSWORD_CHANGED, KIND_DEPARTMENT_UPDATE,
+    KIND_ACCOUNT_PASSWORD_CHANGED, KIND_DEPARTMENT_UPDATE, KIND_SETTING_CHANGED,
 })
 
 

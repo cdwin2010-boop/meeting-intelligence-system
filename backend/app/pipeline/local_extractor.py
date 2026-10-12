@@ -56,15 +56,17 @@ def _with(result: ExtractionResult, label: str, warnings: tuple) -> ExtractionRe
     return replace(result, engine_label=label, processing_warnings=warnings)
 
 
-def make_local_extractor(meeting_type: str = "", client: LlmClient | None = None) -> LocalLlmExtractor:
-    """설정(LOCAL_LLM_*)으로 로컬 추출기를 만든다. client 는 테스트용 주입."""
+def make_local_extractor(
+    meeting_type: str = "", client: LlmClient | None = None, allow_external: bool | None = None
+) -> LocalLlmExtractor:
+    """설정(LOCAL_LLM_*)으로 로컬 추출기를 만든다. client 는 테스트용 주입. allow_external 은 외부 주소 허용 판단 결과(services/external_policy.py)."""
     if client is None:
         client = OpenAICompatClient(
             settings.local_llm_base_url,
             settings.local_llm_model,
             settings.local_llm_api_key.get_secret_value(),
             max_output_tokens=settings.local_llm_max_output_tokens,
-            allow_external=settings.local_llm_allow_external_host,
+            allow_external=settings.local_llm_allow_external_host if allow_external is None else allow_external,
             json_mode_enabled=settings.local_llm_json_mode,
         )
     return LocalLlmExtractor(client, settings.local_llm_model, meeting_type)

@@ -41,6 +41,8 @@ def enum_check(column: str, values: tuple[str, ...], name: str, nullable: bool =
 
 
 # ---- 열거형 값 (설계 문서 부록 C) ----
+# 시스템 관리자만 바꾸는 설정 키(작업 82-1): 외부 LLM 사용 허용 / 로컬 LLM 주소의 사설망 밖 허용
+SYSTEM_SETTING_KEYS = ("external_llm_enabled", "local_llm_external_host_allowed")
 # 직급: 담당자 / 중간관리자 / 지시자
 ACCOUNT_RANKS = ("staff", "manager", "executive")
 # 원천 문서 출처: 음성 회의록 / 고객사 업로드 문서

@@ -9,6 +9,7 @@ from app.config import settings
 from app.models import MeetingClassification
 from app.pipeline.extractor import Extractor
 from app.pipeline.local_extractor import make_local_extractor
+from app.services.external_policy import local_external_host_allowed
 
 
 def meeting_type_of(factory: sessionmaker, meeting_id: int) -> str:
@@ -25,5 +26,7 @@ def select_extractor(
     if extractor_factory is not None:
         return extractor_factory()
     if settings.effective_llm_provider == "local":
-        return make_local_extractor(meeting_type_of(factory, meeting_id))
+        return make_local_extractor(
+            meeting_type_of(factory, meeting_id), allow_external=local_external_host_allowed(factory, meeting_id)
+        )
     return default()
