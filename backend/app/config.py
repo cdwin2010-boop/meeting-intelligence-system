@@ -80,6 +80,15 @@ class Settings(BaseSettings):
     worker_stale_seconds: int = Field(1800, ge=1)
     worker_max_attempts: int = Field(3, ge=1)
     worker_shutdown_grace: int = Field(30, ge=0)
+    # 안건 분할 추론(작업 75-2): 청크 최대 글자 수 / 앞 청크와 겹치는 글자 수 / 교정 프롬프트에 담는 원본 응답 앞부분 글자 수
+    # / LLM 호출 제한 시간(초) / 파싱 실패 때 교정 재시도 횟수(코드로 최대 1회 강제) / 5개 항목 칸당 최대 글자 수 / 안건 표지 추가 문구(쉼표 구분)
+    extract_chunk_max_chars: int = Field(6000, gt=0)
+    extract_chunk_overlap_chars: int = Field(500, gt=0)
+    extract_response_max_chars_for_repair: int = Field(4000, gt=0)
+    extract_llm_timeout_seconds: float = Field(300, gt=0)
+    extract_parse_retry_max: int = Field(1, ge=1)
+    extract_minutes_field_max_chars: int = Field(4000, gt=0)
+    extract_agenda_markers: str = ""
     # 오디오 전처리(작업 75-1 파트 B, FFmpeg 단일 체인): 기본 꺼짐. 켜면 STT 입력 직전에 16kHz 모노 wav 로 전처리한다
     # ffmpeg_path: 기본 "ffmpeg"(PATH 검색, backend/bin 에 번들 파일이 있으면 그것을 우선) / 시간 초과(초)
     audio_preprocess_enabled: bool = False
@@ -109,6 +118,16 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
+
+    @model_validator(mode="after")
+    def _check_chunk_sizes(self):
+        if self.extract_chunk_overlap_chars >= self.extract_chunk_max_chars:
+            raise ValueError("EXTRACT_CHUNK_OVERLAP_CHARS 는 EXTRACT_CHUNK_MAX_CHARS 보다 작아야 합니다.")
+        return self
+
+    @property
+    def extract_agenda_marker_list(self) -> list[str]:
+        return [m.strip() for m in self.extract_agenda_markers.split(",") if m.strip()]
 
     @model_validator(mode="after")
     def _refuse_wildcard_cors(self):
