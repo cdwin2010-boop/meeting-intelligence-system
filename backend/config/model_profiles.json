@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "draft_notice": "초안: 아래 값은 실측 전의 초안이며 대상 장비(RTX 3070 8GB, RTX 3060 12GB 등)에서 측정한 뒤 확정한다. VRAM 구간은 [최소, 최대) MB 이다.",
+  "profiles": [
+    {
+      "id": "cpu_only",
+      "description": "GPU 없음 또는 VRAM 6GB 미만: CPU 로 처리(느림)",
+      "min_vram_mb": 0,
+      "max_vram_mb": 6144,
+      "stt": {"model": "Whisper small", "precision": "int8"},
+      "llm": {"model": "Qwen 2.5 7B Instruct", "quantization": "Q4_K_M"},
+      "settings": {
+        "EXTRACT_CHUNK_MAX_CHARS": "3000",
+        "EXTRACT_CHUNK_OVERLAP_CHARS": "300",
+        "EXTRACT_LLM_TIMEOUT_SECONDS": "900",
+        "WORKER_STALE_SECONDS": "3600"
+      },
+      "notes": "CPU 추론은 매우 느리다. 가능하면 GPU 장비를 권장한다. 청크를 작게 하고 제한 시간을 늘린다."
+    },
+    {
+      "id": "gpu_8gb",
+      "description": "VRAM 6GB 이상 11GB 미만(예: RTX 3070 8GB)",
+      "min_vram_mb": 6144,
+      "max_vram_mb": 11264,
+      "stt": {"model": "Whisper large-v3", "precision": "int8_float16"},
+      "llm": {"model": "Qwen 2.5 7B Instruct", "quantization": "Q4_K_M"},
+      "settings": {
+        "EXTRACT_CHUNK_MAX_CHARS": "4000",
+        "EXTRACT_CHUNK_OVERLAP_CHARS": "400",
+        "EXTRACT_LLM_TIMEOUT_SECONDS": "300"
+      },
+      "notes": "STT 와 LLM 을 동시에 올리지 않는다(STT 종료 후 GPU 메모리 해제, 순차 실행)."
+    },
+    {
+      "id": "gpu_12gb",
+      "description": "VRAM 11GB 이상 15GB 미만(예: RTX 3060 12GB)",
+      "min_vram_mb": 11264,
+      "max_vram_mb": 15360,
+      "stt": {"model": "Whisper large-v3", "precision": "float16"},
+      "llm": {"model": "Qwen 2.5 7B Instruct", "quantization": "Q5_K_M"},
+      "settings": {
+        "EXTRACT_CHUNK_MAX_CHARS": "6000",
+        "EXTRACT_CHUNK_OVERLAP_CHARS": "500",
+        "EXTRACT_LLM_TIMEOUT_SECONDS": "300"
+      },
+      "notes": "배포 기준 장비 구간. 순차 실행은 그대로 유지한다."
+    },
+    {
+      "id": "gpu_16gb_plus",
+      "description": "VRAM 15GB 이상(16GB·24GB 이상)",
+      "min_vram_mb": 15360,
+      "max_vram_mb": null,
+      "stt": {"model": "Whisper large-v3", "precision": "float16"},
+      "llm": {"model": "Qwen 2.5 7B Instruct", "quantization": "Q8_0"},
+      "settings": {
+        "EXTRACT_CHUNK_MAX_CHARS": "8000",
+        "EXTRACT_CHUNK_OVERLAP_CHARS": "600",
+        "EXTRACT_LLM_TIMEOUT_SECONDS": "300"
+      },
+      "notes": "더 큰 모델은 승인·실측 전까지 기본에 넣지 않는다."
+    }
+  ]
+}

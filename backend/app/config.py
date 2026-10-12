@@ -89,6 +89,12 @@ class Settings(BaseSettings):
     extract_parse_retry_max: int = Field(1, ge=1)
     extract_minutes_field_max_chars: int = Field(4000, gt=0)
     extract_agenda_markers: str = ""
+    # 하드웨어 감지·권장 모델 프로파일(작업 77-1, 도구 scripts/detect_hardware.py 에서만 사용. 현행 처리 흐름은 바꾸지 않는다)
+    # llm_profile: "auto"(GPU 를 감지해 선택) 또는 프로파일 id 로 고정(고정하면 감지하지 않는다)
+    # hardware_profiles_path: 프로파일 파일(backend 폴더 기준 상대 경로 가능) / hardware_min_free_ratio: 여유 VRAM 이 총량의 이 비율 미만이면 한 단계 낮춘다
+    llm_profile: str = "auto"
+    hardware_profiles_path: Path = Path("config/model_profiles.json")
+    hardware_min_free_ratio: float = Field(0.7, gt=0, le=1)
     # 오디오 전처리(작업 75-1 파트 B, FFmpeg 단일 체인): 기본 꺼짐. 켜면 STT 입력 직전에 16kHz 모노 wav 로 전처리한다
     # ffmpeg_path: 기본 "ffmpeg"(PATH 검색, backend/bin 에 번들 파일이 있으면 그것을 우선) / 시간 초과(초)
     audio_preprocess_enabled: bool = False
