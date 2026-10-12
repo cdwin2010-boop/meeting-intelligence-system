@@ -21,7 +21,7 @@ import { ParticipantPicker } from "@/components/v2/ParticipantPicker";
 import { useProcessing } from "@/components/v2/ProcessingProvider";
 import { isAbortError } from "@/lib/v2/errors";
 import type { MeetingType } from "@/lib/v2/meeting-types";
-import { uploadMeeting } from "@/lib/v2/meetings";
+import { downloadTranscriptTemplate, TRANSCRIPT_TEMPLATE_FILE_NAME, uploadMeeting } from "@/lib/v2/meetings";
 import {
   isTranscriptKind,
   matchesTranscriptExt,
@@ -92,6 +92,8 @@ function UploadForm() {
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [restoredNotice, setRestoredNotice] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateLoading, setTemplateLoading] = useState(false);
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
 
   // 기본 일시는 화면을 연 시각(서버 렌더링과 어긋나지 않도록 마운트 후 채움)
@@ -170,6 +172,28 @@ function UploadForm() {
     setFile(null);
     setError(null);
     setFormError(null);
+  }
+
+  /** 엑셀 양식 내려받기: 인증 헤더가 필요해 fetch 로 받아 저장한다. 실패해도 올리기 입력은 그대로 둔다 */
+  async function onTemplateDownload() {
+    setTemplateError(null);
+    setTemplateLoading(true);
+    try {
+      const blob = await downloadTranscriptTemplate();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = TRANSCRIPT_TEMPLATE_FILE_NAME;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      if (isAbortError(err)) return;
+      setTemplateError(`양식을 내려받지 못했습니다 · ${err instanceof Error && err.message ? err.message : "서버 오류"}`);
+    } finally {
+      setTemplateLoading(false);
+    }
   }
 
   // 유형을 바꾸면 프로젝트 선택은 초기화한다(프로젝트 회의가 아니면 projectId 를 보내지 않는다)
@@ -288,9 +312,21 @@ function UploadForm() {
               </p>
             ) : null}
             {sourceKind === "transcript_xlsx" ? (
-              <p role="status" className="text-xs text-mn-text">
-                엑셀(.xlsx)을 올리면 음성 인식 없이 바로 업무를 추출합니다. 첫 행에 "발언"(또는 내용) 열이 필요하고 "시각"·"화자" 열은 있으면 읽습니다. 시각이 없으면 "근거 위치 보기"는 쓸 수 없습니다. 비밀번호가 걸린 파일과 매크로 파일은 올릴 수 없습니다.
-              </p>
+              <div className="flex flex-col gap-2">
+                <p role="status" className="text-xs text-mn-text">
+                  엑셀(.xlsx)을 올리면 음성 인식 없이 바로 업무를 추출합니다. 첫 행에 "발언"(또는 내용) 열이 필요하고 "시각"·"화자" 열은 있으면 읽습니다. 화자 칸이 비어 있으면 화자 표시 없이 적은 그대로 보입니다. 시각이 없으면 "근거 위치 보기"는 쓸 수 없습니다. 비밀번호가 걸린 파일과 매크로 파일은 올릴 수 없습니다.
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button type="button" size="sm" variant="secondary" disabled={templateLoading || submitting} onClick={() => void onTemplateDownload()}>
+                    {templateLoading ? "양식 준비 중…" : "엑셀 양식 내려받기"}
+                  </Button>
+                  {templateError ? (
+                    <span role="alert" className="text-xs">
+                      <StatusDot tone="error" label={templateError} />
+                    </span>
+                  ) : null}
+                </div>
+              </div>
             ) : null}
           </fieldset>
 

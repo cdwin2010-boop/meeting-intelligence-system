@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -20,6 +20,7 @@ from app.services.processing import auto_confirm_at, get_job_runner
 from app.services.task_queue import enqueue
 from app.services.upload_storage import claim_stored_file
 from app.pipeline.transcript_xlsx import xlsx_to_text
+from app.services.transcript_template import TEMPLATE_FILENAME, build_transcript_template
 from app.services.source_kind import SOURCE_AUDIO, SOURCE_KINDS, SOURCE_TRANSCRIPT_TXT, SOURCE_TRANSCRIPT_XLSX, TRANSCRIPT_KINDS
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
@@ -122,6 +123,19 @@ def _stage_transcript_upload(file: UploadFile, tenant_id: int, kind: str = SOURC
     partial = folder / f"{uuid.uuid4().hex}.part"
     partial.write_bytes(raw)
     return partial
+
+
+@router.get("/transcript-template")
+def download_transcript_template(account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> Response:
+    """엑셀 자료 파일 양식(.xlsx)을 즉시 만들어 내려준다(저장소에 파일 없음). 올리기 권한과 같은 규칙(시스템 관리자 제외)."""
+    forbid_system_admin(session, account)
+    from urllib.parse import quote  # noqa: PLC0415
+
+    return Response(
+        content=build_transcript_template(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(TEMPLATE_FILENAME)}", "Cache-Control": "no-store"},
+    )
 
 
 @router.post("/upload", status_code=status.HTTP_202_ACCEPTED, response_model=UploadAccepted, response_model_by_alias=True)
