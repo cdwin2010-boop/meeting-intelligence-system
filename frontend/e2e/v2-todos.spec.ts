@@ -191,7 +191,7 @@ test.describe("v2 앱 틀 + 할 일", () => {
     await expect(page.getByText("지금 처리할 일이 없습니다.")).toHaveCount(0);
 
     await rows.nth(1).click();
-    await expect(page).toHaveURL(/\/v2\/meetings\/12$/);
+    await expect(page).toHaveURL(/\/v2\/meetings\/12(\?returnTo=%2Fv2)?$/);
   });
 
   test("수정 요청 대기 0건(또는 필드 없음) → 묶음 숨김", async ({ page }) => {
