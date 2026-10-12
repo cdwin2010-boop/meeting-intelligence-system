@@ -80,6 +80,13 @@ class Settings(BaseSettings):
     worker_stale_seconds: int = Field(1800, ge=1)
     worker_max_attempts: int = Field(3, ge=1)
     worker_shutdown_grace: int = Field(30, ge=0)
+    # 오디오 전처리(작업 75-1 파트 B, FFmpeg 단일 체인): 기본 꺼짐. 켜면 STT 입력 직전에 16kHz 모노 wav 로 전처리한다
+    # ffmpeg_path: 기본 "ffmpeg"(PATH 검색, backend/bin 에 번들 파일이 있으면 그것을 우선) / 시간 초과(초)
+    audio_preprocess_enabled: bool = False
+    # true 면 전처리 실패를 처리 실패로 본다. false 면 경고만 남기고 원본 파일로 진행
+    audio_preprocess_strict: bool = False
+    ffmpeg_path: str = "ffmpeg"
+    ffmpeg_timeout_seconds: float = Field(900, gt=0)
     # 회의 일시를 현지 시각으로 바꿀 때 쓰는 시간대(추출기의 날짜·요일 기준)
     app_timezone: str = "Asia/Seoul"
 

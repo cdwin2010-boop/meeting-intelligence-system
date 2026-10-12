@@ -23,6 +23,7 @@ from app.models import Account, ActionItem, Job, Meeting, MeetingMinutes, Source
 from app.models.minutes import MINUTES_FIELDS, NO_CONTENT
 from app.models.common import utcnow
 from app.pipeline.errors import error_code
+from app.pipeline.audio_preprocess import preprocess_audio
 from app.pipeline.gpu import release_gpu_memory
 from app.pipeline.evidence_time import apply_evidence_times
 from app.services.mail import queue_immediate_new_minutes
@@ -252,11 +253,22 @@ def process_meeting(
             provider, engine = TRANSCRIPT_TXT_ENGINE, settings.stt_provider
         else:
             mime_type = AUDIO_MIME_TYPES.get(audio_path.suffix.lower().lstrip("."), "application/octet-stream")
+            stt_input, preprocessed = audio_path, None
+            if settings.audio_preprocess_enabled:
+                try:
+                    preprocessed = preprocess_audio(audio_path)
+                    stt_input, mime_type = preprocessed, "audio/wav"
+                except Exception as exc:  # noqa: BLE001 — 기본은 원본으로 진행, STRICT 면 처리 실패
+                    if settings.audio_preprocess_strict:
+                        raise
+                    log.warning("job %s audio preprocess failed, using original: %s", job_id, type(exc).__name__)
             stt = (stt_factory or default_stt)()
             try:
-                stt_result = as_transcript_result(stt.transcribe(audio_path, mime_type))
+                stt_result = as_transcript_result(stt.transcribe(stt_input, mime_type))
             finally:
                 stt.release()
+                if preprocessed is not None:
+                    preprocessed.unlink(missing_ok=True)
                 release_gpu_memory()  # STT 직후·추출 전: GPU 메모리를 비워 STT 와 LLM 이 동시에 올라가지 않게 한다
             provider = getattr(stt, "provider_name", None) or settings.stt_provider
             engine = provider
