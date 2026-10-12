@@ -234,7 +234,8 @@ test.describe("보조창 좌우 전환", () => {
       for (const width of [1280, 768, 375]) {
         await page.setViewportSize({ width, height: 800 });
         await expect(page.getByRole("heading", { level: 1, name: "할 일" })).toBeVisible();
-        expect(await overflow(page), `${side} ${width}px`).toBeLessThanOrEqual(0);
+        // 너비를 바꾼 직후에는 모바일 전환(matchMedia 이벤트)이 반영되기 전 한 프레임이 있어 안정될 때까지 기다린다
+        await expect.poll(() => overflow(page), { message: `${side} ${width}px` }).toBeLessThanOrEqual(0);
       }
     }
   });
