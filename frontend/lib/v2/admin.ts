@@ -59,10 +59,23 @@ export interface AdminSetting {
   updatedBy: { id: number; name: string } | null;
 }
 
+export type KnowledgeSettingKey = "knowledge_integration_enabled" | "knowledge_api_endpoint";
+
+/** 지식(KMS) 연동 설정(작업 83-1·84-1): 스위치는 bool, 주소는 문자열("" = 설정 안 됨) */
+export interface KnowledgeSetting {
+  key: KnowledgeSettingKey;
+  value: boolean | string;
+  source: SettingSource;
+  updatedAt: string | null;
+  updatedBy: { id: number; name: string } | null;
+}
+
 export interface AdminSettings {
   /** EXTERNAL_POLICY_ENFORCED. false 면 이 설정은 아직 처리에 적용되지 않는다 */
   enforced: boolean;
   items: AdminSetting[];
+  /** 지식 연동 설정(추가 칸). 필드가 없는 서버 응답이면 없다 */
+  knowledge?: KnowledgeSetting[];
 }
 
 export interface LicenseInfo {
@@ -149,3 +162,7 @@ export const getLicense = (signal?: AbortSignal) => request<LicenseInfo>("/syste
 // ---- 본인 비밀번호 변경(작업 82-2 파트 B) ----
 export const changeOwnPassword = (currentPassword: string, newPassword: string, signal?: AbortSignal) =>
   request<void>("/auth/change-password", { method: "POST", body: { currentPassword, newPassword }, signal });
+
+/** 지식 연동 설정 변경(스위치는 bool, 주소는 문자열). 서버가 사유 필수·사설망 검사를 한다(위반 422) */
+export const putKnowledgeSetting = (key: KnowledgeSettingKey, value: boolean | string, reason: string, signal?: AbortSignal) =>
+  request<KnowledgeSetting>(`/admin/settings/${encodeURIComponent(key)}`, { method: "PUT", body: { value, reason }, signal });

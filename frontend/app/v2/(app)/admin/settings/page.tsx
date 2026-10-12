@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button, Modal, StatusDot } from "@/components/mono";
 import { ReasonDialog, type ReasonAction } from "@/components/v2/ReasonDialog";
+import { KnowledgeSettings } from "@/components/v2/admin/KnowledgeSettings";
 import { Card, Chip, formatWhen, messageOf } from "@/components/v2/admin/AdminUi";
 import { getSettings, putSetting, REASON_LIMIT, type AdminSetting, type AdminSettings, type SettingKey, type SettingSource } from "@/lib/v2/admin";
 import { isAbortError } from "@/lib/v2/errors";
@@ -156,6 +157,10 @@ export default function AdminSettingsPage() {
           );
         })}
       </ul>
+
+      {state.kind === "ready" && state.data.knowledge ? (
+        <KnowledgeSettings items={state.data.knowledge} onChanged={load} onNotice={setNotice} />
+      ) : null}
 
       {/* 켤 때 경고 확인 창 */}
       <Modal
