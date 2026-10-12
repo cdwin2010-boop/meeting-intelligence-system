@@ -359,26 +359,28 @@ def get_audit(
 # ---------------- 외부 연동 설정(작업 82-1 파트 C) ----------------
 class SettingOut(CamelModel):
     key: str
-    value: bool
+    value: bool | str  # 참·거짓 키는 bool, 지식 연동 주소(knowledge_api_endpoint)는 문자열
     source: str  # default(기본값) | env(.env 에 명시) | admin(시스템 관리자 설정)
     updated_at: datetime | None
     updated_by: dict[str, Any] | None
 
 
 class SettingsOut(CamelModel):
+    # 지식(KMS) 연동 설정(추가 필드, 작업 83-1): 기존 화면의 items 목록에는 섞지 않고 따로 내려준다
+    knowledge: list[SettingOut] = []
     enforced: bool  # EXTERNAL_POLICY_ENFORCED: 거짓이면 이 설정은 아직 처리에 적용되지 않는다(현행 동작)
     items: list[SettingOut]
 
 
 class SettingPut(CamelModel):
-    value: StrictBool
+    value: StrictBool | str
     reason: str = ""
 
 
 def _setting_out(session: Session, item: sys_settings.EffectiveSetting) -> SettingOut:
     actor = session.get(Account, item.updated_by) if item.updated_by is not None else None
     return SettingOut(
-        key=item.key, value=item.value, source=item.source, updated_at=item.updated_at,
+        key=item.key, value=item.text if item.text is not None else item.value, source=item.source, updated_at=item.updated_at,
         updated_by={"id": actor.id, "name": actor.name} if actor is not None else None,
     )
 
@@ -389,6 +391,7 @@ def get_settings(admin: Account = Depends(require_system_admin), session: Sessio
     return SettingsOut(
         enforced=settings.external_policy_enforced,
         items=[_setting_out(session, i) for i in sys_settings.all_effective(session, admin.tenant_id)],
+        knowledge=[_setting_out(session, i) for i in sys_settings.knowledge_effective(session, admin.tenant_id)],
     )
 
 

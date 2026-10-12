@@ -124,6 +124,12 @@ class Settings(BaseSettings):
     # external_llm_enabled 는 시스템 관리자 설정 행이 없을 때 쓰는 초기값(기본 거짓)이다.
     external_policy_enforced: bool = False
     external_llm_enabled: bool = False
+    # 지식(KMS) 연동 선반영(작업 83-1): 기본 꺼짐. 시스템 관리자 설정(system_settings)이 없을 때 쓰는 초기값과 서비스 토큰·호출 제한 시간.
+    # 서비스 토큰은 시스템 간 호출용이며 값은 어디에도 출력하지 않는다(사용자 토큰은 전달하지 않는다). 실제 호출 구현은 아직 없다.
+    knowledge_integration_enabled: bool = False
+    knowledge_api_endpoint: str = ""
+    knowledge_service_token: SecretStr = SecretStr("")
+    knowledge_timeout_seconds: float = Field(3.0, gt=0, le=30)
     # 관리자가 설정하는 비밀번호(계정 생성·재설정·본인 변경)의 최소 글자 수(작업 82-1)
     password_min_length: int = Field(10, ge=8)
     # 회의 일시를 현지 시각으로 바꿀 때 쓰는 시간대(추출기의 날짜·요일 기준)
