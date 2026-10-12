@@ -24,6 +24,8 @@ import type { MeetingType } from "@/lib/v2/meeting-types";
 import { downloadTranscriptTemplate, TRANSCRIPT_TEMPLATE_FILE_NAME, uploadMeeting } from "@/lib/v2/meetings";
 import {
   isTranscriptKind,
+  kindForFileName,
+  kindMismatchHint,
   matchesTranscriptExt,
   SOURCE_KIND_LABEL,
   SOURCE_KINDS,
@@ -92,6 +94,8 @@ function UploadForm() {
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [restoredNotice, setRestoredNotice] = useState(false);
+  // 사용자가 자료 종류를 직접 고른 적이 있는가(그러면 파일을 골라도 종류를 자동으로 바꾸지 않는다)
+  const kindPickedByUser = useRef(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateLoading, setTemplateLoading] = useState(false);
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
@@ -123,6 +127,7 @@ function UploadForm() {
         setParticipantIds(draft.participantIds);
         setMeetingType(draft.meetingType);
         setSourceKind(draft.sourceKind);
+        kindPickedByUser.current = true; // 복원된 종류는 사용자가 고른 값
         setRestoredNotice(true);
       }
       clearUploadDraft();
@@ -152,6 +157,9 @@ function UploadForm() {
   useEffect(() => () => controllerRef.current?.abort(), []);
 
   function pickFile(next: File | null) {
+    // 확장자로 자료 종류를 자동 선택한다(.xlsx → 엑셀, .txt → txt, 음성 확장자 → 음성). 직접 바꾼 선택은 그대로 둔다
+    const detected = next ? kindForFileName(next.name) : null;
+    if (detected && detected !== sourceKind && !kindPickedByUser.current) setSourceKind(detected);
     setFile(next);
     setError(null);
     setFormError(null);
@@ -168,6 +176,7 @@ function UploadForm() {
   // 자료 종류를 바꾸면 고른 파일을 비운다(종류마다 받는 파일이 다르다)
   function pickSourceKind(next: SourceKind) {
     if (next === sourceKind) return;
+    kindPickedByUser.current = true;
     setSourceKind(next);
     setFile(null);
     setError(null);
@@ -207,6 +216,11 @@ function UploadForm() {
     if (submittingRef.current) return;
     if (!file) {
       setFormError(isTranscriptKind(sourceKind) ? `${SOURCE_KIND_LABEL[sourceKind]}을 선택하세요.` : "음성 파일을 선택하세요.");
+      return;
+    }
+    const mismatch = kindMismatchHint(sourceKind, file.name);
+    if (mismatch && !isTranscriptKind(sourceKind)) {
+      setFormError(mismatch); // 음성 종류에 자료 파일: 서버를 부르지 않고 원인을 알린다
       return;
     }
     if (isTranscriptKind(sourceKind) && !matchesTranscriptExt(sourceKind, file.name)) {
@@ -356,7 +370,7 @@ function UploadForm() {
                   ? ".txt,text/plain"
                   : sourceKind === "transcript_xlsx"
                     ? ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    : "audio/*,video/mp4,video/webm"
+                    : "audio/*,video/mp4,video/webm,.xlsx,.txt" // 자료 파일도 고를 수 있게 하고, 고르면 자료 종류를 자동으로 맞춘다
               }
               describedBy={fileHintId}
               disabled={submitting}
@@ -364,6 +378,11 @@ function UploadForm() {
               wrapName
               onPick={pickFile}
             />
+            {file && kindMismatchHint(sourceKind, file.name) ? (
+              <p role="status" className="text-sm">
+                <StatusDot tone="error" label={kindMismatchHint(sourceKind, file.name) ?? ""} />
+              </p>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-2">
