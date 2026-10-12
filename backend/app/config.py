@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -95,6 +96,16 @@ class Settings(BaseSettings):
     llm_profile: str = "auto"
     hardware_profiles_path: Path = Path("config/model_profiles.json")
     hardware_min_free_ratio: float = Field(0.7, gt=0, le=1)
+    # 추출(LLM) 엔진(작업 81-1): auto = STT_PROVIDER 를 따른다(현행 동작) / gemini / local(로컬 OpenAI 호환 서버) / fake
+    # 로컬 LLM: base_url 은 ".../v1" 까지 포함. 키는 보통 불필요("not-needed"). JSON 모드를 서버가 거부하면 자동으로 끄고 1회 재요청한다.
+    # allow_external_host 가 false(기본)면 루프백·사설망 호스트만 허용(보안 원칙: 외부망 연동 기본 OFF, 변경은 시스템 관리자만)
+    llm_provider: Literal["auto", "gemini", "local", "fake"] = "auto"
+    local_llm_base_url: str = ""
+    local_llm_model: str = ""
+    local_llm_api_key: SecretStr = SecretStr("not-needed")
+    local_llm_json_mode: bool = True
+    local_llm_allow_external_host: bool = False
+    local_llm_max_output_tokens: int = Field(4096, ge=1)
     # 오디오 전처리(작업 75-1 파트 B, FFmpeg 단일 체인): 기본 꺼짐. 켜면 STT 입력 직전에 16kHz 모노 wav 로 전처리한다
     # ffmpeg_path: 기본 "ffmpeg"(PATH 검색, backend/bin 에 번들 파일이 있으면 그것을 우선) / 시간 초과(초)
     audio_preprocess_enabled: bool = False
@@ -130,6 +141,28 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def effective_llm_provider(self) -> str:
+        """실제 추출 엔진. auto 면 STT_PROVIDER 를 따른다(fake → fake, gemini → gemini)."""
+        return self.stt_provider if self.llm_provider == "auto" else self.llm_provider
+
+    @model_validator(mode="after")
+    def _check_local_llm(self):
+        url = self.local_llm_base_url.strip()
+        if url:
+            try:
+                parts = urlsplit(url)
+                valid = parts.scheme in ("http", "https") and bool(parts.hostname) and not parts.query and not parts.fragment
+                parts.port  # noqa: B018 — 잘못된 포트는 여기서 ValueError
+            except ValueError:
+                valid = False
+            if not valid:
+                raise ValueError("LOCAL_LLM_BASE_URL 은 http:// 또는 https:// 로 시작하는 올바른 주소여야 합니다.")
+            self.local_llm_base_url = url.rstrip("/")
+        if self.effective_llm_provider == "local" and not (self.local_llm_base_url and self.local_llm_model.strip()):
+            raise ValueError("LLM_PROVIDER=local 이면 LOCAL_LLM_BASE_URL 과 LOCAL_LLM_MODEL 이 필요합니다.")
+        return self
 
     @model_validator(mode="after")
     def _check_chunk_sizes(self):

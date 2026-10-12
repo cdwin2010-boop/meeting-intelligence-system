@@ -22,6 +22,9 @@ def error_code(exc: BaseException) -> str:
     """예외 → DB(jobs.error_code)에 남길 분류 코드. 예외 원문·키·파일 경로는 넣지 않는다."""
     if isinstance(exc, GeminiKeyMissingError):
         return "gemini_key_missing"
+    local_code = getattr(exc, "job_error_code", None)  # 로컬 LLM 오류(LocalLlmError): timeout | llm_unavailable | llm_error | llm_host_blocked
+    if isinstance(local_code, str):
+        return local_code
     if isinstance(exc, FileNotFoundError):
         return "upload_missing"
     try:
@@ -52,6 +55,9 @@ def describe_error(exc: BaseException) -> str:
     timeout = f"{settings.gemini_timeout_sec:g}초"
     if isinstance(exc, GeminiKeyMissingError):
         return redact(str(exc))  # 설정 이름만 들어 있다
+    local_code = getattr(exc, "job_error_code", None)
+    if isinstance(local_code, str):  # 로컬 LLM 오류: 메시지에는 주소·키·본문이 들어 있지 않다
+        return f"{exc} Retry 하세요." if getattr(exc, "kind", "") == "transient" else str(exc)
     try:
         import httpx
 

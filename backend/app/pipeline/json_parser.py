@@ -179,6 +179,7 @@ class ParseOutcome(Generic[T]):
     calls: int
     errors: list[str] = field(default_factory=list)
     truncated_recovered: bool = False  # 잘린 응답을 닫아 복구함(어느 시도에서든)
+    client_error: BaseException | None = None  # 마지막 호출 실패 예외(실패 원인 분류용, 없으면 응답 형식 문제)
 
 
 def run_with_repair(
@@ -195,6 +196,7 @@ def run_with_repair(
     calls = 0
     errors: list[str] = []
     truncated = False
+    client_error: BaseException | None = None
     current = list(messages)
     last_response = ""
     for attempt in range(retries + 1):
@@ -203,16 +205,19 @@ def run_with_repair(
             last_response = client.complete(current, json_mode=True, timeout=timeout)
         except (LlmClientError, OSError, TimeoutError) as exc:
             errors = [f"LLM 호출 실패({type(exc).__name__})"]
-            if attempt < retries:
-                continue  # 호출 실패도 같은 메시지로 한 번 더(총 2회 상한은 그대로)
+            client_error = exc
+            if attempt < retries and getattr(exc, "kind", "") != "permanent":
+                continue  # 호출 실패도 같은 메시지로 한 번 더(총 2회 상한은 그대로). 영구 오류는 다시 부르지 않는다
             break
         except Exception as exc:  # noqa: BLE001 — 청크 하나의 실패가 전체를 멈추지 않는다
             errors = [f"LLM 호출 실패({type(exc).__name__})"]
+            client_error = exc
             break
+        client_error = None  # 호출은 성공했다(이후 실패는 응답 형식 문제)
         value, errors, repaired = parse_response(last_response, model)
         truncated = truncated or repaired
         if value is not None:
             return ParseOutcome("ok" if attempt == 0 else "repaired", value, calls, [], truncated)
         if attempt < retries:
             current = list(messages) + [{"role": "user", "content": build_repair_prompt(last_response, errors, repair_max_chars)}]
-    return ParseOutcome("failed", None, calls, errors, truncated)
+    return ParseOutcome("failed", None, calls, errors, truncated, client_error)

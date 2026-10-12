@@ -12,6 +12,7 @@ from app.api import (
 from app.config import settings
 from app.db import SessionLocal
 from app.jobs import workload_snapshot
+from app.pipeline.local_llm import log_startup_warning
 from app.services.reprocess import recover_interrupted_jobs
 
 log = logging.getLogger("app.main")
@@ -22,6 +23,7 @@ async def lifespan(_app: FastAPI):
     # 시작 때: 가짜 처리 모드면 경고, queued·running 으로 남은 작업은 failed(server_restarted)로 정리(자동 재실행 없음)
     if settings.stt_provider == "fake":
         log.warning("가짜(fake) 처리 모드로 실행 중입니다. 업로드한 음성은 실제로 처리되지 않습니다(STT_PROVIDER=fake).")
+    log_startup_warning(settings.effective_llm_provider, settings.local_llm_base_url, settings.local_llm_allow_external_host)
     try:
         # queue 모드: 대기·처리 중 작업은 단독 워커가 이어받으므로 서버 시작 때 실패로 바꾸지 않는다(워커가 recover_stale 로 복구)
         recovered = 0 if settings.processing_mode == "queue" else recover_interrupted_jobs(SessionLocal)

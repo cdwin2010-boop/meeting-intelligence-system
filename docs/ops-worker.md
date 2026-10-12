@@ -85,3 +85,19 @@ python scripts/detect_hardware.py --json   # JSON 출력
 - **라이선스 키와의 관계**: 배포 패키지에는 공개키(`LICENSE_PUBLIC_KEY_PATH`)만 포함한다. 개인키는 포함하지 않고 발급 담당 장비에만 둔다.
 - 대상 모듈은 동적 import·`exec`·`eval`·전역 상태 변경·함수 안 import 를 쓰지 않는다(`tests/test_cython_build.py` 정적 점검). 대상 모듈에 새 코드를 넣을 때 이 규칙을 지킨다.
 
+## 로컬 LLM(OpenAI 호환) 연결 설정과 확인 (작업 81-1)
+
+`backend/.env` 에 직접 쓴다(값을 출력·커밋하지 않는다). 아래 주소는 자리표시자다.
+
+```
+LLM_PROVIDER=local
+LOCAL_LLM_BASE_URL=http://<로컬-LLM-서버-주소>:<포트>/v1
+LOCAL_LLM_MODEL=<서버에 올린 모델 이름>
+LOCAL_LLM_API_KEY=not-needed
+```
+
+- 확인: `cd backend && python scripts/check_llm.py`(`/models` 만 호출, 회의 내용 전송 없음). 정상이면 연결·인증과 모델 존재 여부가 나온다. 오류는 일시(transient)/영구(permanent)로 구분해 표시한다.
+- 기본은 루프백·사설망 주소만 허용한다. 개발 중 외부 터널 주소를 쓰려면 `LOCAL_LLM_ALLOW_EXTERNAL_HOST=true` 가 필요하며, **이 경우 전사 내용이 그 주소(제3자 서비스일 수 있음)로 전송**된다. 실제 회의 자료로는 쓰지 말고 개발 확인용으로만 쓰며, 끝나면 `false` 로 되돌린다. 시작 때 경고 로그가 남는다.
+- 호스트 판정은 DNS 조회 없이 문자열·IP 기준이다(한계는 설계 문서 D-31).
+- 설정 변경 후에는 서버(와 워커)를 재시작해야 반영된다.
+

@@ -20,6 +20,7 @@ from app.db import SessionLocal
 from app.models import Job
 from app.pipeline.errors import error_code
 from app.pipeline.extractor import Extractor
+from app.pipeline.local_llm import log_startup_warning
 from app.pipeline.stt import SttEngine
 from app.services import task_queue
 from app.services.processing import mark_job_failed, process_meeting
@@ -49,6 +50,9 @@ class Worker:
             if session.get_bind().dialect.name == "sqlite":
                 mode = session.execute(text("PRAGMA journal_mode")).scalar()
                 log.info("SQLite journal_mode=%s (WAL 이 아니면 서버와 워커가 같은 파일을 쓸 때 잠금이 잦아집니다)", mode)
+        log_startup_warning(
+            settings.effective_llm_provider, settings.local_llm_base_url, settings.local_llm_allow_external_host
+        )
         self.recover()
 
     def recover(self) -> None:
