@@ -18,8 +18,15 @@ NAME_MAX = 100
 HEAD_MIN_RANK = "manager"
 
 
+UNSET = object()  # update_department 의 "바꾸지 않음" 표시(parent_id 를 None 으로 바꾸는 것과 구분)
+
+
 class OrgError(ValueError):
-    """조직 변경 규칙 위반(메시지는 사람이 읽는 한국어)."""
+    """조직 변경 규칙 위반(메시지는 사람이 읽는 한국어). status: 관리 API 응답 코드(기본 409 규칙 충돌, 입력 형식 오류는 422)."""
+
+    def __init__(self, message: str, status: int = 409):
+        super().__init__(message)
+        self.status = status
 
 
 def _record(session: Session, department: Department, actor_id: int | None, before: dict, after: dict) -> None:
@@ -38,18 +45,61 @@ def create_department(
 ) -> Department:
     name = (name or "").strip()
     if not name or len(name) > NAME_MAX:
-        raise OrgError(f"부서 이름은 1~{NAME_MAX}자여야 합니다.")
+        raise OrgError(f"부서 이름은 1~{NAME_MAX}자여야 합니다.", status=422)
     if kind not in DEPARTMENT_KINDS:
-        raise OrgError(f"부서 종류는 {', '.join(DEPARTMENT_KINDS)} 중 하나여야 합니다.")
+        raise OrgError(f"부서 종류는 {', '.join(DEPARTMENT_KINDS)} 중 하나여야 합니다.", status=422)
     if session.scalar(select(Department.id).where(Department.tenant_id == tenant_id, Department.name == name)) is not None:
         raise OrgError(f"같은 이름의 부서가 이미 있습니다: {name}")
     if parent_id is not None and find_department(session, tenant_id, parent_id) is None:
-        raise OrgError("상위 부서를 찾을 수 없습니다(같은 고객사의 부서만 가능).")
+        raise OrgError("상위 부서를 찾을 수 없습니다(같은 고객사의 부서만 가능).", status=422)
     department = Department(tenant_id=tenant_id, name=name, parent_id=parent_id, kind=kind)
     session.add(department)
     session.flush()
     _record(session, department, actor_id, {}, {"action": "department_created", "name": name, "parentId": parent_id, "kind": kind})
     return department
+
+
+def update_department(
+    session: Session, department: Department, *, actor_id: int | None = None, name: str | None = None, parent_id=UNSET
+) -> bool:
+    """부서 이름·상위 부서를 바꾼다(바뀌었으면 True). 상위 부서는 같은 고객사여야 하고 자기 자신·하위 부서로 옮길 수 없다(순환 금지).
+    parent_id 에 None 을 주면 최상위로 옮기고, UNSET 이면 바꾸지 않는다."""
+    before: dict = {}
+    after: dict = {}
+    if name is not None:
+        new_name = name.strip()
+        if not new_name or len(new_name) > NAME_MAX:
+            raise OrgError(f"부서 이름은 1~{NAME_MAX}자여야 합니다.", status=422)
+        if new_name != department.name:
+            taken = session.scalar(
+                select(Department.id).where(
+                    Department.tenant_id == department.tenant_id, Department.name == new_name, Department.id != department.id
+                )
+            )
+            if taken is not None:
+                raise OrgError(f"같은 이름의 부서가 이미 있습니다: {new_name}")
+            before["name"], after["name"] = department.name, new_name
+    if parent_id is not UNSET and parent_id != department.parent_id:
+        if parent_id is not None:
+            if find_department(session, department.tenant_id, parent_id) is None:
+                raise OrgError("상위 부서를 찾을 수 없습니다(같은 고객사의 부서만 가능).", status=422)
+            cursor = parent_id
+            seen: set[int] = set()
+            while cursor is not None and cursor not in seen:  # 새 상위 부서에서 위로 올라가며 자기 자신을 만나면 순환
+                if cursor == department.id:
+                    raise OrgError("자기 자신이나 하위 부서를 상위 부서로 지정할 수 없습니다(순환).")
+                seen.add(cursor)
+                cursor = session.scalar(select(Department.parent_id).where(Department.id == cursor))
+        before["parentId"], after["parentId"] = department.parent_id, parent_id
+    if not after:
+        return False
+    if "name" in after:
+        department.name = after["name"]
+    if "parentId" in after:
+        department.parent_id = after["parentId"]
+    session.flush()
+    _record(session, department, actor_id, before, {"action": "department_updated", **after})
+    return True
 
 
 def _check_account(department: Department, account: Account) -> None:

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
-    accounts, action_items, auth, departments, item_supersession, projects, me, meeting_actions, meeting_hold, meeting_lifecycle, meeting_queries, meeting_speakers,
+    accounts, action_items, admin, auth, departments, item_supersession, projects, me, meeting_actions, meeting_hold, meeting_lifecycle, meeting_queries, meeting_speakers,
     meeting_audio, meeting_minutes, me_processing, meeting_reprocess, meeting_update, meetings, probe, system, workload,
 )
 from app.config import settings
@@ -57,6 +57,7 @@ app.include_router(meeting_minutes.router)
 app.include_router(meeting_update.router)
 app.include_router(meeting_reprocess.router)
 app.include_router(system.router)
+app.include_router(admin.router)
 app.include_router(me_processing.router)
 app.include_router(meeting_actions.router)
 app.include_router(meeting_hold.router)

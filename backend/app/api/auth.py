@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.schemas import LoginRequest, MeResponse, TokenResponse
+from app.api.schemas import ChangePasswordRequest, LoginRequest, MeResponse, TokenResponse
+from app.services.admin_accounts import AdminError, change_own_password
 from app.auth.deps import get_current_account
 from app.auth.passwords import burn_verify_time, verify_password
 from app.auth.tokens import create_access_token
@@ -39,3 +40,17 @@ def me(account: Account = Depends(get_current_account), session: Session = Depen
         id=account.id, name=account.name, rank=account.rank, tenant_id=account.tenant_id,
         is_system_admin=is_system_admin(session, account.id),
     )
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    body: ChangePasswordRequest, account: Account = Depends(get_current_account), session: Session = Depends(get_session)
+) -> None:
+    """본인 비밀번호 변경. 현재 비밀번호가 다르면 일반 오류(400), 새 비밀번호가 정책에 맞지 않으면 422. 비밀번호는 이력·응답·로그에 남기지 않는다."""
+    try:
+        change_own_password(session, account, body.current_password, body.new_password)
+        session.commit()
+    except AdminError as exc:
+        session.rollback()
+        raise HTTPException(status_code=exc.status, detail=exc.message) from None
+

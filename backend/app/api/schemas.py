@@ -1,5 +1,5 @@
 """API 입출력 스키마. JSON 필드는 camelCase, 파이썬 내부는 snake_case(alias 변환)."""
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
@@ -26,3 +26,9 @@ class MeResponse(CamelModel):
     rank: str
     tenant_id: int
     is_system_admin: bool = False
+
+
+class ChangePasswordRequest(CamelModel):
+    current_password: str = Field(repr=False)
+    new_password: str = Field(repr=False)
+
