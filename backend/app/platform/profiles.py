@@ -4,8 +4,9 @@
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from app.config import Settings
 from app.platform.hardware import HardwareReport
@@ -27,9 +28,45 @@ class SttSpec(_Strict):
     precision: str = Field(min_length=1)
 
 
+TIER_PERMISSIVE = "permissive"  # 자유 라이선스: 기본 선택 대상이 될 수 있다
+TIER_CONDITIONAL = "conditional"  # 조건부 라이선스: 고객 요청 시에만 쓴다(기본 선택 대상 아님)
+
+
+class LlmCandidate(_Strict):
+    """시험·비교 후보 모델. 이름·양자화·라이선스 표기·비고만 담는다(모델 파일·다운로드 주소는 넣지 않는다)."""
+
+    model: str = Field(min_length=1)
+    quantization: str = ""
+    license: str = Field(min_length=1)  # 확인된 것만 확정 표기, 아니면 "모델 카드 확인 필요"
+    tier: Literal["permissive", "conditional"]
+    selectable_by_default: bool
+    note: str = ""
+
+    @model_validator(mode="after")
+    def _conditional_is_not_default(self) -> "LlmCandidate":
+        if self.tier == TIER_CONDITIONAL and self.selectable_by_default:
+            raise ValueError(f"후보 {self.model}: tier=conditional 은 selectable_by_default 가 거짓이어야 합니다.")
+        return self
+
+
 class LlmSpec(_Strict):
+    """주력(primary) 모델은 model·quantization 이며 확장 필드(license, tier, options, candidates)는 모두 선택이다
+    (기존 파일 형식도 그대로 통과한다)."""
+
     model: str = Field(min_length=1)
     quantization: str = Field(min_length=1)
+    license: str = ""
+    tier: Literal["permissive", "conditional"] = TIER_PERMISSIVE  # 주력은 반드시 permissive
+    note: str = ""
+    options: dict[str, str] = Field(default_factory=dict)  # 예: {"thinking_mode": "off"}
+    candidates: list[LlmCandidate] = Field(default_factory=list)
+
+    @field_validator("tier")
+    @classmethod
+    def _primary_is_permissive(cls, value: str) -> str:
+        if value != TIER_PERMISSIVE:
+            raise ValueError("주력(primary) 모델의 tier 는 permissive 여야 합니다.")
+        return value
 
 
 class Profile(_Strict):
@@ -41,6 +78,7 @@ class Profile(_Strict):
     llm: LlmSpec
     settings: dict[str, str] = Field(default_factory=dict)  # .env 키 이름 → 값
     notes: str = ""
+    draft: bool = False  # 초안 값 여부(실측·시험 전)
 
     @field_validator("settings")
     @classmethod

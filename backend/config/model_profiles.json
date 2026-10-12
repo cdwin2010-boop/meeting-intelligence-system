@@ -1,14 +1,21 @@
 {
   "version": 1,
-  "draft_notice": "초안: 아래 값은 실측 전의 초안이며 대상 장비(RTX 3070 8GB, RTX 3060 12GB 등)에서 측정한 뒤 확정한다. VRAM 구간은 [최소, 최대) MB 이다.",
+  "draft_notice": "초안: 아래 값은 모두 초안이며 한국어 회의록 정답지 비교 시험과 대상 장비(RTX 3070 8GB, RTX 3060 12GB 등) 실측 뒤 확정한다. 후보 모델의 라이선스 표기는 확인된 것만 확정으로 적었고 나머지는 '모델 카드 확인 필요'다. VRAM 구간은 [최소, 최대) MB 이다.",
   "profiles": [
     {
       "id": "cpu_only",
       "description": "GPU 없음 또는 VRAM 6GB 미만: CPU 로 처리(느림)",
       "min_vram_mb": 0,
       "max_vram_mb": 6144,
-      "stt": {"model": "Whisper small", "precision": "int8"},
-      "llm": {"model": "Qwen 2.5 7B Instruct", "quantization": "Q4_K_M"},
+      "draft": true,
+      "stt": {
+        "model": "Whisper small",
+        "precision": "int8"
+      },
+      "llm": {
+        "model": "Qwen 2.5 7B Instruct",
+        "quantization": "Q4_K_M"
+      },
       "settings": {
         "EXTRACT_CHUNK_MAX_CHARS": "3000",
         "EXTRACT_CHUNK_OVERLAP_CHARS": "300",
@@ -22,42 +29,187 @@
       "description": "VRAM 6GB 이상 11GB 미만(예: RTX 3070 8GB)",
       "min_vram_mb": 6144,
       "max_vram_mb": 11264,
-      "stt": {"model": "Whisper large-v3", "precision": "int8_float16"},
-      "llm": {"model": "Qwen 2.5 7B Instruct", "quantization": "Q4_K_M"},
+      "draft": true,
+      "stt": {
+        "model": "Whisper large-v3",
+        "precision": "int8_float16"
+      },
+      "llm": {
+        "model": "Qwen 2.5 7B Instruct",
+        "quantization": "Q4_K_M",
+        "license": "Apache 2.0",
+        "note": "현행 방식(값 고정): 추출 청크 값은 config.py 의 현재 기본값과 같다.",
+        "candidates": [
+          {
+            "model": "Gemma 4 E4B",
+            "quantization": "",
+            "license": "Apache 2.0",
+            "tier": "permissive",
+            "selectable_by_default": true,
+            "note": "시험 후보. 양자화 수준은 시험 시 확정"
+          }
+        ]
+      },
       "settings": {
-        "EXTRACT_CHUNK_MAX_CHARS": "4000",
-        "EXTRACT_CHUNK_OVERLAP_CHARS": "400",
+        "EXTRACT_CHUNK_MAX_CHARS": "6000",
+        "EXTRACT_CHUNK_OVERLAP_CHARS": "500",
         "EXTRACT_LLM_TIMEOUT_SECONDS": "300"
       },
-      "notes": "STT 와 LLM 을 동시에 올리지 않는다(STT 종료 후 GPU 메모리 해제, 순차 실행)."
+      "notes": "현행 방식 그대로 처리한다. STT 와 LLM 을 동시에 올리지 않는다(STT 종료 후 GPU 메모리 해제, 순차 실행)."
     },
     {
       "id": "gpu_12gb",
       "description": "VRAM 11GB 이상 15GB 미만(예: RTX 3060 12GB)",
       "min_vram_mb": 11264,
       "max_vram_mb": 15360,
-      "stt": {"model": "Whisper large-v3", "precision": "float16"},
-      "llm": {"model": "Qwen 2.5 7B Instruct", "quantization": "Q5_K_M"},
+      "draft": true,
+      "stt": {
+        "model": "Whisper large-v3",
+        "precision": "float16"
+      },
+      "llm": {
+        "model": "Qwen3-8B",
+        "quantization": "Q4_K_M",
+        "license": "Apache 2.0",
+        "tier": "permissive",
+        "note": "생각 모드(thinking)는 끄고 사용한다(JSON 추출 안정성).",
+        "options": {
+          "thinking_mode": "off"
+        },
+        "candidates": [
+          {
+            "model": "Gemma 4 12B",
+            "quantization": "Q4",
+            "license": "Apache 2.0",
+            "tier": "permissive",
+            "selectable_by_default": true,
+            "note": "Q4 약 7GB 추정(실측 전). 시험 비교 대상"
+          },
+          {
+            "model": "Mi:dm 2.0 Base 11.5B",
+            "quantization": "",
+            "license": "MIT",
+            "tier": "permissive",
+            "selectable_by_default": true,
+            "note": "컨텍스트 32K. 양자화 수준은 시험 시 확정. 시험 비교 대상"
+          },
+          {
+            "model": "Kanana 1.5 8B Instruct",
+            "quantization": "",
+            "license": "Apache 2.0",
+            "tier": "permissive",
+            "selectable_by_default": true,
+            "note": "시험 비교 대상"
+          },
+          {
+            "model": "Qwen3-14B",
+            "quantization": "Q4",
+            "license": "Apache 2.0 (모델 카드 확인 필요)",
+            "tier": "permissive",
+            "selectable_by_default": true,
+            "note": "컨텍스트가 짧아 12GB 에서는 빠듯하다. 시험 비교 대상"
+          },
+          {
+            "model": "Llama 3.x",
+            "quantization": "",
+            "license": "Meta 라이선스(Llama Community License)",
+            "tier": "conditional",
+            "selectable_by_default": false,
+            "note": "고객 요청 시에만. 조건: \"Built with Llama\" 고지, Notice 파일 동봉, 사용 정책 준수, 월 사용자 7억 명 초과 시 별도 라이선스"
+          },
+          {
+            "model": "Bllossom",
+            "quantization": "",
+            "license": "Llama 기반이라 Llama 라이선스와 같은 조건 적용",
+            "tier": "conditional",
+            "selectable_by_default": false,
+            "note": "고객 요청 시에만. \"originated from Bllossom\" 표기 요청이 공개 토론에 있으나 계약 조건이 아니므로 모델 카드 확인 필요"
+          }
+        ]
+      },
       "settings": {
-        "EXTRACT_CHUNK_MAX_CHARS": "6000",
-        "EXTRACT_CHUNK_OVERLAP_CHARS": "500",
+        "EXTRACT_CHUNK_MAX_CHARS": "10000",
+        "EXTRACT_CHUNK_OVERLAP_CHARS": "800",
         "EXTRACT_LLM_TIMEOUT_SECONDS": "300"
       },
-      "notes": "배포 기준 장비 구간. 순차 실행은 그대로 유지한다."
+      "notes": "배포 기준 장비 구간(별도 처리, 초안). 컨텍스트가 넓어 청크를 키운다. STT 와 LLM 은 순차 실행(동시 구동 금지)을 그대로 유지한다."
     },
     {
       "id": "gpu_16gb_plus",
       "description": "VRAM 15GB 이상(16GB·24GB 이상)",
       "min_vram_mb": 15360,
       "max_vram_mb": null,
-      "stt": {"model": "Whisper large-v3", "precision": "float16"},
-      "llm": {"model": "Qwen 2.5 7B Instruct", "quantization": "Q8_0"},
+      "draft": true,
+      "stt": {
+        "model": "Whisper large-v3",
+        "precision": "float16"
+      },
+      "llm": {
+        "model": "Qwen3-8B",
+        "quantization": "Q4_K_M",
+        "license": "Apache 2.0",
+        "tier": "permissive",
+        "note": "생각 모드(thinking)는 끄고 사용한다(JSON 추출 안정성).",
+        "options": {
+          "thinking_mode": "off"
+        },
+        "candidates": [
+          {
+            "model": "Gemma 4 12B",
+            "quantization": "Q4",
+            "license": "Apache 2.0",
+            "tier": "permissive",
+            "selectable_by_default": true,
+            "note": "Q4 약 7GB 추정(실측 전). 시험 비교 대상"
+          },
+          {
+            "model": "Mi:dm 2.0 Base 11.5B",
+            "quantization": "",
+            "license": "MIT",
+            "tier": "permissive",
+            "selectable_by_default": true,
+            "note": "컨텍스트 32K. 양자화 수준은 시험 시 확정. 시험 비교 대상"
+          },
+          {
+            "model": "Kanana 1.5 8B Instruct",
+            "quantization": "",
+            "license": "Apache 2.0",
+            "tier": "permissive",
+            "selectable_by_default": true,
+            "note": "시험 비교 대상"
+          },
+          {
+            "model": "Qwen3-14B",
+            "quantization": "Q4",
+            "license": "Apache 2.0 (모델 카드 확인 필요)",
+            "tier": "permissive",
+            "selectable_by_default": true,
+            "note": "컨텍스트가 짧아 12GB 에서는 빠듯하다. 시험 비교 대상"
+          },
+          {
+            "model": "Llama 3.x",
+            "quantization": "",
+            "license": "Meta 라이선스(Llama Community License)",
+            "tier": "conditional",
+            "selectable_by_default": false,
+            "note": "고객 요청 시에만. 조건: \"Built with Llama\" 고지, Notice 파일 동봉, 사용 정책 준수, 월 사용자 7억 명 초과 시 별도 라이선스"
+          },
+          {
+            "model": "Bllossom",
+            "quantization": "",
+            "license": "Llama 기반이라 Llama 라이선스와 같은 조건 적용",
+            "tier": "conditional",
+            "selectable_by_default": false,
+            "note": "고객 요청 시에만. \"originated from Bllossom\" 표기 요청이 공개 토론에 있으나 계약 조건이 아니므로 모델 카드 확인 필요"
+          }
+        ]
+      },
       "settings": {
         "EXTRACT_CHUNK_MAX_CHARS": "8000",
         "EXTRACT_CHUNK_OVERLAP_CHARS": "600",
         "EXTRACT_LLM_TIMEOUT_SECONDS": "300"
       },
-      "notes": "더 큰 모델은 승인·실측 전까지 기본에 넣지 않는다."
+      "notes": "후보는 12GB 와 같다. 청크는 보수적으로 기존 값을 유지한다(12GB 초안보다 작음, 시험 후 조정). 더 큰 모델은 승인·실측 전까지 기본에 넣지 않는다."
     }
   ]
 }

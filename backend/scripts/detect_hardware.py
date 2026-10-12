@@ -30,7 +30,15 @@ def build_payload(rec: Recommendation, report: HardwareReport | None, draft_noti
     return {
         "detectionMethod": report.method if report is not None else "skipped",
         "gpus": gpus,
-        "profile": {"id": p.id, "description": p.description, "stt": p.stt.model_dump(), "llm": p.llm.model_dump(), "notes": p.notes},
+        "profile": {
+            "id": p.id, "description": p.description, "stt": p.stt.model_dump(), "llm": p.llm.model_dump(), "notes": p.notes,
+            "draft": p.draft,
+            "primary": {
+                "model": p.llm.model, "quantization": p.llm.quantization, "license": p.llm.license,
+                "tier": p.llm.tier, "note": p.llm.note, "options": dict(p.llm.options),
+            },
+            "candidates": [c.model_dump() for c in p.llm.candidates],
+        },
         "reasons": list(rec.reasons),
         "warnings": list(rec.warnings),
         "env": rec.settings,
@@ -53,8 +61,22 @@ def render_text(payload: dict) -> str:
         "",
         f"권장 프로파일: {p['id']} — {p['description']}",
         f"  STT: {p['stt']['model']} ({p['stt']['precision']})",
-        f"  LLM: {p['llm']['model']} ({p['llm']['quantization']})",
+        f"  LLM 주력: {p['primary']['model']} ({p['primary']['quantization']})"
+        + (f", 라이선스 {p['primary']['license']}" if p["primary"]["license"] else ""),
     ]
+    if p["primary"]["options"]:
+        lines.append("  LLM 옵션: " + ", ".join(f"{k}={v}" for k, v in p["primary"]["options"].items()))
+    if p["primary"]["note"]:
+        lines.append(f"  주력 비고: {p['primary']['note']}")
+    if p["candidates"]:
+        lines.append("  후보 모델(시험 비교 대상, 최종 확정 전):")
+        for c in p["candidates"]:
+            quant = f" {c['quantization']}" if c["quantization"] else ""
+            mark = "자유 라이선스" if c["tier"] == "permissive" else "조건부 — 고객 요청 시에만"
+            note = f" / {c['note']}" if c["note"] else ""
+            lines.append(f"    - [{mark}] {c['model']}{quant} ({c['license']}){note}")
+    if p["draft"]:
+        lines.append("  ※ 이 프로파일 값은 초안입니다.")
     if p["notes"]:
         lines.append(f"  비고: {p['notes']}")
     lines += ["", "이유:"] + [f"  - {r}" for r in payload["reasons"]]

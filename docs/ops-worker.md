@@ -64,4 +64,5 @@ python scripts/detect_hardware.py --json   # JSON 출력
 - `nvidia-smi`(없으면 선택적 torch)로 GPU 를 읽어 권장 프로파일(`config/model_profiles.json`)과 권장 `.env` 키 값을 **출력만** 한다. 파일을 쓰지 않고 `.env` 를 바꾸지 않으니 확인 후 직접 반영한다.
 - 다중 GPU 는 총 VRAM 이 가장 큰 GPU 만 대상으로 한다. 여유 VRAM 이 총량의 `HARDWARE_MIN_FREE_RATIO`(기본 0.7) 미만이면 한 단계 낮은 프로파일을 권한다.
 - `LLM_PROFILE=gpu_12gb` 처럼 id 로 고정하면 감지하지 않는다(`--profile ID` 로도 지정 가능). 프로파일 값은 초안이며 실측으로 확정한다.
+- 출력에는 선택된 프로파일의 LLM 주력 모델·옵션과 후보 모델이 함께 표시된다. 후보는 `[자유 라이선스]` 와 `[조건부 — 고객 요청 시에만]` 으로 구분되며 모두 초안(시험 비교 대상)이다.
 - 현재는 도구 출력만 제공하며 처리 엔진 선택에는 반영되지 않는다.

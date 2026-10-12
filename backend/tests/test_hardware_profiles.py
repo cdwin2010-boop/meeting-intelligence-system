@@ -244,12 +244,12 @@ def test_tool_text_and_json_output_write_no_files(tmp_path, monkeypatch):
     text = io.StringIO()
     assert tool.main([], detector=detector, out=text) == 0
     body = text.getvalue()
-    assert "권장 프로파일: gpu_12gb" in body and "EXTRACT_CHUNK_MAX_CHARS=6000" in body and "초안" in body
+    assert "권장 프로파일: gpu_12gb" in body and "EXTRACT_CHUNK_MAX_CHARS=10000" in body and "초안" in body
     assert "자동 적용하지 않습니다" in body
     js = io.StringIO()
     assert tool.main(["--json"], detector=detector, out=js) == 0
     payload = json.loads(js.getvalue())
-    assert payload["profile"]["id"] == "gpu_12gb" and payload["env"]["EXTRACT_CHUNK_MAX_CHARS"] == "6000"
+    assert payload["profile"]["id"] == "gpu_12gb" and payload["env"]["EXTRACT_CHUNK_MAX_CHARS"] == "10000"
     assert payload["gpus"][0]["totalMb"] == 12288 and payload["detectionMethod"] == "nvidia-smi"
     assert list(tmp_path.iterdir()) == []  # 어떤 파일도 만들지 않았다
 
@@ -281,3 +281,109 @@ def test_platform_modules_are_not_imported_by_the_pipeline_or_api():
         if "platform" not in p.relative_to(ROOT / "app").parts[:1] and pattern.search(p.read_text(encoding="utf-8"))
     ]
     assert offenders == [], offenders
+
+
+# ---------------- 12GB 프로파일 상세화(작업 79-1) ----------------
+SETTINGS_KEYS = ("EXTRACT_CHUNK_MAX_CHARS", "EXTRACT_CHUNK_OVERLAP_CHARS", "EXTRACT_LLM_TIMEOUT_SECONDS")
+
+
+def test_gpu_8gb_values_are_pinned_to_current_config_defaults():
+    _report, rec = pick("NVIDIA GeForce RTX 3070, 8192, 8000, 551.23")
+    defaults = Settings(_env_file=None)
+    assert rec.profile.id == "gpu_8gb"
+    assert rec.settings == {
+        "EXTRACT_CHUNK_MAX_CHARS": str(defaults.extract_chunk_max_chars),
+        "EXTRACT_CHUNK_OVERLAP_CHARS": str(defaults.extract_chunk_overlap_chars),
+        "EXTRACT_LLM_TIMEOUT_SECONDS": str(int(defaults.extract_llm_timeout_seconds)),
+    }
+    assert (rec.profile.llm.model, rec.profile.llm.quantization) == ("Qwen 2.5 7B Instruct", "Q4_K_M")
+    assert [c.model for c in rec.profile.llm.candidates] == ["Gemma 4 E4B"]
+
+
+def test_gpu_12gb_has_separate_primary_candidates_and_notes():
+    _report, rec = pick("NVIDIA GeForce RTX 3060, 12288, 11900, 551.23")
+    p = rec.profile
+    assert p.id == "gpu_12gb" and p.draft is True
+    assert (p.llm.model, p.llm.quantization, p.llm.tier) == ("Qwen3-8B", "Q4_K_M", "permissive")
+    assert p.llm.options == {"thinking_mode": "off"} and "thinking" in p.llm.note
+    assert rec.settings["EXTRACT_CHUNK_MAX_CHARS"] == "10000" and rec.settings["EXTRACT_CHUNK_OVERLAP_CHARS"] == "800"
+    by_tier = {t: [c.model for c in p.llm.candidates if c.tier == t] for t in ("permissive", "conditional")}
+    assert by_tier["permissive"] == ["Gemma 4 12B", "Mi:dm 2.0 Base 11.5B", "Kanana 1.5 8B Instruct", "Qwen3-14B"]
+    assert by_tier["conditional"] == ["Llama 3.x", "Bllossom"]
+    assert all(not c.selectable_by_default for c in p.llm.candidates if c.tier == "conditional")
+    assert "순차" in p.notes
+
+
+def test_gpu_12gb_with_low_free_vram_steps_down_to_8gb_values():
+    _report, rec = pick("NVIDIA GeForce RTX 3060, 12288, 6000, 551.23")
+    assert rec.profile.id == "gpu_8gb"
+    assert rec.settings["EXTRACT_CHUNK_MAX_CHARS"] == "6000" and rec.profile.llm.model == "Qwen 2.5 7B Instruct"
+
+
+def test_gpu_16gb_plus_shares_12gb_candidates_with_conservative_chunks():
+    by_id = {p.id: p for p in PROFILES.profiles}
+    assert by_id["gpu_16gb_plus"].llm.candidates == by_id["gpu_12gb"].llm.candidates
+    assert by_id["gpu_16gb_plus"].settings["EXTRACT_CHUNK_MAX_CHARS"] == "8000"  # 기존 값 유지(보수적)
+
+
+def _minimal_profile_data():
+    return {
+        "version": 1, "draft_notice": "초안",
+        "profiles": [{
+            "id": "only", "description": "d", "min_vram_mb": 0, "max_vram_mb": None,
+            "stt": {"model": "s", "precision": "int8"}, "llm": {"model": "m", "quantization": "Q4"},
+        }],
+    }
+
+
+def test_old_format_without_extension_fields_still_validates():
+    ps = parse_profiles(json.dumps(_minimal_profile_data()))
+    llm = ps.profiles[0].llm
+    assert llm.candidates == [] and llm.options == {} and llm.tier == "permissive" and ps.profiles[0].draft is False
+
+
+@pytest.mark.parametrize(
+    "mutate, message",
+    [
+        (lambda d: d["profiles"][0]["llm"].update(tier="conditional"), "permissive"),
+        (lambda d: d["profiles"][0]["llm"].update(candidates=[
+            {"model": "x", "license": "L", "tier": "conditional", "selectable_by_default": True}]), "selectable_by_default"),
+        (lambda d: d["profiles"][0]["llm"].update(candidates=[
+            {"model": "x", "license": "L", "tier": "free", "selectable_by_default": True}]), "tier"),
+        (lambda d: d["profiles"][0]["llm"].update(candidates=[
+            {"model": "x", "license": "L", "tier": "permissive", "selectable_by_default": True, "url": "u"}]), "url"),
+        (lambda d: d["profiles"][0]["llm"].update(unknown=1), "unknown"),
+    ],
+)
+def test_tier_and_extension_validation(mutate, message):
+    data = _minimal_profile_data()
+    mutate(data)
+    with pytest.raises(ProfileConfigError) as info:
+        parse_profiles(json.dumps(data))
+    assert message in str(info.value)
+
+
+def test_default_profiles_file_has_no_banned_names_or_addresses():
+    text = DEFAULT_PROFILES_PATH.read_text(encoding="utf-8").lower()
+    for banned in ("exaone", "qwen 2.5 3b", "72b", "gemma 3", "26b", "kms", "ai_rag", "http", ".gguf"):
+        assert banned not in text, banned
+    assert all(p.draft for p in PROFILES.profiles)
+
+
+def test_tool_shows_primary_candidates_and_tiers_without_writing_files(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    tool = _tool()
+    detector = lambda: detect_gpus(runner=smi("NVIDIA GeForce RTX 3060, 12288, 11900, 551.23"), torch_loader=no_torch)  # noqa: E731
+    text = io.StringIO()
+    assert tool.main([], detector=detector, out=text) == 0
+    body = text.getvalue()
+    assert "LLM 주력: Qwen3-8B (Q4_K_M)" in body and "thinking_mode=off" in body
+    assert "[자유 라이선스] Gemma 4 12B" in body and "[조건부 — 고객 요청 시에만] Llama 3.x" in body
+    assert "초안" in body
+    js = io.StringIO()
+    assert tool.main(["--json"], detector=detector, out=js) == 0
+    profile = json.loads(js.getvalue())["profile"]
+    assert profile["primary"]["model"] == "Qwen3-8B" and profile["draft"] is True
+    tiers = {c["model"]: (c["tier"], c["selectable_by_default"]) for c in profile["candidates"]}
+    assert tiers["Gemma 4 12B"] == ("permissive", True) and tiers["Bllossom"] == ("conditional", False)
+    assert list(tmp_path.iterdir()) == []
