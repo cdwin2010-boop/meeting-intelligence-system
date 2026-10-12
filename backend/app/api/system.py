@@ -8,11 +8,14 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.schemas import CamelModel
-from app.auth.deps import get_current_account, require_rank
+from fastapi import HTTPException, status
+
+from app.auth.deps import get_current_account, has_rank
 from app.config import settings
 from app.db import get_session
 from app.models import Account
 from app.services.license_status import current_license_status
+from app.services.system_admin import is_system_admin
 from app.services.task_queue import queue_counts
 
 router = APIRouter(prefix="/api/system", tags=["system"])
@@ -57,9 +60,11 @@ class LicenseOut(CamelModel):
 
 @router.get("/license", response_model=LicenseOut, response_model_by_alias=True)
 def get_license(
-    account: Account = Depends(require_rank("manager")), session: Session = Depends(get_session)
+    account: Account = Depends(get_current_account), session: Session = Depends(get_session)
 ) -> LicenseOut:
-    """임시 규칙: 시스템 관리자 개념이 아직 없어 사용권한 중간관리자(manager) 이상만 조회한다."""
+    """사용권한 중간관리자(manager) 이상 또는 시스템 관리자(회의록 내용은 못 보지만 라이선스 확인은 한다)만 조회한다. 그 밖에는 403."""
+    if not (has_rank(account, "manager") or is_system_admin(session, account.id)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="권한이 없습니다")
     st = current_license_status(session)
     return LicenseOut(
         status=st.state, licensee=st.licensee, max_accounts=st.max_accounts, active_accounts=st.active_accounts,

@@ -289,3 +289,16 @@ def test_tool_create_new_account_password_never_printed_or_stored_in_history(env
     assert tool.main(["--tenant", "고객사A", "--login-id", "x3", "--create", "--name", "n", "--email", "e@e.com", "--apply"],
                      password_input=lambda p: next(short), session_factory=f) == 1
     assert "--create" not in settings.model_fields  # 설정으로 노출되지 않음(도구 전용)
+
+
+def test_license_status_is_readable_by_system_admin_and_managers_only(env):
+    """시스템 관리자(staff)는 라이선스 상태를 확인할 수 있다(화면 표시용). 일반 담당자는 403, 관리자 이상은 기존대로 200."""
+    f = env["factory"]
+    sysadmin = add_account(f, "고객사A", "sys", "staff", name="시스템")
+    staff = add_account(f, "고객사A", "plain", "staff", name="일반")
+    manager = add_account(f, "고객사A", "mgr", "manager", name="관리")
+    designate_now(env, sysadmin)
+    assert call(env, "GET", sysadmin, "/api/system/license").status_code == 200
+    assert call(env, "GET", staff, "/api/system/license").status_code == 403
+    assert call(env, "GET", manager, "/api/system/license").status_code == 200
+    assert env["client"].get("/api/system/license").status_code == 401
