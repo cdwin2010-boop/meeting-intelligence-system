@@ -7,8 +7,8 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models import Transcript
 from app.pipeline.stt import TranscriptResult
-from app.pipeline.transcript_text import decode_transcript, parse_transcript
-from app.pipeline.transcript_xlsx import xlsx_to_text
+from app.pipeline.transcript_text import build_result, decode_transcript, parse_transcript
+from app.pipeline.transcript_xlsx import xlsx_to_utterances
 from app.services.source_kind import TRANSCRIPT_TXT_ENGINE
 
 
@@ -19,5 +19,5 @@ def read_source_transcript(factory: sessionmaker, meeting_id: int, path: Path) -
             return TranscriptResult(text=saved.full_text, segments=saved.segments)
     raw = path.read_bytes()
     if path.suffix.lower() == ".xlsx":
-        return parse_transcript(xlsx_to_text(raw))  # 엑셀을 "[시각] 화자: 발언" 글자로 합친 뒤 txt 와 같은 해석
+        return build_result(xlsx_to_utterances(raw))  # 엑셀은 열을 그대로 발언 목록으로(글자로 합쳐 다시 해석하지 않는다)
     return parse_transcript(decode_transcript(raw))

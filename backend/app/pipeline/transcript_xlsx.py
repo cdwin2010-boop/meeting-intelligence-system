@@ -3,7 +3,7 @@
 
 열 규칙(설계 문서 D-26 부록): 첫 행(머리글)의 이름으로 열을 찾는다. 위쪽 10행 안에서 "발언" 열이 있는 행을 머리글로 본다.
   - 시각 열(선택): 시각·시간·타임스탬프·time·timestamp …  "mm:ss"·"hh:mm:ss" 글자, 엑셀 시간 값, 초 단위 숫자를 읽는다. 읽을 수 없는 값은 시각 없음.
-  - 화자 열(선택): 화자·발언자·이름·speaker …  없으면 "화자1" 로 둔다(화자 열이 있어도 빈 칸은 직전 화자).
+  - 화자 열(선택): 화자·발언자·이름·speaker …  없거나 빈 칸이면 화자 표기 없이 원문 그대로 둔다(임의 "화자1" 을 붙이지 않는다). 표기는 앞뒤 공백만 다듬는다.
   - 발언 열(필수): 발언·내용·대화·text …  발언이 빈 행은 건너뛴다.
   머리글을 찾지 못하면 오류(업로드 때 422). 시트는 보이는 시트를 순서대로 모두 읽는다(빈 시트는 건너뛰고, 전부 비면 오류).
 안전: 수식은 저장된 계산 값만 읽는다(계산하지 않음, 값이 저장되지 않은 수식은 빈 칸). 외부 링크는 따라가지 않는다(openpyxl 은 읽지 않는다).
@@ -16,7 +16,7 @@ import re
 import zipfile
 
 from app.config import settings
-from app.pipeline.transcript_text import DEFAULT_SPEAKER, TranscriptTextError
+from app.pipeline.transcript_text import NO_SPEAKER, TranscriptTextError, render_line
 
 _OLE_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # 암호가 걸린 엑셀은 zip 이 아니라 OLE 컨테이너로 저장된다
 _ZIP_SIGNATURES = (b"PK\x03\x04", b"PK\x05\x06")
@@ -29,45 +29,44 @@ _TIME_NAMES = {"시각", "시간", "타임스탬프", "타임코드", "시작시
 _SPEAKER_NAMES = {"화자", "화자명", "발언자", "말한사람", "참석자", "이름", "성명", "speaker", "name"}
 _TEXT_NAMES = {"발언", "발언내용", "내용", "대화", "대화내용", "텍스트", "text", "content", "utterance", "message"}
 _TIME_TEXT = re.compile(r"^\[?\s*(\d{1,3}):(\d{2})(?::(\d{2}))?\s*\]?$")
-_LABEL_STRIP = re.compile(r"[\s.,!?;:：()\[\]]+")
 
 
 def _norm(value: object) -> str:
     return re.sub(r"\s+", "", str(value or "")).lower()
 
 
-def _hms(total: int) -> str:
-    return f"[{total // 3600:02d}:{total % 3600 // 60:02d}:{total % 60:02d}]"
+def _time_sec(value: object) -> float | None:
+    """시각 셀 → 초. 읽을 수 없으면 None."""
+    total = _time_total(value)
+    return float(total) if total is not None else None
 
 
-def _time_label(value: object) -> str | None:
-    """시각 셀 → "[hh:mm:ss]". 읽을 수 없으면 None."""
+def _time_total(value: object) -> int | None:
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, dt.datetime):
-        return _hms(value.hour * 3600 + value.minute * 60 + value.second)
+        return (value.hour * 3600 + value.minute * 60 + value.second)
     if isinstance(value, dt.time):
-        return _hms(value.hour * 3600 + value.minute * 60 + value.second)
+        return (value.hour * 3600 + value.minute * 60 + value.second)
     if isinstance(value, dt.timedelta):
-        return _hms(int(value.total_seconds()))
+        return (int(value.total_seconds()))
     if isinstance(value, (int, float)):
         if value < 0:
             return None
         # 0 이상 1 미만은 엑셀의 하루 비율(시간 값), 그 이상은 초 단위로 본다
-        return _hms(int(round(value * 86400)) if value < 1 else int(value))
+        return (int(round(value * 86400)) if value < 1 else int(value))
     match = _TIME_TEXT.match(str(value).strip())
     if not match:
         return None
     first, second, third = int(match.group(1)), int(match.group(2)), match.group(3)
     if third is None:  # mm:ss
-        return _hms(first * 60 + second) if second < 60 else None
-    return _hms(first * 3600 + second * 60 + int(third)) if second < 60 and int(third) < 60 else None
+        return (first * 60 + second) if second < 60 else None
+    return (first * 3600 + second * 60 + int(third)) if second < 60 and int(third) < 60 else None
 
 
 def _speaker_label(value: object) -> str:
-    # 시각이 없는 줄에서도 발언 라벨로 읽히도록 공백·문장부호를 없애고 짧게 자른다
-    label = _LABEL_STRIP.sub("", str(value or ""))
-    return label[:_MAX_LABEL_LEN]
+    # 원문 표기 그대로(공백·문장부호를 지우지 않는다). 줄바꿈만 공백으로, 앞뒤 공백 제거
+    return re.sub(r"\s+", " ", str(value if value is not None else "")).strip()[:_MAX_LABEL_LEN * 3]
 
 
 def _text_of(value: object) -> str:
@@ -108,8 +107,8 @@ def _find_header(rows: list[tuple]) -> tuple[int, int | None, int | None, int] |
     return None
 
 
-def xlsx_to_text(raw: bytes) -> str:
-    """엑셀 바이트 → 전사문 글자("[hh:mm:ss] 화자: 발언" 줄). 규칙 위반은 TranscriptTextError(사용자에게 보여도 되는 문구)."""
+def xlsx_to_utterances(raw: bytes) -> list[dict]:
+    """엑셀 바이트 → 발언 목록({speaker, start_sec, text}). 화자·시각이 없으면 ""·None. 규칙 위반은 TranscriptTextError(사용자에게 보여도 되는 문구)."""
     if len(raw) > settings.transcript_upload_max_bytes:
         raise TranscriptTextError(f"엑셀 파일이 너무 큽니다(최대 {settings.transcript_upload_max_bytes // 1024}KB).")
     if not raw:
@@ -124,9 +123,10 @@ def xlsx_to_text(raw: bytes) -> str:
     except Exception:  # noqa: BLE001 — openpyxl 의 다양한 형식 오류를 한 문구로
         raise TranscriptTextError("엑셀(.xlsx) 파일을 읽을 수 없습니다(손상되었거나 형식이 다릅니다).") from None
 
-    lines: list[str] = []
+    utterances: list[dict] = []
     saw_data_sheet = False
     header_missing = False
+    header_found = False
     try:
         for sheet in workbook.worksheets:
             if getattr(sheet, "sheet_state", "visible") != "visible":
@@ -145,10 +145,10 @@ def xlsx_to_text(raw: bytes) -> str:
             saw_data_sheet = True
             header = _find_header(non_empty)
             if header is None:
-                header_missing = True
+                header_missing = True  # 안내 시트 같은 머리글 없는 시트는 건너뛴다
                 continue
+            header_found = True
             head_index, time_col, speaker_col, text_col = header
-            last_speaker = DEFAULT_SPEAKER
             for row in non_empty[head_index + 1 :]:
                 def cell(col: int | None) -> object:
                     return row[col] if col is not None and col < len(row) else None
@@ -156,25 +156,26 @@ def xlsx_to_text(raw: bytes) -> str:
                 text = _text_of(cell(text_col))
                 if not text:
                     continue
-                if speaker_col is not None:
-                    label = _speaker_label(cell(speaker_col))
-                    if label:
-                        last_speaker = label
-                speaker = last_speaker
-                stamp = _time_label(cell(time_col)) if time_col is not None else None
-                lines.append(f"{stamp} {speaker}: {text}" if stamp else f"{speaker}: {text}")
+                speaker = _speaker_label(cell(speaker_col)) if speaker_col is not None else NO_SPEAKER
+                start = _time_sec(cell(time_col)) if time_col is not None else None
+                utterances.append({"speaker": speaker, "start_sec": start, "text": text})
     finally:
         workbook.close()
 
     if not saw_data_sheet:
         raise TranscriptTextError("빈 파일입니다(내용이 있는 시트가 없습니다).")
-    if not lines:
-        if header_missing:
+    if not utterances:
+        if header_missing and not header_found:
             raise TranscriptTextError(
-                "열 이름을 찾지 못했습니다. 첫 행에 '발언'(또는 내용) 열이 필요하고, '시각'과 '화자' 열은 있으면 읽습니다."
+                "'발언' 열을 찾지 못했습니다. 올리기 화면의 '엑셀 양식 내려받기'로 받은 양식을 사용해 주세요(시각·화자 열은 선택, 발언 열은 필수)."
             )
         raise TranscriptTextError("읽을 수 있는 발언이 없습니다(발언 열이 비어 있습니다).")
-    text = "\n".join(lines)
-    if len(text) > settings.transcript_max_chars:
+    total_chars = sum(len(u["text"]) + len(u["speaker"]) for u in utterances)
+    if total_chars > settings.transcript_max_chars:
         raise TranscriptTextError(f"글자 수가 너무 많습니다(최대 {settings.transcript_max_chars}자).")
-    return text
+    return utterances
+
+
+def xlsx_to_text(raw: bytes) -> str:
+    """엑셀 바이트 → 읽기용 글자("[hh:mm:ss] 화자: 발언" 줄, 화자·시각이 없으면 그 부분을 쓰지 않는다). 검증과 테스트용."""
+    return "\n".join(render_line(u["speaker"], u["start_sec"], u["text"]) for u in xlsx_to_utterances(raw))

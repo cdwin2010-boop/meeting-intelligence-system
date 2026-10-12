@@ -12,8 +12,8 @@ from app.config import settings
 from app.models import ActionItem, Event, Meeting, SourceDocument, Transcript
 from app.pipeline.extractor import FakeExtractor
 from app.pipeline.fakes import FAKE_SCRIPT
-from app.pipeline.transcript_text import TranscriptTextError, parse_transcript
-from app.pipeline.transcript_xlsx import xlsx_to_text
+from app.pipeline.transcript_text import TranscriptTextError, build_result, parse_transcript
+from app.pipeline.transcript_xlsx import xlsx_to_text, xlsx_to_utterances
 from app.services.processing import process_meeting
 from app.services.source_kind import TRANSCRIPT_TXT_ENGINE
 from tests.test_transcript_txt import NoStt, post_txt
@@ -100,17 +100,21 @@ def test_time_cell_formats(value, expected):
     assert line == f"{expected} 김대리: 발언"
 
 
-def test_unreadable_time_gives_untimed_line_and_missing_speaker_carries_previous():
+def test_unreadable_time_gives_untimed_line_and_blank_speaker_stays_unlabeled():
     rows = [HEADER, ["오전", "김대리", "첫 발언"], [None, None, "이어지는 발언"], ["00:00:20", "박팀장", "답변"]]
-    assert xlsx_to_text(workbook_bytes(rows)).splitlines() == ["김대리: 첫 발언", "김대리: 이어지는 발언", "[00:00:20] 박팀장: 답변"]
+    # 빈 화자 칸은 직전 화자를 이어 쓰지 않고 라벨 없이 그대로 둔다(작업 85-1)
+    assert xlsx_to_text(workbook_bytes(rows)).splitlines() == ["김대리: 첫 발언", "이어지는 발언", "[00:00:20] 박팀장: 답변"]
+    result = build_result(xlsx_to_utterances(workbook_bytes(rows)))
+    assert [s["speaker"] for s in result.segments] == ["김대리", "", "박팀장"]
 
 
-def test_no_speaker_column_uses_default_speaker_and_keeps_rows_separate():
+def test_no_speaker_column_has_no_label_and_keeps_rows_separate():
     rows = [["시간", "내용"], ["00:00:01", "첫째"], ["00:00:02", "둘째"]]
-    assert xlsx_to_text(workbook_bytes(rows)).splitlines() == ["[00:00:01] 화자1: 첫째", "[00:00:02] 화자1: 둘째"]
-    only_text = xlsx_to_text(workbook_bytes([["발언"], ["하나"], ["둘"]]))
-    assert only_text.splitlines() == ["화자1: 하나", "화자1: 둘"]
-    assert len(parse_transcript(only_text).segments) == 2
+    assert xlsx_to_text(workbook_bytes(rows)).splitlines() == ["[00:00:01] 첫째", "[00:00:02] 둘째"]
+    only = build_result(xlsx_to_utterances(workbook_bytes([["발언"], ["하나"], ["둘: 셋"]])))
+    assert only.text.splitlines() == ["하나", "둘: 셋"]  # 임의 "화자1" 없음, 발언 안의 콜론도 라벨로 읽지 않는다
+    assert [s["speaker"] for s in only.segments] == ["", ""]
+    assert all("화자1" not in line for line in only.text.splitlines())
 
 
 def test_multiple_visible_sheets_in_order_and_hidden_sheet_ignored():
@@ -122,9 +126,12 @@ def test_multiple_visible_sheets_in_order_and_hidden_sheet_ignored():
     assert xlsx_to_text(raw).splitlines() == ["[00:00:01] 가: 첫 시트", "[00:00:05] 나: 둘째 시트"]
 
 
-def test_multiline_cell_and_speaker_punctuation_are_normalized():
-    rows = [HEADER, ["00:00:01", "김 대리(팀)", "첫 줄\n둘째 줄:  끝"]]
-    assert xlsx_to_text(workbook_bytes(rows)) == "[00:00:01] 김대리팀: 첫 줄 둘째 줄: 끝"
+def test_multiline_cell_is_joined_and_speaker_is_shown_as_written():
+    rows = [HEADER, ["00:00:01", " 김 대리(팀) ", "첫 줄\n둘째 줄:  끝"]]
+    # 화자 표기의 공백·문장부호는 지우지 않는다(작업 85-1). 앞뒤 공백만 다듬는다
+    assert xlsx_to_text(workbook_bytes(rows)) == "[00:00:01] 김 대리(팀): 첫 줄 둘째 줄: 끝"
+    result = build_result(xlsx_to_utterances(workbook_bytes(rows)))
+    assert result.text == "[00:00:01] 김 대리(팀): 첫 줄 둘째 줄: 끝"
 
 
 def test_formula_cells_use_stored_values_only_and_never_the_formula_text():
@@ -146,7 +153,7 @@ def test_rejects_unreadable_structures():
     cases = {
         "빈 시트": (workbook_bytes([]), "빈 파일"),
         "머리글만": (workbook_bytes([HEADER]), "발언이 없습니다"),
-        "열 이름 없음": (workbook_bytes([["a", "b"], ["1", "2"]]), "열 이름을 찾지 못했습니다"),
+        "열 이름 없음": (workbook_bytes([["a", "b"], ["1", "2"]]), "양식을 사용해 주세요"),
         "zip 아님": (b"plain text, not a workbook", "엑셀(.xlsx) 파일이 아닙니다"),
         "빈 바이트": (b"", "빈 파일"),
     }
@@ -280,3 +287,71 @@ def test_audio_upload_and_txt_upload_are_unchanged(env, mgr):
         files={"file": ("자료.xlsx", workbook_bytes([HEADER, ["00:00:01", "a", "b"]]), XLSX_TYPE)},
     )
     assert bad.status_code == 415  # 음성으로 올린 xlsx 는 기존대로 허용 형식 오류
+
+
+# ---------------- 양식 내려받기·round-trip(작업 85-1) ----------------
+def test_template_download_requires_login_and_blocks_system_admin(env, mgr):
+    client = env["client"]
+    assert client.get("/api/meetings/transcript-template").status_code == 401
+    ok = client.get("/api/meetings/transcript-template", headers=auth(mgr))
+    assert ok.status_code == 200
+    assert ok.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    assert "attachment" in ok.headers["content-disposition"]
+    admin = add_account(env["factory"], "고객사A", "sysadm", "staff", name="시스템")
+    from app.models import Account
+    from app.services.system_admin import designate
+
+    with env["factory"]() as session:
+        designate(session, session.get(Account, admin.id), actor_id=None)
+        session.commit()
+    assert client.get("/api/meetings/transcript-template", headers=auth(admin)).status_code == 403
+
+
+def test_template_has_header_only_data_sheet_and_guide_and_empty_form_is_rejected(env, mgr):
+    from openpyxl import load_workbook
+
+    content = env["client"].get("/api/meetings/transcript-template", headers=auth(mgr)).content
+    wb = load_workbook(io.BytesIO(content))
+    assert wb.sheetnames == ["회의 발언", "작성 안내"]
+    assert [list(r) for r in wb["회의 발언"].iter_rows(values_only=True)] == [["시각", "화자", "발언"]]  # 예시 행 없음
+    guide = " ".join(str(c) for r in wb["작성 안내"].iter_rows(values_only=True) for c in r if c)
+    for word in ("mm:ss", "비워도", "필수", "매크로", "암호"):
+        assert word in guide
+    # 비어 있는 양식을 그대로 올리면 등록되지 않는다
+    response = post_xlsx(env, mgr, content, filename="양식.xlsx")
+    assert response.status_code == 422
+    assert "발언 열이 비어 있습니다" in response.json()["detail"]
+
+
+def test_template_round_trip_filled_rows_register(env, mgr):
+    from openpyxl import load_workbook
+
+    content = env["client"].get("/api/meetings/transcript-template", headers=auth(mgr)).content
+    wb = load_workbook(io.BytesIO(content))
+    sheet = wb["회의 발언"]
+    sheet.append(["00:00:05", "김대리", "예산을 검토하겠습니다"])
+    sheet.append([None, None, "시각과 화자가 없는 발언"])
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    response = post_xlsx(env, mgr, buffer.getvalue(), filename="작성한 양식.xlsx")
+    assert response.status_code == 202
+    utterances = xlsx_to_utterances(buffer.getvalue())
+    assert [(u["speaker"], u["text"]) for u in utterances] == [("김대리", "예산을 검토하겠습니다"), ("", "시각과 화자가 없는 발언")]
+
+
+def test_missing_text_column_message_points_to_template(env, mgr):
+    response = post_xlsx(env, mgr, workbook_bytes([["시각", "화자"], ["00:00:01", "김대리"]]))
+    assert response.status_code == 422
+    assert "양식" in response.json()["detail"]
+
+
+def test_unlabeled_rows_are_shown_as_written_in_transcript_api_and_stay_unchanged_on_reprocess(env, mgr):
+    rows = [["시각", "발언"], ["00:00:03", "김 대리(팀): 예산 검토는 제가 하겠습니다"], [None, "화자 열이 없는 줄"]]
+    res = post_xlsx(env, mgr, workbook_bytes(rows))
+    meeting_id = res.json()["meetingId"]
+    assert run(env, res.json()["jobId"]) == "completed"
+    body = env["client"].get(f"/api/meetings/{meeting_id}/transcript", headers=auth(mgr)).json()
+    assert "화자1" not in body["fullText"] and "화자1" not in body["displayText"]
+    assert body["fullText"].splitlines() == ["[00:00:03] 김 대리(팀): 예산 검토는 제가 하겠습니다", "화자 열이 없는 줄"]
+    assert [s["speaker"] for s in body["segments"]] == ["", ""]
+    assert [s["text"] for s in body["segments"]][1] == "화자 열이 없는 줄"

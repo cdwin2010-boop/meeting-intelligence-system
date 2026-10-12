@@ -5,7 +5,8 @@
 - 줄 형식(STT 전사문과 같다): "[mm:ss] 화자N: 내용", "[hh:mm:ss] 이름: 내용". 시각이 없는 "화자N: 내용"·"이름: 내용"도 읽는다.
   · 시각이 있는 줄은 "[hh:mm:ss] 화자: 내용"으로 맞춰 쓴다(근거 시각 산정·화자 표시가 그대로 동작).
   · 시각이 없는 줄은 "화자: 내용"으로 쓰고 구간(segments)에 화자만 남긴다(시각 null → 근거 시각 없음).
-  · 라벨이 없는 줄은 직전 발언의 연속으로 붙이고, 첫 줄부터 라벨이 없으면 "화자1" 발언으로 본다.
+  · 라벨이 없는 줄은 직전 발언의 연속으로 붙이고, 첫 줄부터(또는 시각만 있고) 라벨이 없으면 화자 표기 없는 발언으로 둔다
+    (임의의 "화자1" 을 붙이지 않는다 — 작업 85-1. 화면에도 라벨 없이 원문 그대로 보인다).
 - 전사 본문은 로그·예외 문구에 넣지 않는다.
 """
 import re
@@ -15,7 +16,7 @@ from app.config import settings
 from app.pipeline.evidence_time import parse_seconds
 from app.pipeline.stt import TranscriptResult
 
-DEFAULT_SPEAKER = "화자1"
+NO_SPEAKER = ""  # 화자 표기가 없는 발언(임의 라벨을 붙이지 않는다)
 _MAX_LABEL_LEN = 20
 _TIMED = re.compile(r"^\s*\[\s*(\d{1,3}:\d{2}(?::\d{2})?)\s*\]\s*(.*)$")
 _LABELED = re.compile(r"^\s*([^:：\n]+?)\s*[:：]\s*(.*)$")
@@ -90,15 +91,24 @@ def parse_transcript(text: str) -> TranscriptResult:
             if utterances and not (timed and start is not None):
                 utterances[-1]["text"] = f"{utterances[-1]['text']} {content}".strip()  # 직전 발언의 연속
                 continue
-            label = utterances[-1]["speaker"] if utterances else DEFAULT_SPEAKER
+            label = NO_SPEAKER
         utterances.append({"speaker": label, "start_sec": start, "text": content})
 
-    lines = [
-        f"[{_hms(u['start_sec'])}] {u['speaker']}: {u['text']}" if u["start_sec"] is not None else f"{u['speaker']}: {u['text']}"
-        for u in utterances
-    ]
+    return build_result(utterances)
+
+
+def render_line(speaker: str, start_sec: float | None, text: str) -> str:
+    """발언 한 건 → 전사 줄. 화자가 없으면 화자 부분을 쓰지 않는다("[hh:mm:ss] 발언" 또는 "발언")."""
+    body = f"{speaker}: {text}" if speaker else text
+    return f"[{_hms(start_sec)}] {body}" if start_sec is not None else body
+
+
+def build_result(utterances: list[dict[str, Any]]) -> TranscriptResult:
+    """발언 목록({speaker, start_sec, text}) → TranscriptResult. 시각이 없거나 화자가 없는 발언이 있으면 구간(segments)을 함께 준다
+    (화자 목록·화자 없음 표시를 줄머리 글자 해석에 맡기지 않기 위해)."""
+    lines = [render_line(u["speaker"], u["start_sec"], u["text"]) for u in utterances]
     segments = None
-    if any(u["start_sec"] is None for u in utterances):
+    if any(u["start_sec"] is None or not u["speaker"] for u in utterances):
         segments = []
         for index, u in enumerate(utterances):
             end = None

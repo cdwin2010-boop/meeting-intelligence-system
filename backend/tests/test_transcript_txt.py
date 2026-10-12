@@ -52,13 +52,13 @@ def test_parse_timed_lines_keep_format():
     assert result.segments is None  # 시각이 모두 있으면 STT 결과와 같은 모양(구간 없음)
 
 
-def test_parse_timeless_lines_and_continuation_and_default_speaker():
+def test_parse_timeless_lines_and_continuation_and_no_default_speaker():
     result = parse_transcript("첫 줄은 라벨이 없습니다\n화자2: 이어서 말합니다\n그리고 이 줄은 연속입니다\n김대리: 내일까지 제출: 금요일")
     lines = result.text.splitlines()
-    assert lines[0] == "화자1: 첫 줄은 라벨이 없습니다"
+    assert lines[0] == "첫 줄은 라벨이 없습니다"  # 임의 "화자1" 을 붙이지 않는다(작업 85-1)
     assert lines[1] == "화자2: 이어서 말합니다 그리고 이 줄은 연속입니다"
     assert lines[2] == "김대리: 내일까지 제출: 금요일"
-    assert [s["speaker"] for s in result.segments] == ["화자1", "화자2", "김대리"]
+    assert [s["speaker"] for s in result.segments] == ["", "화자2", "김대리"]
     assert all(s["start_sec"] is None for s in result.segments)
 
 
@@ -69,7 +69,7 @@ def test_parse_continuation_line_with_colon_is_not_a_speaker():
 
 def test_parse_mixed_and_label_less_timed_line():
     result = parse_transcript("[00:05] 화자1: 시작\n[00:09] 그래서 계속\n라벨 없는 연속")
-    assert result.text.splitlines() == ["[00:00:05] 화자1: 시작", "[00:00:09] 화자1: 그래서 계속 라벨 없는 연속"]
+    assert result.text.splitlines() == ["[00:00:05] 화자1: 시작", "[00:00:09] 그래서 계속 라벨 없는 연속"]
 
 
 def test_decode_utf8_bom_cp949_and_failures(monkeypatch):
