@@ -7,6 +7,8 @@
  * - 상태는 색 점과 글자 라벨을 함께 보여 준다. 읽기 전용(확인 처리·확정 버튼은 다음 단계)
  * - 수정 요청 대기(pendingChangeRequests): 서버가 내가 해결할 수 있는 미해결 요청만 준다. 건수가 0이면 묶음을 숨기고,
  *   항목을 누르면 그 회의록 상세(/v2/meetings/{id})로 이동한다
+ * - 수정 요청 대기·보완 필요 업무 항목은 회의록 상세로 갈 때 returnTo=/v2 를 붙여, 상세에서 "할 일로 돌아가기"를 쓸 수 있다(작업 85-1).
+ *   보완 필요 업무는 item=업무 번호도 붙여 상세가 그 업무 줄로 이동·강조한다
  */
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -25,6 +27,7 @@ import {
   type TodoList,
   type Todos,
 } from "@/lib/v2/todos";
+import { withReturnTo } from "@/lib/v2/return-to";
 import { isManager } from "@/lib/v2/types";
 
 type LoadState =
@@ -85,16 +88,27 @@ function Section({ title, list, children }: { title: string; list: TodoList<unkn
   );
 }
 
-function Row({ title, meta, aside }: { title: string; meta?: ReactNode; aside?: ReactNode }) {
-  return (
-    <li className="flex items-center justify-between gap-4 px-5 py-4">
+function Row({ title, meta, aside, href, linkLabel }: { title: string; meta?: ReactNode; aside?: ReactNode; href?: string; linkLabel?: string }) {
+  const body = (
+    <>
       <div className="min-w-0">
         <p className="truncate font-medium">{title}</p>
         {meta ? <p className="mt-1 text-xs text-mn-muted">{meta}</p> : null}
       </div>
       {aside ? <div className="flex shrink-0 flex-wrap items-center gap-3">{aside}</div> : null}
-    </li>
+    </>
   );
+  // href 가 있으면 줄 전체가 링크다(누르면 해당 화면으로 이동)
+  if (href) {
+    return (
+      <li>
+        <Link href={href} aria-label={linkLabel} className="mn-focus flex items-center justify-between gap-4 px-5 py-4 hover:bg-mn-elevated">
+          {body}
+        </Link>
+      </li>
+    );
+  }
+  return <li className="flex items-center justify-between gap-4 px-5 py-4">{body}</li>;
 }
 
 const EMPTY_LIST: TodoList<PendingChangeRequest> = { total: 0, items: [] };
@@ -105,7 +119,7 @@ function ChangeRequestRow({ request }: { request: PendingChangeRequest }) {
   return (
     <li>
       <Link
-        href={`${V2_MEETINGS_PATH}/${request.meetingId}`}
+        href={withReturnTo(`${V2_MEETINGS_PATH}/${request.meetingId}`, "/v2", request.itemId === null ? {} : { item: request.itemId })}
         className="mn-focus flex items-center justify-between gap-4 px-5 py-4 hover:bg-mn-elevated"
       >
         <div className="min-w-0">
@@ -261,6 +275,8 @@ function TodoContent({ todos, notices, manager }: { todos: Todos; notices: Notic
                 <Row
                   key={item.itemId}
                   title={item.title || "(업무명 없음)"}
+                  href={withReturnTo(`${V2_MEETINGS_PATH}/${item.meetingId}`, "/v2", { item: item.itemId })}
+                  linkLabel={`보완 필요 업무로 이동: ${item.title || "업무명 없음"}`}
                   aside={item.missingFields.map((field) => (
                     <StatusDot key={field} tone="error" label={MISSING_LABEL[field] ?? field} />
                   ))}

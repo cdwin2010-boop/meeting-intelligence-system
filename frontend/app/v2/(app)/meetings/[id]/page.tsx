@@ -54,6 +54,7 @@ import { ProcessingBanner, ProcessingWarnings } from "@/components/v2/Processing
 import { useProcessingFinished } from "@/components/v2/ProcessingProvider";
 import { MinutesDialog, MinutesPanel } from "@/components/v2/MinutesPanel";
 import { findSegmentIndex, parseSeconds, parseTranscriptBlocks } from "@/lib/v2/transcript-time";
+import { RETURN_TO_PARAM, returnLabel, validReturnTo } from "@/lib/v2/return-to";
 import { UploadUpdateDialog } from "@/components/v2/UploadUpdateDialog";
 import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
 import { ChangeRequestDialog, type ChangeRequestTarget } from "@/components/v2/ChangeRequestDialog";
@@ -169,10 +170,21 @@ function FakeMeetingNotice({ show }: { show: boolean }) {
   );
 }
 
+/**
+ * 위쪽 돌아가기 링크. 주소에 returnTo(같은 사이트의 /v2 내부 경로만 유효)가 있으면 그 화면으로("할 일로 돌아가기"),
+ * 없거나 유효하지 않으면 회의록 목록으로. 서버 렌더에는 쿼리를 읽지 않아 처음엔 목록 링크이고 화면이 뜬 뒤 바뀐다.
+ */
 function BackLink() {
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+  useEffect(() => {
+    setReturnTo(validReturnTo(new URLSearchParams(window.location.search).get(RETURN_TO_PARAM)));
+  }, []);
   return (
-    <Link href={V2_MEETINGS_PATH} className="mn-focus self-start rounded-mn-control text-sm text-mn-muted hover:text-mn-text">
-      ← 회의록 목록으로
+    <Link
+      href={returnTo ?? V2_MEETINGS_PATH}
+      className="mn-focus self-start rounded-mn-control text-sm text-mn-muted hover:text-mn-text"
+    >
+      {returnTo ? `← ${returnLabel(returnTo)}` : "← 회의록 목록으로"}
     </Link>
   );
 }
@@ -408,6 +420,22 @@ function SupersessionInfo({ item }: { item: ActionItem }) {
 
 function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, onSeek, onViewTranscript, onAddItem, onRequestChange, allowed, onCloseItem, onDeleteItem, onFindSimilar }: LedgerTableProps) {
   const needsCount = items.filter((item) => item.needsCompletion).length;
+  // 주소의 item=업무 번호(할 일 화면의 보완 필요 업무·수정 요청에서 옴): 그 줄로 스크롤하고 포커스·강조한다(한 번만)
+  const [focusItemId, setFocusItemId] = useState<number | null>(null);
+  const focusedRef = useRef(false);
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get("item");
+    const id = raw && /^\d{1,12}$/.test(raw) ? Number(raw) : null;
+    setFocusItemId(id);
+  }, []);
+  useEffect(() => {
+    if (focusItemId === null || focusedRef.current) return;
+    const row = document.getElementById(`ledger-item-${focusItemId}`);
+    if (!row) return;
+    focusedRef.current = true;
+    row.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    row.focus({ preventScroll: true });
+  }, [focusItemId, items]);
   // 업무 확정: 한 번에 한 건. 거부되면 서버 문구(보완 필요 409·권한 403 등)를 원장 위에 보여 준다
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [notice, setNotice] = useState<{ tone: "ready" | "error"; text: string } | null>(null);
@@ -501,7 +529,13 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
               items.map((item) => {
                 const status = itemStatus(item);
                 return (
-                  <tr key={item.id} className="h-12 border-b border-mn-border align-middle last:border-b-0">
+                  <tr
+                    key={item.id}
+                    id={`ledger-item-${item.id}`}
+                    tabIndex={-1}
+                    aria-current={item.id === focusItemId ? "true" : undefined}
+                    className={`mn-focus h-12 border-b border-mn-border align-middle outline-none last:border-b-0 ${item.id === focusItemId ? "bg-mn-selected" : ""}`}
+                  >
                     <td className="px-3">
                       {item.supersededBy ? (
                         <span className="mn-chip mn-chip-superseded whitespace-nowrap">대체됨</span>

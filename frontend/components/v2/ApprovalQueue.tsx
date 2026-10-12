@@ -8,10 +8,12 @@
  * 응답 모양이 예상과 달라도(배열이 아님 등) 오류 없이 빈 상태로 본다.
  */
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isAbortError } from "@/lib/v2/errors";
 import { listProjects, type ProjectListItem } from "@/lib/v2/projects";
+import { withReturnTo } from "@/lib/v2/return-to";
 import { getTodos, type PendingChangeRequest } from "@/lib/v2/todos";
 
 interface Queue {
@@ -24,6 +26,7 @@ const MAX_SHOWN = 5;
 
 export function ApprovalQueue({ accountId }: { accountId: number }) {
   const [queue, setQueue] = useState<Queue>(EMPTY);
+  const pathname = usePathname();
   const controllerRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
@@ -55,10 +58,24 @@ export function ApprovalQueue({ accountId }: { accountId: number }) {
   const total = queue.projects.length + queue.requests.length;
   if (total === 0) return null;
 
+  // 제목 링크: 한 건이면 그 항목, 프로젝트만이면 프로젝트 목록, 그 밖에는 할 일 화면(수정·대체 요청 목록이 있다)
+  const requestHref = (request: PendingChangeRequest) =>
+    withReturnTo(`/v2/meetings/${request.meetingId}`, pathname, request.itemId === null ? {} : { item: request.itemId });
+  const headingHref =
+    total === 1
+      ? queue.projects[0]
+        ? `/v2/projects/${queue.projects[0].id}`
+        : requestHref(queue.requests[0])
+      : queue.requests.length === 0
+        ? "/v2/projects"
+        : "/v2";
+
   return (
     <section aria-label="승인 대기" className="flex flex-col gap-2">
       <h2 className="text-xs font-semibold tracking-tight text-mn-muted">
-        승인 대기 <span className="font-mn-mono">{total}</span>건
+        <Link href={headingHref} className="mn-focus rounded-mn-control underline-offset-2 hover:text-mn-text hover:underline">
+          승인 대기 <span className="font-mn-mono">{total}</span>건
+        </Link>
       </h2>
       <ul className="flex flex-col gap-1">
         {queue.projects.slice(0, MAX_SHOWN).map((project) => (
@@ -76,7 +93,7 @@ export function ApprovalQueue({ accountId }: { accountId: number }) {
         {queue.requests.slice(0, MAX_SHOWN).map((request) => (
           <li key={`r-${request.requestId}`}>
             <Link
-              href={`/v2/meetings/${request.meetingId}`}
+              href={requestHref(request)}
               aria-label={`${request.kind === "supersede" ? "대체 요청" : "수정 요청"} 처리 대기: ${request.meetingTitle}`}
               className="mn-focus flex min-w-0 flex-col rounded-mn-control border border-mn-border px-3 py-2 text-sm hover:bg-mn-elevated"
             >
