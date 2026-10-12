@@ -1,0 +1,21 @@
+{
+  "request": {
+    "schema_version": "1",
+    "query": "납기",
+    "subject": {},
+    "limit": 3
+  },
+  "response": {
+    "schema_version": "1",
+    "cards": [
+      {
+        "id": "meeting-41",
+        "title": "주간 생산 현안 회의",
+        "date": "2026/10/01",
+        "summary": "요약",
+        "url": "https://aidots.example.internal/v2/meetings/41",
+        "source": "kms"
+      }
+    ]
+  }
+}

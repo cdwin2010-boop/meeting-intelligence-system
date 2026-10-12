@@ -1,0 +1,23 @@
+{
+  "request": {
+    "schema_version": "1",
+    "query": "납기 지연 대응",
+    "subject": {
+      "external_sub": "ext-user-1001"
+    },
+    "limit": 3
+  },
+  "response": {
+    "schema_version": "1",
+    "cards": [
+      {
+        "id": "meeting-41",
+        "title": "주간 생산 현안 회의",
+        "date": "2026-10-01",
+        "summary": "3호기 납기를 10월 24일로 조정하기로 결정",
+        "url": "https://aidots.example.internal/v2/meetings/41",
+        "source": "aidots"
+      }
+    ]
+  }
+}

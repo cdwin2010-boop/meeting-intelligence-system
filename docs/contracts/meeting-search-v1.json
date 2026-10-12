@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "meeting-search-v1",
+  "title": "meeting-search-v1: KMS → AI DOTS 회의록 검색",
+  "description": "KMS 가 AI DOTS 의 회의록을 검색하는 계약. 시스템 간 호출은 서비스 토큰으로 하고 사용자는 subject.external_sub 로만 알린다(사용자 토큰 전달 금지). 응답 cards 에는 권한 정보가 아니라 원본 시스템(AI DOTS)이 이미 권한을 통과시킨 결과만 담는다: 이 사용자가 열람할 수 없는 회의록은 존재 여부도 응답에 나타나지 않는다. 자료는 복제하지 않고 연합 조회한다. 원본 모델: backend/app/integrations/contracts.py.",
+  "type": "object",
+  "required": ["request", "response"],
+  "additionalProperties": false,
+  "properties": {
+    "request": {"$ref": "#/definitions/request"},
+    "response": {"$ref": "#/definitions/response"}
+  },
+  "definitions": {
+    "subject": {
+      "type": "object",
+      "required": ["external_sub"],
+      "additionalProperties": false,
+      "properties": {
+        "external_sub": {"type": "string", "minLength": 1, "maxLength": 200, "description": "사용자의 외부 식별자. 이름·이메일·토큰은 보내지 않는다."}
+      }
+    },
+    "request": {
+      "type": "object",
+      "required": ["schema_version", "query", "subject"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {"const": "1"},
+        "query": {"type": "string", "minLength": 1, "maxLength": 200, "description": "사용자가 버튼을 눌러 입력한 검색어. 안건·업무 내용이 자동으로 들어가지 않는다."},
+        "subject": {"$ref": "#/definitions/subject"},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 10, "default": 3}
+      }
+    },
+    "card": {
+      "type": "object",
+      "required": ["id", "title", "date", "summary", "url", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 200},
+        "title": {"type": "string", "minLength": 1, "maxLength": 300},
+        "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+        "summary": {"type": "string", "maxLength": 300, "description": "한 줄 요약"},
+        "url": {"type": "string", "minLength": 1, "maxLength": 1000},
+        "source": {"const": "aidots"}
+      }
+    },
+    "response": {
+      "type": "object",
+      "required": ["schema_version", "cards"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {"const": "1"},
+        "cards": {"type": "array", "maxItems": 10, "items": {"$ref": "#/definitions/card"}}
+      }
+    }
+  }
+}
