@@ -102,6 +102,12 @@ class Settings(BaseSettings):
     audio_preprocess_strict: bool = False
     ffmpeg_path: str = "ffmpeg"
     ffmpeg_timeout_seconds: float = Field(900, gt=0)
+    # 라이선스(사용 허가, 작업 80-1): .lic 파일 / 검증용 공개키 PEM(저장소에는 넣지 않음, 없으면 public_key_missing)
+    # / 만료 임박 경고 일수 / 켜면 발급 시 핑거프린트가 들어 있는 라이선스를 이 장비와 대조(기본 꺼짐). 상대 경로는 backend 폴더 기준
+    license_path: Path = Path("data/license.lic")
+    license_public_key_path: Path = Path("config/license_public.pem")
+    license_warn_days: int = Field(30, ge=0)
+    license_require_hardware_match: bool = False
     # 회의 일시를 현지 시각으로 바꿀 때 쓰는 시간대(추출기의 날짜·요일 기준)
     app_timezone: str = "Asia/Seoul"
 

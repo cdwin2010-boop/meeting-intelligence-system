@@ -66,3 +66,11 @@ python scripts/detect_hardware.py --json   # JSON 출력
 - `LLM_PROFILE=gpu_12gb` 처럼 id 로 고정하면 감지하지 않는다(`--profile ID` 로도 지정 가능). 프로파일 값은 초안이며 실측으로 확정한다.
 - 출력에는 선택된 프로파일의 LLM 주력 모델·옵션과 후보 모델이 함께 표시된다. 후보는 `[자유 라이선스]` 와 `[조건부 — 고객 요청 시에만]` 으로 구분되며 모두 초안(시험 비교 대상)이다.
 - 현재는 도구 출력만 제공하며 처리 엔진 선택에는 반영되지 않는다.
+
+## 라이선스(사용 허가) 발급·확인 (작업 80-1)
+
+- 설계·형식·상태 규칙은 `docs/v2-ledger-state-design-draft.md` D-30. 라이선스는 사용 허가만 담고 기능 플래그는 없다.
+- **발급(우리 쪽)**: 개인키는 저장소·`backend/data`·`.env` 에 두지 않는다. `python scripts/issue_license.py --private-key <개인키.pem> --licensee "고객사" --max-accounts 50 --expires 2027-12-31 --out <출력.lic> [--fingerprint <해시>]`.
+- **고객 장비**: `python scripts/show_fingerprint.py` 로 장비 해시를 확인해 전달(바인딩이 필요할 때만). 받은 `.lic` 를 `LICENSE_PATH`(기본 `backend/data/license.lic`)에 두고 공개키를 `LICENSE_PUBLIC_KEY_PATH`(기본 `backend/config/license_public.pem`)에 둔다.
+- **확인**: `python scripts/check_license.py [--json]`(읽기만, 종료 코드 0 = valid/expiring_soon). 화면·연동용은 `GET /api/system/license`(중간관리자 이상).
+- 만료 시 읽기 전용 적용, 허용 계정 수 차단은 아직 없다(초과·만료는 표시만).

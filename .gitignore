@@ -39,3 +39,10 @@ CLAUDE.local.md
 .DS_Store
 Thumbs.db
 !.env.local.example
+
+# 라이선스 개인키·발급된 .lic 는 실수로 커밋하지 않는다(개인키는 저장소 밖에 보관)
+*.key
+*private*.pem
+backend/data/license.lic
+# Cython 선별 빌드 산출물(작업 80-1)
+backend/build/
