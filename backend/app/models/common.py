@@ -55,6 +55,8 @@ ACTION_ITEM_STATUSES = ("pending", "confirmed", "closed", "deleted")
 INACTIVE_ITEM_STATUSES = ("closed", "deleted")
 # 처리 작업 상태: 대기 → 실행 중 → 완료 / 실패 / 말소리 없음
 JOB_STATUSES = ("queued", "running", "completed", "failed", "no_content")
+# 작업 큐 상태(작업 75-1): 대기 → 처리 중 → 완료 / 실패
+TASK_QUEUE_STATUSES = ("PENDING", "PROCESSING", "DONE", "FAILED")
 # ---- 회의 유형(작업 66-3): 정기 / 비정기 / 프로젝트 / 외부(영업·상담) / 기타. 값은 영문 코드, 한글 표시는 프론트가 맡는다 ----
 MEETING_TYPES = ("regular", "irregular", "project", "external", "other")
 # ---- 조직·프로젝트(작업 66-2) ----

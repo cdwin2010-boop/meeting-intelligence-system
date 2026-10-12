@@ -17,6 +17,7 @@ from app.models.common import utcnow
 from app.services.classification import save_classification, validate_classification
 from app.pipeline.transcript_text import TranscriptTextError, decode_transcript
 from app.services.processing import auto_confirm_at, get_job_runner
+from app.services.task_queue import enqueue
 from app.services.upload_storage import claim_stored_file
 from app.services.source_kind import SOURCE_AUDIO, SOURCE_KINDS, SOURCE_TRANSCRIPT_TXT
 
@@ -209,6 +210,8 @@ def upload_meeting(
             event_type="job.queued",
             actor_account_id=account.id,
         )
+        if settings.processing_mode == "queue":
+            enqueue(session, meeting.id)  # 같은 트랜잭션: 회의록·작업·큐 행이 함께 저장되거나 함께 취소된다
         session.commit()
     except BaseException:
         session.rollback()
@@ -217,5 +220,6 @@ def upload_meeting(
             final_path.unlink(missing_ok=True)
         raise
 
-    background_tasks.add_task(job_runner, job.id, session_factory)
+    if settings.processing_mode != "queue":  # queue 모드에서는 단독 워커가 가져간다
+        background_tasks.add_task(job_runner, job.id, session_factory)
     return UploadAccepted(meeting_id=meeting.id, job_id=job.id)

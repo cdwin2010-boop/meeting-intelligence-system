@@ -953,3 +953,15 @@ A·B·C·D는 팀장 회신 2026-10-01로 [확정]됐다(부록 B). 각 표에�
   - **기존 파일 무시**: `uploads` 의 기존 파일과 DB 의 기존 저장 경로는 이동·변경하지 않는다. 저장 경로를 읽는 곳(처리·재처리·오디오 재생·자료 종류 판별)은 DB 의 경로를 그대로 쓰므로 옛 형식 이름도 그대로 동작한다.
   - **원래 파일명**: 별도로 보관하는 칸은 없다(제목 미입력 시 원본 파일명이 원천 문서·회의록 제목이 되는 기존 동작 그대로). 수정 회의록(xlsx) 갱신 업로드는 파일을 저장하지 않고 메모리에서 읽기만 한다.
   - **아직 하지 않은 것**: 기존 파일 일괄 이름 변경(마이그레이션), 원본 파일명 별도 보관, 한 회의록에 파일이 여러 개 묶이는 구조(현재 회의록당 원천 문서 1건이라 순번은 항상 001).
+
+### D-27 작업 큐와 워커 [구현 기준, 작업 75-1]
+- **표 `task_queue`**(마이그레이션 `b8f3a1c6d204`, 기존 표 변경 없음): `id`, `tenant_id`, `meeting_id`(회의록 FK), `status`(CHECK `PENDING`·`PROCESSING`·`DONE`·`FAILED`), `progress`(0~100, CHECK), `error_msg`(Text, 짧은 요약만), `attempts`, `started_at`, `created_at`, `updated_at`. 인덱스 `(status, created_at)`·`meeting_id`·`tenant_id`. downgrade 는 행이 있으면 거부하고 비어 있을 때만 표를 지운다. 이 표는 `services/task_queue.py` 에서만 다룬다(가드 테스트).
+- **기존 `jobs` 와의 관계**: `jobs` 는 처리 상태 전이·사건·실패 코드의 원천으로 그대로 쓰고, `task_queue` 는 "워커가 가져갈 일감"만 담는다. 워커는 회의록의 대기(queued) `jobs` 행을 찾아 기존 파이프라인(`process_meeting`)을 그대로 부른다.
+- **처리 방식 `PROCESSING_MODE`**: `inline`(기본, 현행: 업로드·재처리가 BackgroundTasks 로 직접 실행) / `queue`(업로드·재처리가 같은 트랜잭션에서 `jobs` 와 `task_queue` 행만 만들고 202, 처리는 단독 워커). queue 모드의 회의록 상태는 기존과 같이 `processing`, 작업은 `queued`(대기 표시 그대로). queue 모드에서는 서버 시작 때 대기·처리 중 작업을 실패(server_restarted)로 바꾸지 않는다(워커가 복구).
+- **획득**: 가장 오래된 `PENDING` 을 후보로 `UPDATE ... WHERE id=? AND status='PENDING'` 의 영향 행 수가 1 일 때만 `PROCESSING`(시도 +1, `started_at`)으로 획득, 아니면 다음 후보. 회의록당 활성(PENDING·PROCESSING) 작업은 `enqueue` 가 서비스 계층에서 보장한다(있으면 기존 것을 돌려줌).
+- **복구**: 시작 시 `recover_stale` — `started_at` 이 `WORKER_STALE_SECONDS`(기본 1800) 지난 `PROCESSING` 은 시도 수가 `WORKER_MAX_ATTEMPTS`(기본 3) 미만이면 `PENDING`, 이상이면 `FAILED`("워커 중단으로 실패")와 회의록·작업 실패(코드 `worker_stopped`). 워커가 죽어 `running` 으로 남은 `jobs` 행은 다시 가져갈 때 `queued` 로 되돌린다.
+- **종료**: SIGINT·SIGTERM 을 받으면 현재 작업이 끝나기를 `WORKER_SHUTDOWN_GRACE`(기본 30초)까지 기다리고, 넘으면 `PROCESSING` 을 `PENDING` 으로 되돌리고 종료한다(`release_all_processing`).
+- **진행률**: 시작 10 → STT(또는 txt 읽기) 끝 40 → 전사문 저장 55 → 추출 시작 85 → 완료 100.
+- **GPU 해제 지점**: 음성 경로에서 STT 엔진 `release()` 직후, 추출 시작 전에 `release_gpu_memory()`(`gc.collect()` + torch 가 있고 CUDA 가 가능하면 `torch.cuda.empty_cache()`, 없거나 오류면 로그만). txt 자료 파일은 STT 가 없어 호출하지 않는다.
+- **API**: `GET /api/system/engine` 에 `processingMode`·`queuePending`·`queueProcessing` 추가(기존 필드 불변).
+- **아직 하지 않은 것**: 작업 우선순위, 취소, 큐 관리 화면·API, 여러 워커의 부하 분산 정책, 처리 방식을 바꿀 때 남은 작업 이관, 로컬 STT·LLM 실제 엔진.

@@ -23,6 +23,7 @@ from app.models import Account, ActionItem, Job, Meeting, MeetingMinutes, Source
 from app.models.minutes import MINUTES_FIELDS, NO_CONTENT
 from app.models.common import utcnow
 from app.pipeline.errors import error_code
+from app.pipeline.gpu import release_gpu_memory
 from app.pipeline.evidence_time import apply_evidence_times
 from app.services.mail import queue_immediate_new_minutes
 from app.services.notices import create_confirm_notices
@@ -231,12 +232,15 @@ def process_meeting(
     session_factory: sessionmaker | None = None,
     stt_factory: Callable[[], SttEngine] | None = None,
     extractor_factory: Callable[[], Extractor] | None = None,
+    on_progress: Callable[[int], None] | None = None,
 ) -> str | None:
-    """작업 1건을 처리하고 최종 상태를 돌려준다. queued 가 아니면 아무것도 하지 않고 None."""
+    """작업 1건을 처리하고 최종 상태를 돌려준다. queued 가 아니면 아무것도 하지 않고 None.
+    on_progress 는 워커가 단계마다 진행률(0~100)을 받는 선택 콜백이다(실패해도 처리에는 영향 없음)."""
     factory = session_factory or SessionLocal
     started = _start(factory, job_id)
     if started is None:
         return None
+    _progress(on_progress, 10)
 
     try:
         audio_path = Path(settings.upload_dir) / started["file_path"]
@@ -253,12 +257,15 @@ def process_meeting(
                 stt_result = as_transcript_result(stt.transcribe(audio_path, mime_type))
             finally:
                 stt.release()
+                release_gpu_memory()  # STT 직후·추출 전: GPU 메모리를 비워 STT 와 LLM 이 동시에 올라가지 않게 한다
             provider = getattr(stt, "provider_name", None) or settings.stt_provider
             engine = provider
 
         # 말소리 없음 판정·업무 추출보다 먼저 원문을 보존한다
+        _progress(on_progress, 40)
         _save_transcript(factory, job_id, stt_result, provider)
         transcript = stt_result.text
+        _progress(on_progress, 55)
 
         if is_no_speech(transcript):
             _finish_no_content(factory, job_id)
@@ -268,6 +275,7 @@ def process_meeting(
         local_held_at = started["held_at"].astimezone(ZoneInfo(settings.app_timezone))
         result = (extractor_factory or default_extractor)().extract(transcript, local_held_at)
         # 근거 시각은 Gemini 응답이 아니라 저장된 전사문과 인용문을 서버가 대조해 정한다(실패한 업무도 시각만 비우고 그대로 저장)
+        _progress(on_progress, 85)
         items = apply_evidence_times(result.items, stt_result.text, stt_result.segments)
         if provider == TRANSCRIPT_TXT_ENGINE and not has_timestamps(stt_result):
             # 시각 표기가 없는 자료 파일: 엔진이 준 시각은 근거가 없으므로 비운다("근거 위치 보기" 비활성)
@@ -284,6 +292,20 @@ def process_meeting(
         log.warning("job %s failed: %s (%s)", job_id, code, type(exc).__name__)
         _finish_failed(factory, job_id, code)
         return "failed"
+
+
+def _progress(callback: Callable[[int], None] | None, value: int) -> None:
+    if callback is None:
+        return
+    try:
+        callback(value)
+    except Exception as exc:  # noqa: BLE001 — 진행률 기록 실패로 처리를 멈추지 않는다
+        log.warning("progress update failed: %s", type(exc).__name__)
+
+
+def mark_job_failed(factory: sessionmaker, job_id: int, code: str) -> None:
+    """작업·회의록을 기존 규칙대로 failed 로 바꾼다(워커가 파이프라인 밖에서 난 예외를 기록할 때 쓴다)."""
+    _finish_failed(factory, job_id, code)
 
 
 def run_job_in_background(job_id: int, session_factory: sessionmaker) -> None:

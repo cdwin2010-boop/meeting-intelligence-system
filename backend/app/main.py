@@ -23,7 +23,8 @@ async def lifespan(_app: FastAPI):
     if settings.stt_provider == "fake":
         log.warning("가짜(fake) 처리 모드로 실행 중입니다. 업로드한 음성은 실제로 처리되지 않습니다(STT_PROVIDER=fake).")
     try:
-        recovered = recover_interrupted_jobs(SessionLocal)
+        # queue 모드: 대기·처리 중 작업은 단독 워커가 이어받으므로 서버 시작 때 실패로 바꾸지 않는다(워커가 recover_stale 로 복구)
+        recovered = 0 if settings.processing_mode == "queue" else recover_interrupted_jobs(SessionLocal)
         if recovered:
             log.warning("서버 재시작으로 중단된 처리 작업 %d건을 실패(server_restarted)로 정리했습니다.", recovered)
     except Exception as exc:  # noqa: BLE001 — 복구 실패로 서버가 못 뜨면 안 된다

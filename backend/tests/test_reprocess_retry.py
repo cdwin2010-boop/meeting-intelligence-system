@@ -370,6 +370,9 @@ def test_startup_has_no_fake_warning_for_gemini(env, monkeypatch, caplog):
 
 
 # ---------------- 엔진 API ----------------
+QUEUE_FIELDS = {"processingMode": "inline", "queuePending": 0, "queueProcessing": 0}  # 작업 75-1 에서 추가된 필드(기존 필드는 불변)
+
+
 def test_engine_requires_login_and_exposes_only_engine(env, team, monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", SecretStr("AIzaSyFAKEFAKEFAKEFAKEFAKEFAKE12345"))
     monkeypatch.setattr(settings, "gemini_paid_api_key", SecretStr("AIzaSyPAIDPAIDPAIDPAIDPAIDPAID1234"))
@@ -378,10 +381,10 @@ def test_engine_requires_login_and_exposes_only_engine(env, team, monkeypatch):
     assert env["client"].get("/api/system/engine").status_code == 401
     monkeypatch.setattr(settings, "stt_provider", "fake")
     res = call(env, "GET", team["staff"], "/api/system/engine")
-    assert res.status_code == 200 and res.json() == {"engine": "fake", "isFake": True}
+    assert res.status_code == 200 and res.json() == {"engine": "fake", "isFake": True, **QUEUE_FIELDS}
     monkeypatch.setattr(settings, "stt_provider", "gemini")
     res = call(env, "GET", team["staff"], "/api/system/engine")
-    assert res.json() == {"engine": "gemini", "isFake": False}
+    assert res.json() == {"engine": "gemini", "isFake": False, **QUEUE_FIELDS}
     for secret in ("AIza", "paid", "free", "model-name-xyz"):
         assert secret not in res.text
 

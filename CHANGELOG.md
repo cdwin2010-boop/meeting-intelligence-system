@@ -1,6 +1,7 @@
 # Changelog
 
 ## 미배포 (v2 개발 중)
+- v2 `backend/` 작업 큐와 단독 워커(작업 75-1 파트 A): 표 `task_queue`(마이그레이션 `b8f3a1c6d204`, 기존 표 변경 없음, downgrade 는 행이 있으면 거부), 서비스 `services/task_queue.py`(enqueue·원자적 claim·진행률·완료·실패·멈춘 작업 복구·종료 시 대기 복귀), 단독 프로세스 `python worker.py`(본체 `app/worker_loop.py`, 직렬 처리·종료 유예), 설정 `PROCESSING_MODE`(inline 기본, queue 면 업로드·재처리가 큐에만 넣고 202)·`WORKER_*` 4개, STT 직후 `release_gpu_memory()`(torch 없어도 동작), `GET /api/system/engine` 에 `processingMode`·`queuePending`·`queueProcessing` 추가. inline 동작·처리 상태 전이 불변. 기존 테스트 1건(엔진 응답 동등 단언)에 추가 필드 반영. 설계 문서 D-27, 운영 문서 `docs/ops-worker.md`. 프론트 변경 없음. **운영 DB 는 백업 후 `alembic upgrade head` 로 직접 적용, queue 모드는 워커를 함께 띄워야 함**.
 - v2 `backend/` 업로드 저장 파일명 규칙(작업 76-1): 새로 저장하는 음성·txt 파일을 `{회의록id}_{YYYYMMDDHH}_{순번3자리}{확장자}`(예: `41_2026101409_001.m4a`, 시각은 `APP_TIMEZONE`)로 저장. 흐름은 검증 → 임시 저장 → 회의록 행 생성(id 확보) → 최종 이름으로 이동(덮어쓰지 않고 다음 순번) → 커밋, 실패 시 롤백·파일 정리. 저장 폴더·API 응답·기존 파일·DB 경로 불변, 마이그레이션 없음, 기존 파일 일괄 이름 변경은 하지 않음. 기존 테스트 2건의 저장 파일명 단언을 새 규칙으로 갱신. 프론트 변경 없음. **서버 재시작 후 적용**.
 - v3.0 UI 올리기 화면 긴 파일명 가로 넘침 수정(작업 73-2): 좁은 폭에서 grid 열이 내용 폭으로 늘어나던 것을 `minmax(0,1fr)` 로 고정하고, 올리기 화면의 FilePicker 에만 `wrapName`(말줄임 대신 줄바꿈)을 적용. 수정 회의록 업로드 팝업의 FilePicker 는 그대로. 프론트만 변경.
 - 테스트 보강(작업 73-2): E2E 공용 `test`(e2e/helpers/test.ts)가 가로채지 않은 /api 요청에 경로별 최소 유효 응답을 주고(가장 낮은 우선순위), 실제 네트워크로 나가는 /api 요청이 있으면 테스트를 실패시킨다. 백엔드가 꺼져 있을 때 "콘솔 오류 없음" 계열이 연결 거부로 실패하던 문제 해소(`/apiundefined` 요청 포함). 제품 코드 변경 없음.

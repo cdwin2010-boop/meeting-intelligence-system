@@ -11,10 +11,12 @@ from app.api.schemas import CamelModel
 from app.auth.access import can_confirm_meeting, get_visible_meeting
 from app.auth.deps import get_current_account
 from app.auth.locks import reject_if_locked
+from app.config import settings
 from app.db import get_session, get_session_factory
 from app.models import Account
 from app.services.processing import get_job_runner
 from app.services.reprocess import active_job_exists, start_reprocess
+from app.services.task_queue import enqueue
 
 router = APIRouter(prefix="/api/meetings", tags=["meeting-reprocess"])
 
@@ -50,6 +52,9 @@ def reprocess_meeting(
     if audio_file_or_none(session, meeting) is None:
         raise _conflict("보관된 음성 파일이 없어 다시 처리할 수 없습니다. 음성을 다시 올려 주세요")
     job = start_reprocess(session, meeting, account)
+    if settings.processing_mode == "queue":
+        enqueue(session, meeting.id)  # 같은 트랜잭션에서 큐에 넣고, 처리는 단독 워커가 한다
     session.commit()
-    background_tasks.add_task(job_runner, job.id, session_factory)
+    if settings.processing_mode != "queue":
+        background_tasks.add_task(job_runner, job.id, session_factory)
     return ReprocessAccepted(meeting_id=meeting.id, job_id=job.id)

@@ -73,6 +73,13 @@ class Settings(BaseSettings):
     # 자료 파일(txt) 등록(작업 73-1): 파일 크기 상한(바이트)과 글자 수 상한. 넘으면 422
     transcript_upload_max_bytes: int = Field(default=2 * 1024 * 1024, ge=1)
     transcript_max_chars: int = Field(default=300000, ge=1)
+    # 처리 방식(작업 75-1): inline = 서버가 BackgroundTasks 로 직접 처리(현행) / queue = task_queue 에 쌓고 단독 worker 프로세스가 처리
+    processing_mode: Literal["inline", "queue"] = "inline"
+    # 워커: 대기 작업 폴링 간격(초), 처리 중 작업을 멈춘 것으로 보는 시간(초), 멈춘 작업의 최대 처리 시도 수, 종료 신호 뒤 현재 작업을 기다리는 시간(초)
+    worker_poll_seconds: float = Field(1.5, gt=0)
+    worker_stale_seconds: int = Field(1800, ge=1)
+    worker_max_attempts: int = Field(3, ge=1)
+    worker_shutdown_grace: int = Field(30, ge=0)
     # 회의 일시를 현지 시각으로 바꿀 때 쓰는 시간대(추출기의 날짜·요일 기준)
     app_timezone: str = "Asia/Seoul"
 
