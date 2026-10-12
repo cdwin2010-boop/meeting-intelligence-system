@@ -74,3 +74,14 @@ python scripts/detect_hardware.py --json   # JSON 출력
 - **고객 장비**: `python scripts/show_fingerprint.py` 로 장비 해시를 확인해 전달(바인딩이 필요할 때만). 받은 `.lic` 를 `LICENSE_PATH`(기본 `backend/data/license.lic`)에 두고 공개키를 `LICENSE_PUBLIC_KEY_PATH`(기본 `backend/config/license_public.pem`)에 둔다.
 - **확인**: `python scripts/check_license.py [--json]`(읽기만, 종료 코드 0 = valid/expiring_soon). 화면·연동용은 `GET /api/system/license`(중간관리자 이상).
 - 만료 시 읽기 전용 적용, 허용 계정 수 차단은 아직 없다(초과·만료는 표시만).
+
+## 핵심 모듈 Cython 선별 빌드 (작업 80-1 파트 B)
+
+- 대상은 3개뿐이다(`backend/setup_cython.py` 의 `TARGET_MODULES` 한 곳): `app/pipeline/prompts.py`(프롬프트 템플릿 엔진), `app/licensing/verifier.py`(라이선스 검증), `app/pipeline/chunked_extract.py`(의사결정·액션아이템 추출 로직). 파서 `json_parser.py` 는 대상이 아니다(추출 로직 모듈이 핵심 판정 규칙을 담고 있어 이쪽을 선택). 전체 프로젝트 컴파일은 하지 않는다(동적 import 충돌 방지).
+- 빌드: `cd backend && python setup_cython.py --list`(대상 출력) / `python setup_cython.py --out build/cython`. 원본 `.py` 는 수정·삭제하지 않는다. Cython 과 C 컴파일러가 필요하며 없으면 오류 코드 3(Cython 없음)·4(컴파일 실패)로 끝난다.
+- **투명 import**: 같은 폴더에 확장 모듈(`.pyd`/`.so`)과 `.py` 가 함께 있으면 확장 모듈이 먼저 import 된다. 산출물이 없으면 `.py` 가 import 된다. FastAPI·worker 코드는 어느 쪽이든 바뀌지 않는다(컴파일 없이도 동일 동작).
+- **배포 패키지 구성**: ① backend 소스를 복사하고 ② 대상 3개의 `.py` 를 지운 뒤 ③ 산출물을 같은 상대 경로(`app/pipeline/`, `app/licensing/`)에 둔다. 나머지 모듈은 `.py` 그대로다.
+- **주의**: 산출물은 플랫폼·파이썬 버전별이다(Windows `.pyd`, Linux `.so`, 파일명에 `cp311-win_amd64` 같은 태그). 배포 대상 OS·파이썬 버전마다 그 환경에서 빌드한다. 컴파일된 모듈은 소스 줄 단위 디버깅·트레이스백 줄 번호가 제한된다(문제 분석은 컴파일 없는 `.py` 로 재현). 컴파일은 읽기 난이도를 높일 뿐 우회가 불가능한 보호는 아니다.
+- **라이선스 키와의 관계**: 배포 패키지에는 공개키(`LICENSE_PUBLIC_KEY_PATH`)만 포함한다. 개인키는 포함하지 않고 발급 담당 장비에만 둔다.
+- 대상 모듈은 동적 import·`exec`·`eval`·전역 상태 변경·함수 안 import 를 쓰지 않는다(`tests/test_cython_build.py` 정적 점검). 대상 모듈에 새 코드를 넣을 때 이 규칙을 지킨다.
+
