@@ -22,7 +22,14 @@ import { useProcessing } from "@/components/v2/ProcessingProvider";
 import { isAbortError } from "@/lib/v2/errors";
 import type { MeetingType } from "@/lib/v2/meeting-types";
 import { uploadMeeting } from "@/lib/v2/meetings";
-import { isTranscriptTxtName, SOURCE_KIND_LABEL, SOURCE_KINDS, type SourceKind } from "@/lib/v2/source-kind";
+import {
+  isTranscriptKind,
+  matchesTranscriptExt,
+  SOURCE_KIND_LABEL,
+  SOURCE_KINDS,
+  transcriptExtOf,
+  type SourceKind,
+} from "@/lib/v2/source-kind";
 import { getProject } from "@/lib/v2/projects";
 import { clearUploadDraft, loadUploadDraft, saveUploadDraft, UPLOAD_PATH } from "@/lib/v2/upload-return";
 
@@ -175,11 +182,11 @@ function UploadForm() {
   async function submit() {
     if (submittingRef.current) return;
     if (!file) {
-      setFormError(sourceKind === "transcript_txt" ? "자료 파일(txt)을 선택하세요." : "음성 파일을 선택하세요.");
+      setFormError(isTranscriptKind(sourceKind) ? `${SOURCE_KIND_LABEL[sourceKind]}을 선택하세요.` : "음성 파일을 선택하세요.");
       return;
     }
-    if (sourceKind === "transcript_txt" && !isTranscriptTxtName(file.name)) {
-      setFormError("자료 파일은 .txt 파일만 올릴 수 있습니다."); // 서버를 부르지 않는다
+    if (isTranscriptKind(sourceKind) && !matchesTranscriptExt(sourceKind, file.name)) {
+      setFormError(`자료 파일은 .${transcriptExtOf(sourceKind)} 파일만 올릴 수 있습니다.`); // 서버를 부르지 않는다
       return;
     }
     const heldAt = toOffsetIso(date, time);
@@ -280,6 +287,11 @@ function UploadForm() {
                 전사문(txt)을 올리면 음성 인식 없이 바로 업무를 추출합니다. 시각 표기가 없으면 "근거 위치 보기"는 쓸 수 없습니다.
               </p>
             ) : null}
+            {sourceKind === "transcript_xlsx" ? (
+              <p role="status" className="text-xs text-mn-text">
+                엑셀(.xlsx)을 올리면 음성 인식 없이 바로 업무를 추출합니다. 첫 행에 "발언"(또는 내용) 열이 필요하고 "시각"·"화자" 열은 있으면 읽습니다. 시각이 없으면 "근거 위치 보기"는 쓸 수 없습니다. 비밀번호가 걸린 파일과 매크로 파일은 올릴 수 없습니다.
+              </p>
+            ) : null}
           </fieldset>
 
           {/* 파일: 끌어다 놓기 영역 + 공용 FilePicker(버튼·상태 글자·숨긴 입력) */}
@@ -295,15 +307,21 @@ function UploadForm() {
               dragOver ? "border-mn-accent bg-mn-elevated" : "border-mn-control",
             ].join(" ")}
           >
-            <p className="text-sm font-medium">{sourceKind === "transcript_txt" ? "자료 파일(txt)을 끌어다 놓거나 선택하세요" : "음성 파일을 끌어다 놓거나 선택하세요"}</p>
+            <p className="text-sm font-medium">{isTranscriptKind(sourceKind) ? `${SOURCE_KIND_LABEL[sourceKind]}을 끌어다 놓거나 선택하세요` : "음성 파일을 끌어다 놓거나 선택하세요"}</p>
             <p id={fileHintId} className="text-xs text-mn-muted">
               허용 형식과 최대 용량은 서버 설정을 따르며, 벗어나면 올릴 때 알려 드립니다.
             </p>
             <FilePicker
               file={file}
-              buttonLabel={sourceKind === "transcript_txt" ? "자료 파일 선택" : "음성 파일 선택"}
-              inputLabel={sourceKind === "transcript_txt" ? "자료 파일 선택" : "음성 파일 선택"}
-              accept={sourceKind === "transcript_txt" ? ".txt,text/plain" : "audio/*,video/mp4,video/webm"}
+              buttonLabel={isTranscriptKind(sourceKind) ? "자료 파일 선택" : "음성 파일 선택"}
+              inputLabel={isTranscriptKind(sourceKind) ? "자료 파일 선택" : "음성 파일 선택"}
+              accept={
+                sourceKind === "transcript_txt"
+                  ? ".txt,text/plain"
+                  : sourceKind === "transcript_xlsx"
+                    ? ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    : "audio/*,video/mp4,video/webm"
+              }
               describedBy={fileHintId}
               disabled={submitting}
               className="justify-center"

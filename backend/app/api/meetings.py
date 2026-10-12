@@ -19,7 +19,8 @@ from app.pipeline.transcript_text import TranscriptTextError, decode_transcript
 from app.services.processing import auto_confirm_at, get_job_runner
 from app.services.task_queue import enqueue
 from app.services.upload_storage import claim_stored_file
-from app.services.source_kind import SOURCE_AUDIO, SOURCE_KINDS, SOURCE_TRANSCRIPT_TXT
+from app.pipeline.transcript_xlsx import xlsx_to_text
+from app.services.source_kind import SOURCE_AUDIO, SOURCE_KINDS, SOURCE_TRANSCRIPT_TXT, SOURCE_TRANSCRIPT_XLSX, TRANSCRIPT_KINDS
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
@@ -103,14 +104,17 @@ def _unprocessable(message: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=message)
 
 
-def _stage_transcript_upload(file: UploadFile, tenant_id: int) -> Path:
+def _stage_transcript_upload(file: UploadFile, tenant_id: int, kind: str = SOURCE_TRANSCRIPT_TXT) -> Path:
     """자료 파일(txt) 임시 저장: 크기·인코딩·내용을 먼저 검사(전사 본문은 로그·문구에 넣지 않는다)하고 {uuid}.part 로 쓴다."""
     limit = settings.transcript_upload_max_bytes
     raw = file.file.read(limit + 1)
     if len(raw) > limit:
-        raise _unprocessable(f"txt 파일이 너무 큽니다(최대 {limit // 1024}KB).")
+        raise _unprocessable(f"{'엑셀' if kind == SOURCE_TRANSCRIPT_XLSX else 'txt'} 파일이 너무 큽니다(최대 {limit // 1024}KB).")
     try:
-        decode_transcript(raw)
+        if kind == SOURCE_TRANSCRIPT_XLSX:
+            xlsx_to_text(raw)  # 엑셀 규칙 검증(열 이름·매크로·암호·빈 시트·글자 수)
+        else:
+            decode_transcript(raw)
     except TranscriptTextError as exc:
         raise _unprocessable(str(exc)) from None
     folder = Path(settings.upload_dir) / str(tenant_id)
@@ -141,12 +145,15 @@ def upload_meeting(
     _check_participants(session, account, ids)
 
     if source_kind not in SOURCE_KINDS:
-        raise _unprocessable("sourceKind 는 audio 또는 transcript_txt 여야 합니다.")
+        raise _unprocessable("sourceKind 는 audio, transcript_txt 또는 transcript_xlsx 여야 합니다.")
     ext = _extension(file.filename or "")
-    transcript_txt = source_kind == SOURCE_TRANSCRIPT_TXT
+    transcript_txt = source_kind in TRANSCRIPT_KINDS  # 자료 파일(txt·엑셀): STT 없이 전사문으로 읽는다
     if transcript_txt:
-        if ext != "txt":
-            raise _unprocessable("자료 파일은 .txt 파일만 올릴 수 있습니다.")
+        wanted = "xlsx" if source_kind == SOURCE_TRANSCRIPT_XLSX else "txt"
+        if ext == "xlsm":
+            raise _unprocessable("매크로가 들어 있는 엑셀(.xlsm) 파일은 올릴 수 없습니다. .xlsx 로 저장해 주세요.")
+        if ext != wanted:
+            raise _unprocessable(f"자료 파일은 .{wanted} 파일만 올릴 수 있습니다.")
     elif ext not in settings.allowed_audio_extensions:
         allowed = ", ".join(sorted(settings.allowed_audio_extensions))
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=f"허용하지 않는 파일 형식입니다({allowed}).")
@@ -159,7 +166,7 @@ def upload_meeting(
     meeting_title = (title.strip() or original_name or "제목 없음")[:300]
 
     # 검증(크기·빈 파일·txt 내용)은 임시 저장 단계에서 끝낸다. 최종 이름({회의록id}_{일시}_{순번})은 회의록 id 를 얻은 뒤 정한다
-    staged = _stage_transcript_upload(file, account.tenant_id) if transcript_txt else _stage_upload(file, account.tenant_id)
+    staged = _stage_transcript_upload(file, account.tenant_id, source_kind) if transcript_txt else _stage_upload(file, account.tenant_id)
     final_path: Path | None = None
     try:
         now = utcnow()

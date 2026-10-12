@@ -85,7 +85,7 @@ export interface ActionItem {
 /** GET /api/meetings/{id} (권한 없음·다른 고객사·없음은 모두 404) */
 export interface MeetingDetail {
   id: number;
-  /** 자료 종류(추가 필드): audio(음성 파일) | transcript_txt(자료 파일 txt, STT 없음). 필드가 없으면 audio */
+  /** 자료 종류(추가 필드): audio(음성 파일) | transcript_txt(자료 파일 txt) | transcript_xlsx(자료 파일 엑셀), 자료 파일은 STT 없음. 필드가 없으면 audio */
   sourceKind?: SourceKind;
   /** 재생할 음성이 있는가. false 면 플레이어를 보이지 않는다(필드가 없으면 true 로 본다) */
   hasAudio?: boolean;
@@ -292,7 +292,7 @@ export function uploadMeeting(
   form.append("file", input.file);
   form.append("title", input.title);
   form.append("heldAt", input.heldAt);
-  // 자료 종류: 음성 파일(기본) | 자료 파일(txt, STT 없이 전사문으로 읽음)
+  // 자료 종류: 음성 파일(기본) | 자료 파일(txt·엑셀, STT 없이 전사문으로 읽음)
   form.append("sourceKind", input.sourceKind ?? "audio");
   // 참석자는 같은 이름(participantIds)으로 여러 번 보낸다(서버는 반복·쉼표 묶음 모두 받음). 없으면 보내지 않는다
   for (const id of input.participantIds ?? []) form.append("participantIds", String(id));
@@ -493,6 +493,8 @@ export function createManualItem(id: number, input: ManualItemInput, signal?: Ab
 
 /** 처리 작업 정보(상세 응답 processing) */
 export interface MeetingProcessing {
+  /** 처리 단계(추가 필드, 작업 84-1): convert | extract | done. 필드가 없는 서버 응답이면 없다 */
+  stage?: string | null;
   status: "queued" | "running" | "completed" | "failed" | "no_content";
   errorCode: string | null;
   startedAt: string | null;

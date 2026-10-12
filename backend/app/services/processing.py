@@ -33,7 +33,7 @@ from app.services.processing_warnings import record_processing_warnings
 from app.services.notices import create_confirm_notices
 from app.services.reprocess import recompute_auto_confirm_after_reprocess
 from app.pipeline.extractor import ActionItemCandidate, ExtractionResult, Extractor, FakeExtractor, make_gemini_extractor
-from app.services.source_kind import SOURCE_TRANSCRIPT_TXT, TRANSCRIPT_TXT_ENGINE, source_kind_of_path
+from app.services.source_kind import TRANSCRIPT_KINDS, TRANSCRIPT_TXT_ENGINE, source_kind_of_path
 from app.pipeline.transcript_text import has_timestamps
 from app.services.transcript_source import read_source_transcript
 from app.pipeline.stt import FakeStt, SttEngine, TranscriptResult, as_transcript_result, is_no_speech, make_gemini_stt
@@ -254,8 +254,8 @@ def process_meeting(
         audio_path = Path(settings.upload_dir) / started["file_path"]
         if not started["file_path"] or not audio_path.is_file():
             raise FileNotFoundError("uploaded audio is missing")
-        if source_kind_of_path(started["file_path"]) == SOURCE_TRANSCRIPT_TXT:
-            # 자료 파일(txt): STT 를 건너뛰고 올린 전사문을 쓴다. 이후 단계는 음성과 같다(생성 엔진은 추출기를 따른다)
+        if source_kind_of_path(started["file_path"]) in TRANSCRIPT_KINDS:
+            # 자료 파일(txt·엑셀): STT 를 건너뛰고 올린 전사문을 쓴다. 이후 단계는 음성과 같다(생성 엔진은 추출기를 따른다)
             stt_result = read_source_transcript(factory, started["meeting_id"], audio_path)
             provider, engine = TRANSCRIPT_TXT_ENGINE, settings.stt_provider
         else:

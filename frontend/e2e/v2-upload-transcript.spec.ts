@@ -88,7 +88,7 @@ test.describe("자료 종류 선택", () => {
   test("legend '자료 종류', 라디오 둘, 기본은 음성 파일(●/○), 음성 선택 입력 그대로", async ({ page }) => {
     await openUpload(page);
     await expect(kindGroup(page).locator("legend")).toHaveText("자료 종류");
-    await expect(kindGroup(page).getByRole("radio")).toHaveCount(2);
+    await expect(kindGroup(page).getByRole("radio")).toHaveCount(3); // 음성 파일·자료 파일(txt)·자료 파일(엑셀)
     await expect(kindRadio(page, "음성 파일")).toBeChecked();
     await expect(kindRadio(page, "자료 파일(txt)")).not.toBeChecked();
     await expect(kindLabel(page, "음성 파일")).toContainText("●");
