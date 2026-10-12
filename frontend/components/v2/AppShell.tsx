@@ -10,6 +10,9 @@
  * - 헤더: 모바일에는 처리 현황 요약 뱃지(ProcessingBadge, 같은 ProcessingProvider 상태·새 폴링 없음). 업로드 진입은 패널(모바일은 드로어)의 "회의록 올리기" 하나만 둔다(v3.0 에서 헤더 "새 회의 업로드" 제거).
  * - 데스크톱 패널 접기·펼치기(768 이상): 토글은 헤더 로그아웃 오른쪽(v3.0 에서 패널 안에서 이동). 접으면 48px 띠(처리 중 건수만), 나머지는 hidden 이라 접근성 트리·Tab 에서 빠진다.
  *   상태는 계정별 localStorage(저장소가 막혀도 정상, 기본 펼침)에서 마운트 뒤 적용한다. 접혀 있어도 처리 현황 알림(aria-live)은 띠에서 유지한다.
+ * - 보조창 좌우 전환(768 이상, 작업 85-1): 사용자 설정 sidePosition = left | right(기본 right, 쿠키 저장·서버 렌더에서 읽음).
+ *   DOM 순서를 위치에 맞춰 바꿔(왼쪽이면 aside 가 먼저) 키보드 Tab 순서가 화면 순서와 같다. 패널 접기 버튼은 패널과 가까운 헤더 쪽 끝,
+ *   경계선은 본문과 맞닿은 쪽에 둔다. 768 미만(모바일 드로어)은 오른쪽 고정이고 전환 버튼은 숨긴다.
  * - 화면 높이는 dvh 로(모바일 주소창 변화 대응), 드로어 안 스크롤은 본문과 분리(overscroll-behavior: contain).
  */
 import Link from "next/link";
@@ -27,6 +30,7 @@ import { ProcessingPanel } from "@/components/v2/ProcessingPanel";
 import { ThemeToggle } from "@/components/v2/ThemeToggle";
 import { V2_HOME, V2_LOGIN } from "@/lib/v2/next-path";
 import { isActiveStatus } from "@/lib/v2/processing-status";
+import { parseSidePosition, writeSideCookie, type SidePosition } from "@/lib/v2/side-position";
 import { RANK_LABEL } from "@/lib/v2/types";
 
 export const V2_MEETINGS = "/v2/meetings";
@@ -82,7 +86,7 @@ function writeCollapsed(accountId: number, collapsed: boolean): void {
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, initialSidePosition = "right" }: { children: ReactNode; initialSidePosition?: SidePosition }) {
   const { account, logout } = useAuth();
   const engineIsFake = useEngineIsFake(account !== null);
   const pathname = usePathname();
@@ -99,6 +103,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navItems = isSystemAdmin ? ADMIN_NAV_ITEMS : NAV_ITEMS;
   const accountId = account?.id ?? null;
   const [collapsed, setCollapsed] = useState(false);
+  const [sidePosition, setSidePosition] = useState<SidePosition>(parseSidePosition(initialSidePosition));
+  const sideSwitchRef = useRef<HTMLButtonElement>(null);
+  const restoreSideFocus = useRef(false);
   const activeCount = items.filter((item) => isActiveStatus(item.status)).length;
   // 접힘은 데스크톱에서만 적용한다(모바일 드로어는 항상 펼친 모양)
   const folded = collapsed && !mobile;
@@ -116,6 +123,23 @@ export function AppShell({ children }: { children: ReactNode }) {
     setCollapsed(next);
     if (accountId !== null) writeCollapsed(accountId, next);
   }
+
+  // 모바일(드로어)은 오른쪽 고정. 데스크톱만 사용자 설정을 따른다
+  const side: SidePosition = mobile ? "right" : sidePosition;
+  const left = side === "left";
+
+  function switchSide() {
+    const next: SidePosition = sidePosition === "left" ? "right" : "left";
+    setSidePosition(next);
+    writeSideCookie(next);
+    restoreSideFocus.current = true; // 요소가 옮겨지면 포커스를 잃을 수 있어 전환 버튼으로 되돌린다
+  }
+  useEffect(() => {
+    if (restoreSideFocus.current) {
+      restoreSideFocus.current = false;
+      sideSwitchRef.current?.focus();
+    }
+  }, [sidePosition]);
 
   // 시스템 관리자는 /v2/admin 아래만 쓴다: 다른 경로에 들어오면 바로 옮긴다
   useEffect(() => {
@@ -202,6 +226,168 @@ export function AppShell({ children }: { children: ReactNode }) {
     </>
   );
 
+  const collapseButton = mobile ? null : (
+    <Button
+      size="sm"
+      aria-label={collapsed ? "회의록 추적 패널 펼치기" : "회의록 추적 패널 접기"}
+      aria-expanded={!collapsed}
+      aria-controls={contentId}
+      onClick={toggleCollapsed}
+      className="shrink-0 whitespace-nowrap"
+    >
+      {/* 화살표는 패널이 있는 쪽을 가리킨다(접기) / 반대쪽을 가리킨다(펼치기) */}
+      {left ? (
+        collapsed ? (
+          <>
+            패널 펼치기 <span aria-hidden="true">›</span>
+          </>
+        ) : (
+          <>
+            <span aria-hidden="true">‹</span> 패널 접기
+          </>
+        )
+      ) : collapsed ? (
+        <>
+          <span aria-hidden="true">‹</span> 패널 펼치기
+        </>
+      ) : (
+        <>
+          패널 접기 <span aria-hidden="true">›</span>
+        </>
+      )}
+    </Button>
+  );
+
+  const contentNode = (
+    <div key="content" inert={open} className="flex min-w-0 flex-1 flex-col">
+      <header
+        className={`flex min-h-14 items-center gap-3 border-b border-mn-border px-4 md:h-14 md:px-12 ${folded ? (left ? "md:pl-[248px]" : "md:pr-[248px]") : ""}`}
+      >
+        {left ? collapseButton : null}
+        <div className="ml-auto flex min-w-0 items-center gap-3">
+          {mobile ? (
+            <ProcessingBadge
+              onOpen={() => {
+                setDrawerOpen(true);
+                requestAnimationFrame(() => document.getElementById("processing-panel")?.scrollIntoView({ block: "nearest" }));
+              }}
+            />
+          ) : null}
+          {!mobile ? userBlock : null}
+          {left ? null : collapseButton}
+          {mobile ? (
+            <Button
+              ref={hamburgerRef}
+              size="sm"
+              aria-label="메뉴 열기"
+              aria-expanded={open}
+              aria-controls={asideId}
+              onClick={() => setDrawerOpen(true)}
+              className="min-h-11 min-w-11"
+            >
+              ☰
+            </Button>
+          ) : null}
+        </div>
+      </header>
+      <main className="flex min-w-0 flex-1 flex-col gap-6 px-4 pt-8 pb-16 md:px-12">
+        <FakeEngineNotice show={engineIsFake} />
+        {passwordNotice ? (
+          <p role="status" className="text-sm text-mn-text">
+            비밀번호를 변경했습니다.
+          </p>
+        ) : null}
+        {children}
+      </main>
+    </div>
+  );
+
+  const asideNode = (
+    <aside
+      key="aside"
+      id={asideId}
+      ref={asideRef}
+      aria-label={open ? "메뉴 드로어" : undefined}
+      className={[
+        "shrink-0 flex-col gap-6 border-mn-border px-4 py-6",
+        open ? "fixed inset-y-0 right-0 z-40 flex h-dvh w-[min(86vw,320px)] overflow-y-auto overscroll-contain border-l bg-mn-bg" : "hidden",
+        `md:static md:z-auto md:flex md:h-auto md:overflow-visible ${left ? "md:border-r" : "md:border-l"} md:bg-transparent ${folded ? "md:w-12 md:items-center md:px-0" : "md:w-[248px]"}`,
+      ].join(" ")}
+    >
+      {/* 접힌 상태에서는 아예 그리지 않는다("flex" 와 "hidden" 이 함께 있으면 flex 가 이겨 글자가 남았다) */}
+      {folded ? null : (
+      <div className="flex items-center justify-between gap-2">
+        <Link href={V2_HOME} className="mn-focus rounded-mn-control text-base font-semibold tracking-tight">
+          회의록 추적
+        </Link>
+        {open ? (
+          <Button size="sm" aria-label="메뉴 닫기" onClick={() => setDrawerOpen(false)} className="min-h-11 min-w-11">
+            ✕
+          </Button>
+        ) : null}
+        {mobile ? null : (
+          <Button
+            ref={sideSwitchRef}
+            size="sm"
+            aria-label={left ? "보조창을 오른쪽으로 옮기기" : "보조창을 왼쪽으로 옮기기"}
+            title={left ? "보조창을 오른쪽으로 옮기기" : "보조창을 왼쪽으로 옮기기"}
+            onClick={switchSide}
+            className="shrink-0 max-md:hidden"
+          >
+            <span aria-hidden="true">{left ? "→" : "←"}</span>
+          </Button>
+        )}
+      </div>
+      )}
+      {folded ? (
+        <>
+          {activeCount > 0 ? (
+            <span role="group" aria-label={`처리 중 ${activeCount}건`} className="font-mn-mono text-xs text-mn-text">
+              {activeCount}
+            </span>
+          ) : null}
+          <p className="sr-only" aria-live="polite" aria-label="처리 상태 변경 안내">
+            {announcement}
+          </p>
+        </>
+      ) : null}
+      <div id={contentId} className={`flex-col gap-6 ${folded ? "hidden" : "contents"}`}>
+      {isSystemAdmin ? null : (
+      <Link
+        href={V2_UPLOAD}
+        aria-current={uploadCurrent ? "page" : undefined}
+        className="mn-focus inline-flex h-10 w-full items-center justify-center rounded-mn-control border border-mn-accent bg-mn-accent px-4 text-sm font-medium text-mn-on-accent hover:bg-mn-accent-hover max-md:h-11"
+      >
+        회의록 올리기
+      </Link>
+      )}
+      <nav aria-label="주 메뉴" className="flex flex-col gap-1">
+        {navItems.map((item) => {
+          const current = isCurrent(pathname, item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={current ? "page" : undefined}
+              className={[
+                "mn-focus flex h-10 items-center rounded-mn-control px-3 text-sm max-md:h-11",
+                current ? "bg-mn-elevated font-medium text-mn-text" : "text-mn-muted hover:bg-mn-elevated hover:text-mn-text",
+              ].join(" ")}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+      {isSystemAdmin ? null : <ProcessingPanel />}
+      {isSystemAdmin || accountId === null ? null : <ApprovalQueue accountId={accountId} />}
+      {mobile ? (
+        <div className="sticky bottom-0 mt-auto flex flex-col gap-3 border-t border-mn-border bg-mn-bg pt-4">{userBlock}</div>
+      ) : null}
+      </div>
+    </aside>
+  );
+
   return (
     <div className="flex min-h-dvh flex-col bg-mn-bg text-mn-text md:flex-row">
       {open ? <div aria-hidden="true" onMouseDown={(event) => {
@@ -209,126 +395,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             event.preventDefault();
             setDrawerOpen(false);
           }} className="fixed inset-0 z-30 bg-mn-overlay md:hidden" /> : null}
-      <div inert={open} className="flex min-w-0 flex-1 flex-col">
-        <header className={`flex min-h-14 items-center gap-3 border-b border-mn-border px-4 md:h-14 md:px-12 ${folded ? "md:pr-[248px]" : ""}`}>
-          <div className="ml-auto flex min-w-0 items-center gap-3">
-            {mobile ? (
-              <ProcessingBadge
-                onOpen={() => {
-                  setDrawerOpen(true);
-                  requestAnimationFrame(() => document.getElementById("processing-panel")?.scrollIntoView({ block: "nearest" }));
-                }}
-              />
-            ) : null}
-            {!mobile ? userBlock : null}
-            {!mobile ? (
-              <Button
-                size="sm"
-                aria-label={collapsed ? "회의록 추적 패널 펼치기" : "회의록 추적 패널 접기"}
-                aria-expanded={!collapsed}
-                aria-controls={contentId}
-                onClick={toggleCollapsed}
-                className="shrink-0 whitespace-nowrap"
-              >
-                {collapsed ? <><span aria-hidden="true">‹</span> 패널 펼치기</> : <>패널 접기 <span aria-hidden="true">›</span></>}
-              </Button>
-            ) : null}
-            {mobile ? (
-              <Button
-                ref={hamburgerRef}
-                size="sm"
-                aria-label="메뉴 열기"
-                aria-expanded={open}
-                aria-controls={asideId}
-                onClick={() => setDrawerOpen(true)}
-                className="min-h-11 min-w-11"
-              >
-                ☰
-              </Button>
-            ) : null}
-          </div>
-        </header>
-        <main className="flex min-w-0 flex-1 flex-col gap-6 px-4 pt-8 pb-16 md:px-12">
-          <FakeEngineNotice show={engineIsFake} />
-          {passwordNotice ? (
-            <p role="status" className="text-sm text-mn-text">
-              비밀번호를 변경했습니다.
-            </p>
-          ) : null}
-          {children}
-        </main>
-      </div>
-
-      <aside
-        id={asideId}
-        ref={asideRef}
-        aria-label={open ? "메뉴 드로어" : undefined}
-        className={[
-          "shrink-0 flex-col gap-6 border-mn-border px-4 py-6",
-          open ? "fixed inset-y-0 right-0 z-40 flex h-dvh w-[min(86vw,320px)] overflow-y-auto overscroll-contain border-l bg-mn-bg" : "hidden",
-          `md:static md:z-auto md:flex md:h-auto md:overflow-visible md:border-l md:bg-transparent ${folded ? "md:w-12 md:items-center md:px-0" : "md:w-[248px]"}`,
-        ].join(" ")}
-      >
-        {/* 접힌 상태에서는 아예 그리지 않는다("flex" 와 "hidden" 이 함께 있으면 flex 가 이겨 글자가 남았다) */}
-        {folded ? null : (
-        <div className="flex items-center justify-between gap-2">
-          <Link href={V2_HOME} className="mn-focus rounded-mn-control text-base font-semibold tracking-tight">
-            회의록 추적
-          </Link>
-          {open ? (
-            <Button size="sm" aria-label="메뉴 닫기" onClick={() => setDrawerOpen(false)} className="min-h-11 min-w-11">
-              ✕
-            </Button>
-          ) : null}
-        </div>
-        )}
-        {folded ? (
-          <>
-            {activeCount > 0 ? (
-              <span role="group" aria-label={`처리 중 ${activeCount}건`} className="font-mn-mono text-xs text-mn-text">
-                {activeCount}
-              </span>
-            ) : null}
-            <p className="sr-only" aria-live="polite" aria-label="처리 상태 변경 안내">
-              {announcement}
-            </p>
-          </>
-        ) : null}
-        <div id={contentId} className={`flex-col gap-6 ${folded ? "hidden" : "contents"}`}>
-        {isSystemAdmin ? null : (
-        <Link
-          href={V2_UPLOAD}
-          aria-current={uploadCurrent ? "page" : undefined}
-          className="mn-focus inline-flex h-10 w-full items-center justify-center rounded-mn-control border border-mn-accent bg-mn-accent px-4 text-sm font-medium text-mn-on-accent hover:bg-mn-accent-hover max-md:h-11"
-        >
-          회의록 올리기
-        </Link>
-        )}
-        <nav aria-label="주 메뉴" className="flex flex-col gap-1">
-          {navItems.map((item) => {
-            const current = isCurrent(pathname, item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={current ? "page" : undefined}
-                className={[
-                  "mn-focus flex h-10 items-center rounded-mn-control px-3 text-sm max-md:h-11",
-                  current ? "bg-mn-elevated font-medium text-mn-text" : "text-mn-muted hover:bg-mn-elevated hover:text-mn-text",
-                ].join(" ")}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-        {isSystemAdmin ? null : <ProcessingPanel />}
-        {isSystemAdmin || accountId === null ? null : <ApprovalQueue accountId={accountId} />}
-        {mobile ? (
-          <div className="sticky bottom-0 mt-auto flex flex-col gap-3 border-t border-mn-border bg-mn-bg pt-4">{userBlock}</div>
-        ) : null}
-        </div>
-      </aside>
+      {left ? [asideNode, contentNode] : [contentNode, asideNode]}
       <ChangePasswordDialog
         open={passwordOpen}
         onClose={() => setPasswordOpen(false)}
