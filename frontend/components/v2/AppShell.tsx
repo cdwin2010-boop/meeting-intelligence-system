@@ -31,6 +31,7 @@ export const V2_MEETINGS = "/v2/meetings";
 export const V2_UPLOAD = "/v2/upload";
 export const V2_PROJECTS = "/v2/projects";
 export const V2_WORKLOAD = "/v2/workload";
+export const V2_ADMIN = "/v2/admin";
 
 const NAV_ITEMS = [
   { href: V2_HOME, label: "할 일" },
@@ -38,6 +39,9 @@ const NAV_ITEMS = [
   { href: V2_MEETINGS, label: "회의록" },
   { href: V2_PROJECTS, label: "프로젝트" },
 ];
+
+// 시스템 관리자는 회의록·업무·프로젝트·업무 현황 메뉴 없이 시스템 관리만 쓴다(서버도 내용 접근을 거부한다)
+const ADMIN_NAV_ITEMS = [{ href: V2_ADMIN, label: "시스템 관리" }];
 
 // 할 일(/v2)은 정확히 일치할 때만, 나머지는 하위 경로까지 현재 메뉴로 본다
 const isCurrent = (pathname: string, href: string) =>
@@ -87,6 +91,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const hamburgerRef = useRef<HTMLButtonElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { items, announcement } = useProcessing();
+  const isSystemAdmin = account?.isSystemAdmin === true;
+  const navItems = isSystemAdmin ? ADMIN_NAV_ITEMS : NAV_ITEMS;
   const accountId = account?.id ?? null;
   const [collapsed, setCollapsed] = useState(false);
   const activeCount = items.filter((item) => isActiveStatus(item.status)).length;
@@ -106,6 +112,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     setCollapsed(next);
     if (accountId !== null) writeCollapsed(accountId, next);
   }
+
+  // 시스템 관리자는 /v2/admin 아래만 쓴다: 다른 경로에 들어오면 바로 옮긴다
+  useEffect(() => {
+    if (isSystemAdmin && !pathname.startsWith(V2_ADMIN)) router.replace(V2_ADMIN);
+  }, [isSystemAdmin, pathname, router]);
 
   function onLogout() {
     logout(); // 토큰 삭제
@@ -268,6 +279,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </>
         ) : null}
         <div id={contentId} className={`flex-col gap-6 ${folded ? "hidden" : "contents"}`}>
+        {isSystemAdmin ? null : (
         <Link
           href={V2_UPLOAD}
           aria-current={uploadCurrent ? "page" : undefined}
@@ -275,8 +287,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         >
           회의록 올리기
         </Link>
+        )}
         <nav aria-label="주 메뉴" className="flex flex-col gap-1">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const current = isCurrent(pathname, item.href);
             return (
               <Link
@@ -293,7 +306,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
-        <ProcessingPanel />
+        {isSystemAdmin ? null : <ProcessingPanel />}
         {mobile ? (
           <div className="sticky bottom-0 mt-auto flex flex-col gap-3 border-t border-mn-border bg-mn-bg pt-4">{userBlock}</div>
         ) : null}

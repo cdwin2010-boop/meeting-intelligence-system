@@ -11,12 +11,15 @@ export interface Account {
   name: string;
   rank: Rank;
   tenantId: number;
+  /** 시스템 관리자 여부(추가 필드, 작업 82-1). 필드가 없는 서버 응답이면 아니라고 본다 */
+  isSystemAdmin?: boolean;
 }
 
 /** POST /api/auth/login 응답 */
 export interface TokenResponse {
   accessToken: string;
   tokenType: string;
+  isSystemAdmin?: boolean;
 }
 
 export const RANK_LABEL: Record<Rank, string> = {
