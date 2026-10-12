@@ -420,7 +420,7 @@ test.describe("승인 대기 패널", () => {
     await expect(panel).toContainText("2");
     await expect(panel.getByRole("link", { name: "프로젝트 승인 대기: 신제품 도입" })).toHaveAttribute("href", "/v2/projects/5");
     await expect(panel.getByRole("link", { name: /남의 승인/ })).toHaveCount(0);
-    await expect(panel.getByRole("link", { name: "수정 요청 처리 대기: 주간 회의" })).toHaveAttribute("href", "/v2/meetings/41");
+    await expect(panel.getByRole("link", { name: "수정 요청 처리 대기: 주간 회의" })).toHaveAttribute("href", "/v2/meetings/41?item=1&returnTo=%2Fv2");
   });
 
   test("대기 건이 없으면 패널이 보이지 않는다", async ({ page }) => {
