@@ -20,6 +20,7 @@ from app.models import Account, ActionItem, Event, Meeting, MeetingView, Notice
 from app.models.closure import active_meeting_condition
 from app.models.item_conditions import confirmed_item, inactive_item, open_item, pending_item
 from app.models.common import utcnow
+from app.services.system_admin import is_system_admin
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -114,6 +115,8 @@ def my_notices(account: Account = Depends(get_current_account), session: Session
         ActionItem.id == Notice.entity_id, inactive_item()
     )
     held_meeting = exists().where(Meeting.id == Notice.meeting_id, Meeting.on_hold | Meeting.deleted)
+    if is_system_admin(session, account.id):
+        return []  # 시스템 관리자는 회의록 내용(안내)을 보지 않는다
     rows = session.scalars(
         select(Notice)
         .where(

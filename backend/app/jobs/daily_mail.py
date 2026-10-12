@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.auth.access import VIEW_ALL_RANKS
 from app.config import settings
-from app.models import Account, ActionItem, Meeting, MeetingView
+from app.models import Account, ActionItem, Meeting, MeetingView, SystemAdmin
 from app.models.closure import active_meeting_condition
 from app.models.item_conditions import pending_item
 from app.services.mail import SUBJECT_PREFIX, login_link, queue_mail
@@ -82,7 +82,10 @@ def run_daily_mail(session: Session, now: datetime | None = None) -> dict:
     today = now.astimezone(ZoneInfo(settings.app_timezone)).date()
     awaiting, needs, unviewed = _counts(session)
 
-    accounts = session.scalars(select(Account).where(Account.is_active.is_(True)).order_by(Account.id)).all()
+    admin_ids = select(SystemAdmin.account_id)  # 시스템 관리자에게는 회의록 내용 안내 메일을 보내지 않는다
+    accounts = session.scalars(
+        select(Account).where(Account.is_active.is_(True), Account.id.not_in(admin_ids)).order_by(Account.id)
+    ).all()
     result = {"created": 0, "alreadyQueued": 0}
     per_account: dict[int, list[str]] = defaultdict(list)
     for account in accounts:

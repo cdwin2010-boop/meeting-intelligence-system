@@ -17,6 +17,7 @@ from app.models.org import AccountDepartment, Department
 from app.models.project import Project, ProjectMember
 from app.models.source_document import SourceDocument
 from app.models.speaker import MeetingSpeaker
+from app.models.system_admin import SystemAdmin
 from app.models.task_queue import TaskQueue
 from app.models.tenant import Tenant
 from app.models.transcript import Transcript
@@ -45,6 +46,7 @@ __all__ = [
     "Project",
     "ProjectMember",
     "SourceDocument",
+    "SystemAdmin",
     "TaskQueue",
     "Tenant",
     "Transcript",

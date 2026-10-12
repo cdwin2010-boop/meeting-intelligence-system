@@ -16,6 +16,8 @@ class LoginRequest(CamelModel):
 class TokenResponse(CamelModel):
     access_token: str
     token_type: str = "bearer"
+    # 시스템 관리자 여부(추가 필드, 작업 82-1)
+    is_system_admin: bool = False
 
 
 class MeResponse(CamelModel):
@@ -23,3 +25,4 @@ class MeResponse(CamelModel):
     name: str
     rank: str
     tenant_id: int
+    is_system_admin: bool = False

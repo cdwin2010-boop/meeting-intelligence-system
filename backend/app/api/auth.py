@@ -8,6 +8,7 @@ from app.auth.passwords import burn_verify_time, verify_password
 from app.auth.tokens import create_access_token
 from app.db import get_session
 from app.models import Account
+from app.services.system_admin import is_system_admin
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -29,9 +30,12 @@ def login(body: LoginRequest, session: Session = Depends(get_session)) -> TokenR
             detail=LOGIN_FAILED_MESSAGE,
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return TokenResponse(access_token=create_access_token(account.id))
+    return TokenResponse(access_token=create_access_token(account.id), is_system_admin=is_system_admin(session, account.id))
 
 
 @router.get("/me", response_model=MeResponse, response_model_by_alias=True)
-def me(account: Account = Depends(get_current_account)) -> MeResponse:
-    return MeResponse(id=account.id, name=account.name, rank=account.rank, tenant_id=account.tenant_id)
+def me(account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> MeResponse:
+    return MeResponse(
+        id=account.id, name=account.name, rank=account.rank, tenant_id=account.tenant_id,
+        is_system_admin=is_system_admin(session, account.id),
+    )

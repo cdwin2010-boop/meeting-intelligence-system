@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.schemas import CamelModel
-from app.auth.deps import get_current_account
+from app.auth.deps import forbid_system_admin, get_current_account
 from app.config import settings
 from app.db import get_session, get_session_factory
 from app.models import Account, Job, Meeting, MeetingParticipant, SourceDocument, Tenant, append_event
@@ -135,6 +135,7 @@ def upload_meeting(
     session_factory: sessionmaker = Depends(get_session_factory),
     job_runner: Callable[[int, sessionmaker], None] = Depends(get_job_runner),
 ) -> UploadAccepted:
+    forbid_system_admin(session, account)
     held_at_utc = _parse_held_at(held_at)
     ids = _parse_participant_ids(participant_ids)
     _check_participants(session, account, ids)

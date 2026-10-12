@@ -56,3 +56,21 @@ def require_rank(min_rank: str) -> Callable[..., Account]:
         return account
 
     return _dependency
+
+
+def require_system_admin(account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> Account:
+    """시스템 관리자(system_admins 에 지정된 활성 계정)만 통과시킨다. 아니면 403. 사용자 등급과 별개다."""
+    from app.services.system_admin import is_system_admin  # noqa: PLC0415 — 순환 import 회피
+
+    if not is_system_admin(session, account.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="권한이 없습니다")
+    return account
+
+
+def forbid_system_admin(session: Session, account: Account) -> None:
+    """회의록·프로젝트 같은 내용을 새로 등록하는 API 용: 시스템 관리자는 내용 영역에 쓰지 않는다(403)."""
+    from app.services.system_admin import is_system_admin  # noqa: PLC0415
+
+    if is_system_admin(session, account.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="시스템 관리자는 회의록 내용 영역을 사용할 수 없습니다")
+

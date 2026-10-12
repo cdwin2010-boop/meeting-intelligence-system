@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import CamelModel
 from app.auth.deps import get_current_account
+from app.services.system_admin import is_system_admin
 from app.config import settings
 from app.db import get_session
 from app.models import Account, AccountDepartment, Department
@@ -82,6 +83,11 @@ def get_workload(
     account: Account = Depends(get_current_account),
     session: Session = Depends(get_session),
 ) -> WorkloadOut:
+    if is_system_admin(session, account.id):  # 시스템 관리자는 업무 현황을 보지 않는다(빈 현황)
+        return WorkloadOut(
+            snapshot_date=None, generated_at=None, scope=ScopeOut(kind="self", departments=[], department=None),
+            kpis=_empty_kpis(), members=[], urgent_items=[],
+        )
     tenant_id = account.tenant_id
     tenant_departments = list(session.scalars(select(Department).where(Department.tenant_id == tenant_id).order_by(Department.name, Department.id)))
     chosen = None

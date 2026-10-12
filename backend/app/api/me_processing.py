@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import CamelModel
 from app.auth.deps import get_current_account
+from app.services.system_admin import is_system_admin
 from app.db import get_session
 from app.models import Account
 from app.services.processing_status import my_processing
@@ -26,6 +27,8 @@ class ProcessingItemOut(CamelModel):
 
 @router.get("/processing", response_model=list[ProcessingItemOut], response_model_by_alias=True)
 def get_my_processing(account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> list[ProcessingItemOut]:
+    if is_system_admin(session, account.id):
+        return []  # 시스템 관리자는 처리 중인 회의록 정보를 보지 않는다
     return [
         ProcessingItemOut(
             meeting_id=e.meeting_id, job_id=e.job_id, title=e.title, status=e.status, error_code=e.error_code,

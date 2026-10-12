@@ -9,7 +9,7 @@ from sqlalchemy import ColumnElement, and_, exists, or_, select, true
 from sqlalchemy.orm import Session, aliased
 from fastapi import HTTPException, status
 
-from app.auth.access import VIEW_ALL_RANKS
+from app.auth.access import VIEW_ALL_RANKS, not_system_admin
 from app.auth.deps import RANK_ORDER
 from app.auth.scope import scoped
 from app.models import Account, AccountDepartment, Department, Project, ProjectMember
@@ -47,7 +47,7 @@ def approver_condition(account: Account) -> ColumnElement[bool]:
 def project_visibility(account: Account) -> ColumnElement[bool]:
     """Project 조회에 붙일 열람 조건(고객사 범위 포함). 참여자·등록자·승인자만 보고, 관리자 이상은 같은 고객사 전체를 본다.
     관리자 이상 전체 열람은 기존 회의록 열람(VIEW_ALL_RANKS)과 같은 방식이며, 부서 계층이 들어오면 여기서 좁힌다."""
-    same_tenant = Project.tenant_id == account.tenant_id
+    same_tenant = and_(Project.tenant_id == account.tenant_id, not_system_admin(account))  # 시스템 관리자는 프로젝트를 볼 수 없다
     if account.rank in VIEW_ALL_RANKS:
         return and_(same_tenant, true())
     member = aliased(ProjectMember)

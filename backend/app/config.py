@@ -119,6 +119,8 @@ class Settings(BaseSettings):
     license_public_key_path: Path = Path("config/license_public.pem")
     license_warn_days: int = Field(30, ge=0)
     license_require_hardware_match: bool = False
+    # 관리자가 설정하는 비밀번호(계정 생성·재설정·본인 변경)의 최소 글자 수(작업 82-1)
+    password_min_length: int = Field(10, ge=8)
     # 회의 일시를 현지 시각으로 바꿀 때 쓰는 시간대(추출기의 날짜·요일 기준)
     app_timezone: str = "Asia/Seoul"
 

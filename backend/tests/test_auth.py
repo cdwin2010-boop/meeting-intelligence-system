@@ -102,7 +102,7 @@ def test_login_success_returns_token(client, db, password):
     res = _login(client, "kim", password)
     assert res.status_code == 200
     body = res.json()
-    assert set(body) == {"accessToken", "tokenType"}
+    assert set(body) == {"accessToken", "tokenType", "isSystemAdmin"}  # 작업 82-1: 시스템 관리자 여부 추가
     assert body["tokenType"] == "bearer"
 
 
@@ -138,7 +138,7 @@ def test_me_returns_account(client, db, password):
     token = _login(client, "lee", password).json()["accessToken"]
     res = client.get("/api/auth/me", headers=_auth(token))
     assert res.status_code == 200
-    assert res.json() == {"id": account.id, "name": "lee-이름", "rank": "manager", "tenantId": account.tenant_id}
+    assert res.json() == {"id": account.id, "name": "lee-이름", "rank": "manager", "tenantId": account.tenant_id, "isSystemAdmin": False}
 
 
 def test_token_carries_only_account_id(client, db, password):

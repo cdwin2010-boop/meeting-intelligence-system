@@ -35,6 +35,9 @@ KIND_PROJECT_MEMBER_ROLE = "project.member_role_changed"
 KIND_PROJECT_LEAD_CHANGED = "project.lead_changed"
 # 업무 대체(작업 66-4): 대체되는 업무와 대체하는 업무 양쪽에 남긴다
 KIND_ITEM_SUPERSEDED = "item.superseded"
+# 시스템 관리자(작업 82-1): 대상 종류는 account 라 회의록 이력 조회에는 섞이지 않는다
+KIND_SYSTEM_ADMIN_SET = "admin.system_admin_set"
+KIND_SYSTEM_ADMIN_UNSET = "admin.system_admin_unset"
 HISTORY_KINDS: dict[str, str] = {
     KIND_MINUTES_OVERRIDE: "직권 수정",
     KIND_PARTICIPANTS_OVERRIDE: "직권 수정",
@@ -52,6 +55,8 @@ HISTORY_KINDS: dict[str, str] = {
     KIND_PROJECT_MEMBER_ROLE: "참여자 역할 변경",
     KIND_PROJECT_LEAD_CHANGED: "프로젝트 총괄 변경",
     KIND_ITEM_SUPERSEDED: "대체",
+    KIND_SYSTEM_ADMIN_SET: "시스템 관리자 지정",
+    KIND_SYSTEM_ADMIN_UNSET: "시스템 관리자 해제",
 }
 
 

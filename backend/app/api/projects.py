@@ -15,7 +15,7 @@ from app.api.meeting_queries import MeetingStatus, build_meeting_page
 from app.api.meeting_schemas import MeetingListPage
 from app.api.schemas import CamelModel
 from app.auth.actions import project_allowed_actions
-from app.auth.deps import get_current_account
+from app.auth.deps import forbid_system_admin, get_current_account
 from app.db import get_session
 from app.models import Account, Department, MeetingClassification, Meeting, Project, ProjectMember
 from app.services import projects as svc
@@ -139,6 +139,7 @@ def _visible_or_404(session: Session, account: Account, project_id: int) -> Proj
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=ProjectDetail, response_model_by_alias=True)
 def create_project(body: ProjectCreate, account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> ProjectDetail:
+    forbid_system_admin(session, account)
     project = svc.register_project(
         session, account, name=body.name, description=body.description.strip(), department_id=body.department_id, member_ids=body.member_ids,
     )

@@ -9,7 +9,10 @@ from sqlalchemy import ColumnElement, and_, exists, false, or_, select, true
 from sqlalchemy.orm import Session, aliased
 
 from app.auth.scope import scoped
-from app.models import Account, AccountDepartment, ActionItem, Meeting, MeetingClassification, MeetingParticipant, Project, ProjectMember, SourceDocument
+from app.models import (
+    Account, AccountDepartment, ActionItem, Meeting, MeetingClassification, MeetingParticipant, Project, ProjectMember, SourceDocument,
+    SystemAdmin,
+)
 from app.models.item_conditions import not_deleted_item
 
 # 고객사 전체 회의록을 볼 수 있는 직급
@@ -51,9 +54,16 @@ def is_project_member(account: Account) -> ColumnElement[bool]:
     )
 
 
+def not_system_admin(account: Account) -> ColumnElement[bool]:
+    """시스템 관리자는 회의록 내용(목록·상세·전사문·검색·오디오·엑셀·이력)을 볼 수 없다(작업 82-1). 이 규칙은 여기 한 곳에만 둔다:
+    회의록 열람(meeting_visibility)과 프로젝트 열람(project_visibility)이 이 조건을 함께 걸고, 그 밖의 내용 접근 경로는 is_system_admin 을 호출한다."""
+    admin = aliased(SystemAdmin)
+    return ~exists().where(admin.account_id == account.id)
+
+
 def meeting_visibility(account: Account) -> ColumnElement[bool]:
-    """Meeting 조회에 붙일 열람 조건(고객사 범위 포함)."""
-    same_tenant = Meeting.tenant_id == account.tenant_id
+    """Meeting 조회에 붙일 열람 조건(고객사 범위 포함). 시스템 관리자는 볼 수 있는 회의록이 없다."""
+    same_tenant = and_(Meeting.tenant_id == account.tenant_id, not_system_admin(account))
     if account.rank in VIEW_ALL_RANKS:
         return and_(same_tenant, true())
     # 담당자는 보류·삭제된 회의록을 볼 수 없다(관리자 이상만)

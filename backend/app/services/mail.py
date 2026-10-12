@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Account, ActionItem, MailOutbox, Meeting, MeetingParticipant, SourceDocument
+from app.models import Account, ActionItem, MailOutbox, Meeting, MeetingParticipant, SourceDocument, SystemAdmin
 from app.models.item_conditions import open_item
 
 SUBJECT_PREFIX = "[회의록]"
@@ -35,6 +35,8 @@ def queue_mail(session: Session, *, account: Account, kind: str, subject: str, b
     savepoint 안에서 넣으므로 위반해도 호출부 트랜잭션의 다른 변경은 그대로 남는다(방언 중립)."""
     if session.scalar(select(MailOutbox.id).where(MailOutbox.dedupe_key == dedupe_key)) is not None:
         return False
+    if session.scalar(select(SystemAdmin.id).where(SystemAdmin.account_id == account.id)) is not None:
+        return False  # 시스템 관리자는 회의록 내용(메일 본문)을 받지 않는다(작업 82-1)
     try:
         with session.begin_nested():
             session.add(
