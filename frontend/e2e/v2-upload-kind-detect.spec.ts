@@ -96,7 +96,10 @@ test.describe("자료 종류 자동 선택", () => {
     await expect(page.getByText("엑셀 파일입니다. 자료 종류를 엑셀로 바꿔 주세요.")).toBeVisible();
     for (const width of [1280, 768, 375]) {
       await page.setViewportSize({ width, height: 800 });
-      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `${width}px`).toBeLessThanOrEqual(0);
+      // 너비를 바꾼 직후 한 프레임은 모바일 전환(matchMedia 이벤트)이 반영되기 전이라 안정될 때까지 기다린다
+      await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), { message: `${width}px` })
+        .toBeLessThanOrEqual(0);
     }
   });
 });
