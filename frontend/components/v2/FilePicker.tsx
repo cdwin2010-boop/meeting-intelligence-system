@@ -7,6 +7,8 @@
  * - 브라우저 기본 파일 입력은 화면에서 숨기되(sr-only) 접근성 이름(inputLabel)으로 스크린 리더·테스트가 찾을 수 있고, 버튼이 같은 입력을 연다.
  *   버튼은 공용 Button 이라 Enter·Space 와 포커스 링이 그대로 동작한다.
  * - 파일 형식·용량 제한 값은 화면에 쓰지 않는다(accept 는 호출부가 넘긴 값 그대로, 판정은 서버).
+ * - recordLabel 을 주면 "녹음하기" 버튼과 두 번째 숨은 입력(accept=audio/*, capture=microphone)을 더한다(작업 86-1a, 모바일 올리기).
+ *   두 입력 모두 같은 onPick 으로 연결되고, capture 를 지원하지 않는 기기에서는 일반 선택창이 열릴 뿐 오류는 없다.
  * - 값은 호출부가 가진다(file/onPick). 끌어다 놓기처럼 다른 경로로 file 이 바뀌어도 같은 상태 글자가 보인다.
  */
 import { useId, useRef } from "react";
@@ -37,6 +39,8 @@ interface FilePickerProps {
   className?: string;
   /** true 면 긴 파일 이름을 말줄임 없이 영역 안에서 줄바꿈한다(올리기 화면). 기본은 한 줄 말줄임(수정 회의록 업로드 팝업 등 기존 화면) */
   wrapName?: boolean;
+  /** 주면 "녹음하기" 버튼을 더한다(버튼 글자이자 숨은 입력의 접근성 이름). 보일지 여부는 호출부가 정한다 */
+  recordLabel?: string;
 }
 
 export function FilePicker({
@@ -50,9 +54,17 @@ export function FilePicker({
   describedBy,
   className = "",
   wrapName = false,
+  recordLabel,
 }: FilePickerProps) {
   const statusId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
+  const recordRef = useRef<HTMLInputElement>(null);
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = event.target.files?.[0] ?? null;
+    // 같은 파일을 고쳐 다시 골라도 변경 알림이 오도록 입력값을 비운다(고른 파일은 호출부 상태에 있다)
+    event.target.value = "";
+    if (picked) onPick(picked);
+  };
   return (
     <div className={`flex flex-wrap items-center gap-3 ${wrapName ? "min-w-0 max-w-full" : ""} ${className}`}>
       <input
@@ -63,14 +75,27 @@ export function FilePicker({
         accept={accept}
         tabIndex={-1}
         disabled={disabled}
-        onChange={(event) => {
-          const picked = event.target.files?.[0] ?? null;
-          // 같은 파일을 고쳐 다시 골라도 변경 알림이 오도록 입력값을 비운다(고른 파일은 호출부 상태에 있다)
-          event.target.value = "";
-          if (picked) onPick(picked);
-        }}
+        onChange={handleChange}
         className="sr-only"
       />
+      {recordLabel ? (
+        <input
+          ref={recordRef}
+          type="file"
+          aria-label={recordLabel}
+          accept="audio/*"
+          {...({ capture: "microphone" } as Record<string, string>)} // React 타입은 user|environment 만 알지만 브라우저는 microphone 도 받는다
+          tabIndex={-1}
+          disabled={disabled}
+          onChange={handleChange}
+          className="sr-only"
+        />
+      ) : null}
+      {recordLabel ? (
+        <Button variant="secondary" disabled={disabled} onClick={() => recordRef.current?.click()}>
+          {recordLabel}
+        </Button>
+      ) : null}
       <Button variant="secondary" aria-describedby={statusId} disabled={disabled} onClick={() => inputRef.current?.click()}>
         {file ? pickedButtonLabel : buttonLabel}
       </Button>

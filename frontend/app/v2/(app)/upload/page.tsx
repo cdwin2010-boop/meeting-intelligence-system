@@ -96,6 +96,15 @@ function UploadForm() {
   const [restoredNotice, setRestoredNotice] = useState(false);
   // 사용자가 자료 종류를 직접 고른 적이 있는가(그러면 파일을 골라도 종류를 자동으로 바꾸지 않는다)
   const kindPickedByUser = useRef(false);
+  // 모바일(768 미만) 또는 터치 기기에서만 "녹음하기"를 보인다(작업 86-1a). PC 에서는 DOM 에도 없다
+  const [recordable, setRecordable] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px), (pointer: coarse)");
+    setRecordable(query.matches);
+    const onChange = (event: MediaQueryListEvent) => setRecordable(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateLoading, setTemplateLoading] = useState(false);
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
@@ -373,6 +382,7 @@ function UploadForm() {
                     : "audio/*,video/mp4,video/webm,.xlsx,.txt" // 자료 파일도 고를 수 있게 하고, 고르면 자료 종류를 자동으로 맞춘다
               }
               describedBy={fileHintId}
+              recordLabel={recordable && sourceKind === "audio" ? "녹음하기" : undefined}
               disabled={submitting}
               className="justify-center"
               wrapName
