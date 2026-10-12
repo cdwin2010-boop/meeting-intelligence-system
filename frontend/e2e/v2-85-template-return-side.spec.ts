@@ -73,7 +73,7 @@ async function open(page: Page, path: string, options: Options = {}) {
 test.describe("엑셀 양식 내려받기", () => {
   test("엑셀 종류에서만 버튼이 보이고 누르면 양식 파일을 받는다", async ({ page }) => {
     let calls = 0;
-    await page.route("**/api/meetings/transcript-template", (route) => {
+    await page.route("**/api/templates/transcript-xlsx", (route) => {
       calls += 1;
       return route.fulfill({
         status: 200,
@@ -95,7 +95,7 @@ test.describe("엑셀 양식 내려받기", () => {
   });
 
   test("양식을 받지 못하면 실패 문구를 보이고 입력은 그대로다", async ({ page }) => {
-    await page.route("**/api/meetings/transcript-template", (route) => json(route, { detail: "양식을 만들지 못했습니다" }, 500));
+    await page.route("**/api/templates/transcript-xlsx", (route) => json(route, { detail: "양식을 만들지 못했습니다" }, 500));
     await open(page, "/v2/upload");
     await page.getByLabel("회의명").fill("입력 유지");
     await page.getByRole("group", { name: "자료 종류" }).locator("label").filter({ hasText: "자료 파일(엑셀)" }).click();

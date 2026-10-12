@@ -399,9 +399,9 @@ export function downloadMeetingExcel(id: number, signal?: AbortSignal): Promise<
   return request<Blob>(`/meetings/${encodeURIComponent(String(id))}/export`, { asBlob: true, signal });
 }
 
-/** GET /api/meetings/transcript-template: 엑셀 자료 파일 양식(.xlsx). 서버가 즉시 만들어 준다(인증 헤더가 필요해 fetch 로 받는다) */
+/** GET /api/templates/transcript-xlsx: 엑셀 자료 파일 양식(.xlsx). 서버가 즉시 만들어 준다(인증 헤더가 필요해 fetch 로 받는다) */
 export function downloadTranscriptTemplate(signal?: AbortSignal): Promise<Blob> {
-  return request<Blob>("/meetings/transcript-template", { asBlob: true, signal });
+  return request<Blob>("/templates/transcript-xlsx", { asBlob: true, signal });
 }
 
 export const TRANSCRIPT_TEMPLATE_FILE_NAME = "회의록_자료_양식.xlsx";

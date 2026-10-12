@@ -198,6 +198,8 @@ def test_upload_requires_login(env):
 def test_upload_rejects_extension(env):
     staff = add_account(env["factory"], "고객사A", "kim", "staff")
     res = upload(env, staff, filename="notes.txt")
+    assert res.status_code == 422  # 85-2: 음성 종류로 올린 txt 는 자료 파일 안내 문구(허용 확장자 나열 아님)
+    res = upload(env, staff, filename="notes.exe")
     assert res.status_code == 415
     assert saved_files(env) == []
 

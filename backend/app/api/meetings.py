@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -20,7 +20,6 @@ from app.services.processing import auto_confirm_at, get_job_runner
 from app.services.task_queue import enqueue
 from app.services.upload_storage import claim_stored_file
 from app.pipeline.transcript_xlsx import xlsx_to_text
-from app.services.transcript_template import TEMPLATE_FILENAME, build_transcript_template
 from app.services.source_kind import SOURCE_AUDIO, SOURCE_KINDS, SOURCE_TRANSCRIPT_TXT, SOURCE_TRANSCRIPT_XLSX, TRANSCRIPT_KINDS
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
@@ -125,19 +124,6 @@ def _stage_transcript_upload(file: UploadFile, tenant_id: int, kind: str = SOURC
     return partial
 
 
-@router.get("/transcript-template")
-def download_transcript_template(account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> Response:
-    """엑셀 자료 파일 양식(.xlsx)을 즉시 만들어 내려준다(저장소에 파일 없음). 올리기 권한과 같은 규칙(시스템 관리자 제외)."""
-    forbid_system_admin(session, account)
-    from urllib.parse import quote  # noqa: PLC0415
-
-    return Response(
-        content=build_transcript_template(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(TEMPLATE_FILENAME)}", "Cache-Control": "no-store"},
-    )
-
-
 @router.post("/upload", status_code=status.HTTP_202_ACCEPTED, response_model=UploadAccepted, response_model_by_alias=True)
 def upload_meeting(
     background_tasks: BackgroundTasks,
@@ -168,6 +154,10 @@ def upload_meeting(
             raise _unprocessable("매크로가 들어 있는 엑셀(.xlsm) 파일은 올릴 수 없습니다. .xlsx 로 저장해 주세요.")
         if ext != wanted:
             raise _unprocessable(f"자료 파일은 .{wanted} 파일만 올릴 수 있습니다.")
+    elif ext in {"xlsx", "txt"}:
+        # 음성 종류로 자료 파일이 올라온 경우: 허용 확장자 나열 대신 원인을 알려 준다(작업 85-2)
+        label = "엑셀" if ext == "xlsx" else "텍스트"
+        raise _unprocessable(f"자료 파일({label})입니다. 자료 종류를 확인해 주세요.")
     elif ext not in settings.allowed_audio_extensions:
         allowed = ", ".join(sorted(settings.allowed_audio_extensions))
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=f"허용하지 않는 파일 형식입니다({allowed}).")

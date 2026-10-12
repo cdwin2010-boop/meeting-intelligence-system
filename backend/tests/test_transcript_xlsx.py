@@ -286,14 +286,15 @@ def test_audio_upload_and_txt_upload_are_unchanged(env, mgr):
         "/api/meetings/upload", headers=auth(mgr), data={"title": "x", "heldAt": HELD_AT},
         files={"file": ("자료.xlsx", workbook_bytes([HEADER, ["00:00:01", "a", "b"]]), XLSX_TYPE)},
     )
-    assert bad.status_code == 415  # 음성으로 올린 xlsx 는 기존대로 허용 형식 오류
+    assert bad.status_code == 422  # 85-2: 음성으로 올린 xlsx 는 자료 파일 안내
+    assert bad.json()["detail"] == "자료 파일(엑셀)입니다. 자료 종류를 확인해 주세요."
 
 
 # ---------------- 양식 내려받기·round-trip(작업 85-1) ----------------
 def test_template_download_requires_login_and_blocks_system_admin(env, mgr):
     client = env["client"]
-    assert client.get("/api/meetings/transcript-template").status_code == 401
-    ok = client.get("/api/meetings/transcript-template", headers=auth(mgr))
+    assert client.get("/api/templates/transcript-xlsx").status_code == 401
+    ok = client.get("/api/templates/transcript-xlsx", headers=auth(mgr))
     assert ok.status_code == 200
     assert ok.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     assert "attachment" in ok.headers["content-disposition"]
@@ -304,13 +305,13 @@ def test_template_download_requires_login_and_blocks_system_admin(env, mgr):
     with env["factory"]() as session:
         designate(session, session.get(Account, admin.id), actor_id=None)
         session.commit()
-    assert client.get("/api/meetings/transcript-template", headers=auth(admin)).status_code == 403
+    assert client.get("/api/templates/transcript-xlsx", headers=auth(admin)).status_code == 403
 
 
 def test_template_has_header_only_data_sheet_and_guide_and_empty_form_is_rejected(env, mgr):
     from openpyxl import load_workbook
 
-    content = env["client"].get("/api/meetings/transcript-template", headers=auth(mgr)).content
+    content = env["client"].get("/api/templates/transcript-xlsx", headers=auth(mgr)).content
     wb = load_workbook(io.BytesIO(content))
     assert wb.sheetnames == ["회의 발언", "작성 안내"]
     assert [list(r) for r in wb["회의 발언"].iter_rows(values_only=True)] == [["시각", "화자", "발언"]]  # 예시 행 없음
@@ -326,7 +327,7 @@ def test_template_has_header_only_data_sheet_and_guide_and_empty_form_is_rejecte
 def test_template_round_trip_filled_rows_register(env, mgr):
     from openpyxl import load_workbook
 
-    content = env["client"].get("/api/meetings/transcript-template", headers=auth(mgr)).content
+    content = env["client"].get("/api/templates/transcript-xlsx", headers=auth(mgr)).content
     wb = load_workbook(io.BytesIO(content))
     sheet = wb["회의 발언"]
     sheet.append(["00:00:05", "김대리", "예산을 검토하겠습니다"])
@@ -355,3 +356,19 @@ def test_unlabeled_rows_are_shown_as_written_in_transcript_api_and_stay_unchange
     assert body["fullText"].splitlines() == ["[00:00:03] 김 대리(팀): 예산 검토는 제가 하겠습니다", "화자 열이 없는 줄"]
     assert [s["speaker"] for s in body["segments"]] == ["", ""]
     assert [s["text"] for s in body["segments"]][1] == "화자 열이 없는 줄"
+
+
+def test_old_template_path_is_gone_and_new_path_is_not_shadowed_by_meeting_id_route(env, mgr):
+    client = env["client"]
+    # 옛 경로는 회의 번호(정수) 경로로 해석돼 정수 오류가 난다 = 남아 있지 않다
+    old = client.get("/api/meetings/transcript-template", headers=auth(mgr))
+    assert old.status_code == 422 and "integer" in str(old.json())
+    new = client.get("/api/templates/transcript-xlsx", headers=auth(mgr))
+    assert new.status_code == 200 and new.content[:2] == b"PK"
+
+
+def test_audio_kind_with_xlsx_upload_gives_data_file_hint(env, mgr):
+    res = post_xlsx(env, mgr, workbook_bytes([HEADER, ["00:00:01", "김대리", "발언"]]), source_kind="audio")
+    assert res.status_code == 422
+    assert res.json()["detail"] == "자료 파일(엑셀)입니다. 자료 종류를 확인해 주세요."
+    assert saved_files(env) == []

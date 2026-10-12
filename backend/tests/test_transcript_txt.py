@@ -134,9 +134,12 @@ def test_upload_txt_kind_requires_txt_extension_and_unknown_kind_422(env, mgr):
     assert saved_files(env) == []
 
 
-def test_audio_kind_with_txt_file_is_still_415(env, mgr):
-    assert post_txt(env, mgr, TIMED.encode(), source_kind="audio").status_code == 415
-    assert post_txt(env, mgr, TIMED.encode(), source_kind=None).status_code == 415  # sourceKind 없음 = 음성(기존 동작)
+def test_audio_kind_with_txt_file_gets_clear_422(env, mgr):
+    # 85-2: 허용 확장자 나열 415 대신 원인을 알리는 422(음성 종류로 올라온 자료 파일)
+    for kind in ("audio", None):  # sourceKind 없음 = 음성(기존 동작)
+        res = post_txt(env, mgr, TIMED.encode(), source_kind=kind)
+        assert res.status_code == 422
+        assert "자료 파일(텍스트)입니다" in res.json()["detail"] and "자료 종류" in res.json()["detail"]
 
 
 # ---------------- 파이프라인 ----------------
