@@ -48,3 +48,24 @@ export function ProcessingBanner({ status, processing, canReprocess, onReprocess
     </div>
   );
 }
+
+/** 처리 경고(완료됐지만 일부 구간 처리가 실패한 사항). 없으면(필드 없음 포함) 아무것도 그리지 않는다 */
+export function ProcessingWarnings({ warnings }: { warnings: string[] | null | undefined }) {
+  const list = Array.isArray(warnings) ? warnings.filter((w) => typeof w === "string" && w.trim() !== "") : [];
+  if (list.length === 0) return null;
+  return (
+    <section aria-label="처리 경고" className="flex flex-col gap-2 rounded-mn-card border border-mn-border bg-mn-surface px-4 py-3">
+      <p role="status" className="text-sm">
+        <StatusDot tone="error" label="일부 구간 처리 실패 · 아래 구간의 업무와 회의록 항목은 빠졌을 수 있습니다. 필요하면 다시 처리해 주세요." />
+      </p>
+      <ul className="flex flex-col gap-1 pl-5 text-xs text-mn-muted">
+        {list.map((warning, index) => (
+          <li key={`${index}-${warning}`} className="list-disc break-words">
+            {warning}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+

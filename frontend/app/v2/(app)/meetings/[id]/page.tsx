@@ -50,7 +50,7 @@ import { AudioPlayer, type SeekRequest } from "@/components/v2/AudioPlayer";
 import { SOURCE_KIND_LABEL, sourceKindOf } from "@/lib/v2/source-kind";
 import { HistoryDialog } from "@/components/v2/HistoryDialog";
 import { ManualItemDialog } from "@/components/v2/ManualItemDialog";
-import { ProcessingBanner } from "@/components/v2/ProcessingBanner";
+import { ProcessingBanner, ProcessingWarnings } from "@/components/v2/ProcessingBanner";
 import { useProcessingFinished } from "@/components/v2/ProcessingProvider";
 import { MinutesDialog, MinutesPanel } from "@/components/v2/MinutesPanel";
 import { findSegmentIndex, parseSeconds, parseTranscriptBlocks } from "@/lib/v2/transcript-time";
@@ -1208,6 +1208,7 @@ export default function V2MeetingDetailPage() {
         canReprocess={can(meeting.allowedActions, MEETING_ACTION.reprocessMeeting)}
         onReprocess={openReprocess}
       />
+      <ProcessingWarnings warnings={meeting.processingWarnings} />
       <FakeMeetingNotice show={meeting.minutes?.engine === "fake"} />
       {actionNotice ? (
         <p role={actionNotice.tone === "error" ? "alert" : "status"} className="text-sm">

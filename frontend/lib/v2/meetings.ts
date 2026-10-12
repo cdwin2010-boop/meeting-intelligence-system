@@ -114,6 +114,8 @@ export interface MeetingDetail {
   allowedActions?: string[];
   /** 가장 최근 처리 작업 정보(추가 필드). 오류 코드는 분류 코드만 */
   processing?: MeetingProcessing | null;
+  /** 처리 경고(추가 필드, 작업 82-1): 완료됐지만 일부 구간 처리가 실패한 사항. 필드가 없거나 빈 목록이면 보이지 않는다 */
+  processingWarnings?: string[];
   actionItems: ActionItem[];
   /** reason: 처리 사유가 있는 사건(업무 종결·삭제, 회의록 보류·직권 종료·삭제)만, 그 밖에는 null */
   recentEvents: { eventType: string; actor: AccountRef | null; createdAt: string; reason?: string | null }[];

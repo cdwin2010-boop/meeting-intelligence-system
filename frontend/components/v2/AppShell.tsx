@@ -17,6 +17,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Badge, Button } from "@/components/mono";
+import { ApprovalQueue } from "@/components/v2/ApprovalQueue";
 import { useAuth } from "@/components/v2/AuthProvider";
 import { ChangePasswordDialog } from "@/components/v2/ChangePasswordDialog";
 import { FakeEngineNotice, useEngineIsFake } from "@/components/v2/EngineNotice";
@@ -322,6 +323,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
         {isSystemAdmin ? null : <ProcessingPanel />}
+        {isSystemAdmin || accountId === null ? null : <ApprovalQueue accountId={accountId} />}
         {mobile ? (
           <div className="sticky bottom-0 mt-auto flex flex-col gap-3 border-t border-mn-border bg-mn-bg pt-4">{userBlock}</div>
         ) : null}
