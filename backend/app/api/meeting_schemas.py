@@ -113,6 +113,9 @@ class ProcessingOut(CamelModel):
     error_code: str | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    # 처리 단계(추가 필드, 작업 84-1, 기존 값에서 파생): convert(준비·변환: 음성 변환 또는 자료 파일 읽기) | extract(업무 추출) | done(완료).
+    # 실패한 작업은 멈춘 단계, 처리 중·대기 작업은 지금 단계다. 이번 작업 중 전사문이 저장됐으면 변환 단계를 마친 것으로 본다
+    stage: str | None = None
 
 
 class ProjectRef(CamelModel):

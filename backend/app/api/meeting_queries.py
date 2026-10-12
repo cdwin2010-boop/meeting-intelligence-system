@@ -168,7 +168,26 @@ def processing_out(session: Session, meeting: Meeting) -> ProcessingOut | None:
     if job is None:
         return None
     code = safe_error_code(job.error_code)
-    return ProcessingOut(status=job.status, error_code=code, started_at=job.started_at, finished_at=job.finished_at)
+    return ProcessingOut(
+        status=job.status, error_code=code, started_at=job.started_at, finished_at=job.finished_at, stage=_processing_stage(session, meeting, job),
+    )
+
+
+def _processing_stage(session: Session, meeting: Meeting, job: Job) -> str:
+    """처리 단계(기존 값에서 파생): 완료·말소리 없음은 done. 처리 중·실패는 이번 작업이 시작된 뒤 전사문이 저장됐으면 extract, 아니면 convert."""
+    if job.status in ("completed", "no_content"):
+        return "done"
+    if job.started_at is None:
+        return "convert"  # 대기 중
+    transcript_id = session.scalar(select(Transcript.id).where(Transcript.meeting_id == meeting.id))
+    if transcript_id is None:
+        return "convert"
+    saved_at = session.scalar(
+        select(func.max(Event.created_at)).where(
+            Event.entity_type == "transcript", Event.entity_id == transcript_id, Event.event_type == "transcript.saved"
+        )
+    )
+    return "extract" if saved_at is not None and saved_at >= job.started_at else "convert"
 
 
 def minutes_out(session: Session, meeting: Meeting) -> MinutesOut:

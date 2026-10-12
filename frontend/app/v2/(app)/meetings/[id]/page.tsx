@@ -1205,6 +1205,7 @@ export default function V2MeetingDetailPage() {
       <ProcessingBanner
         status={meeting.status}
         processing={meeting.processing}
+        sourceKind={meeting.sourceKind}
         canReprocess={can(meeting.allowedActions, MEETING_ACTION.reprocessMeeting)}
         onReprocess={openReprocess}
       />
