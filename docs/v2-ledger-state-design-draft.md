@@ -1029,3 +1029,11 @@ A·B·C·D는 팀장 회신 2026-10-01로 [확정]됐다(부록 B). 각 표에�
 - **단계 적용 스위치**: `EXTERNAL_POLICY_ENFORCED`(기본 false, `.env`). 거짓이면 현행 동작 그대로(Gemini 제한 없음, 로컬 외부 주소는 `LOCAL_LLM_ALLOW_EXTERNAL_HOST` 만 따름). 참이면 외부 LLM(추출 엔진 또는 STT 엔진이 gemini)은 `external_llm_enabled` 가 참일 때만 처리하고 아니면 처리를 시작하기 전에 `failed`(오류 코드 `external_disabled`, 기존 재처리로 다시 처리 가능)로 마친다. 로컬 LLM 외부 주소는 `local_llm_external_host_allowed` 가 참일 때만 허용하고 아니면 `llm_host_blocked`. 판단은 `services/external_policy.py` 한 곳이다. 도구 `scripts/check_llm.py` 와 시작 경고 로그는 `.env` 값을 쓴다(고객사 설정과 무관한 점검용).
 - **아직 하지 않은 것**: 프론트 관리 화면·승인 큐, 로그인 성공·실패 이력과 로그인 시도 제한, 통합 로그인(OIDC), 부서 삭제, 시스템 관리자 외 시스템 설정 항목(허용 키는 두 개뿐), 만료 시 읽기 전용 적용.
 
+
+### D-33 지식(KMS) 연동 선반영 [작업 83-1]
+- **범위**: 설정 키·호출 인터페이스·계약 스키마·문서까지. 실제 HTTP 호출·화면·API 라우터·outbox 는 아직 없다. 상세는 `docs/design-kms-integration.md`.
+- **방침**: 자료는 복제하지 않고 연합 조회 우선, 권한 판단은 원본 시스템 한 곳(응답은 이미 권한을 통과한 결과만), 시스템 간 호출은 서비스 토큰 + 사용자는 `external_sub` 로만 알림(사용자 토큰 전달 금지). 외부 AI(LLM) 허용과 완전히 분리.
+- **설정**: `system_settings` 허용 키에 `knowledge_integration_enabled`(기본 거짓)·`knowledge_api_endpoint`(기본 빈 값) 추가. 시스템 관리자만 변경, 사유 필수, 이력 기록(주소 전체는 이력에 남기지 않음), 행이 없으면 `.env`(`KNOWLEDGE_INTEGRATION_ENABLED`·`KNOWLEDGE_API_ENDPOINT`). 주소는 로컬 LLM 연결 보호와 같은 함수로 검사해 사설망·루프백만 허용(위반 422). 마이그레이션 `e6a0c4b9d135`(CHECK 확장 + `value_text`, 기존 마이그레이션 불변, downgrade 는 새 키 행이 있으면 거부, PostgreSQL 오프라인 DDL 확인). `GET /api/admin/settings` 의 `items` 는 기존 두 키 그대로, 지식 키는 추가 칸 `knowledge`.
+- **인터페이스**: `app/integrations/knowledge.py` `KnowledgeClient.search_references(query, external_sub, limit=3)`, `NullKnowledgeClient`(꺼짐·구현 전: 호출 없음), `FakeKnowledgeClient`. 자동 전달 코드 없음(사용자 버튼 클릭 때의 검색어만).
+- **계약**: `docs/contracts/meeting-search-v1.json`·`knowledge-reference-v1.json` + 예시(정상·잘못됨). 원본 모델 `app/integrations/contracts.py`(jsonschema 미설치로 모델과 파일 일치를 테스트).
+- **아직 하지 않은 것**: 실제 호출 구현·캐시(사용자별 메모리 1~3분)·화면("관련 규정 보기")·KMS 용 검색 라우터·서비스 토큰 운영 절차·복제(선택, 필수 요건은 설계 문서 6절)·outbox.
