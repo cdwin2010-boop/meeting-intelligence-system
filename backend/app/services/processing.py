@@ -26,7 +26,9 @@ from app.pipeline.errors import error_code
 from app.pipeline.audio_preprocess import preprocess_audio
 from app.pipeline.gpu import release_gpu_memory
 from app.pipeline.evidence_time import apply_evidence_times
+from app.services.extraction_engine import select_extractor
 from app.services.mail import queue_immediate_new_minutes
+from app.services.processing_warnings import record_processing_warnings
 from app.services.notices import create_confirm_notices
 from app.services.reprocess import recompute_auto_confirm_after_reprocess
 from app.pipeline.extractor import ActionItemCandidate, ExtractionResult, Extractor, FakeExtractor, make_gemini_extractor
@@ -55,8 +57,9 @@ def default_stt() -> SttEngine:
 
 
 def default_extractor() -> Extractor:
-    # 추출기도 STT_PROVIDER 를 따른다(fake 면 네트워크 없이 가짜 정답표)
-    return make_gemini_extractor() if settings.stt_provider == "gemini" else FakeExtractor()
+    # 추출기는 LLM_PROVIDER 를 따른다(기본 auto = STT_PROVIDER: fake 면 네트워크 없이 가짜 정답표).
+    # local 은 select_extractor 가 로컬 LLM 추출기를 만든다(services/extraction_engine.py)
+    return make_gemini_extractor() if settings.effective_llm_provider == "gemini" else FakeExtractor()
 
 
 def auto_confirm_at(first_created_at: datetime, auto_confirm_days: int) -> datetime:
@@ -189,6 +192,8 @@ def _finish_completed(
             _event(session, job, "action_item", item.id, "item.created", assignee_name=candidate.assignee)
 
         _save_minutes(session, job, meeting, minutes, engine)
+        if minutes is not None:
+            record_processing_warnings(session, job, minutes.processing_warnings)  # 일부 청크 실패 등(완료로 두되 확인 필요)
 
         now = utcnow()
         if registrant is not None and registrant.rank in CONFIRM_ON_REGISTRATION_RANKS:
@@ -285,7 +290,8 @@ def process_meeting(
 
         # 추출기에는 회의 일시를 현지 시각(APP_TIMEZONE)으로 넘긴다. UTC 그대로면 날짜·요일이 하루 어긋날 수 있다
         local_held_at = started["held_at"].astimezone(ZoneInfo(settings.app_timezone))
-        result = (extractor_factory or default_extractor)().extract(transcript, local_held_at)
+        result = select_extractor(factory, started["meeting_id"], extractor_factory, default_extractor).extract(transcript, local_held_at)
+        engine = result.engine_label or engine  # 로컬 엔진이면 서버가 만든 "로컬 LLM(모델명)" 표시값
         # 근거 시각은 Gemini 응답이 아니라 저장된 전사문과 인용문을 서버가 대조해 정한다(실패한 업무도 시각만 비우고 그대로 저장)
         _progress(on_progress, 85)
         items = apply_evidence_times(result.items, stt_result.text, stt_result.segments)

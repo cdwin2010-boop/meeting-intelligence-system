@@ -12,7 +12,7 @@ from app.models.minutes import MINUTES_FIELDS, NO_CONTENT
 from app.pipeline import extractor, prompts
 from app.pipeline.agenda_chunker import match_agenda_marker, parse_utterances, split_into_chunks
 from app.pipeline.chunked_extract import (
-    UNKNOWN_ASSIGNEE, ChunkOptions, ChunkResponse, dedupe_items, extract_chunked, to_extraction_result,
+    ChunkOptions, ChunkResponse, dedupe_items, extract_chunked, to_extraction_result,
 )
 from app.pipeline.extractor import ActionItemList, ExtractionResult
 from app.pipeline.json_parser import extract_json_object, parse_response, run_with_repair
@@ -57,9 +57,12 @@ def test_chunk_prompt_variables_and_instructions():
     assert extractor.PROMPT_TEMPLATE.split("\n전사문:")[0].format(started_at=HELD.isoformat(), weekday="월", transcript="") in text
 
 
-def test_meeting_type_hook_does_not_change_text_yet():
+def test_meeting_type_hook_changes_text_only_for_project_and_external():
+    # 작업 81-1: project·external 만 관점 문단이 추가되고 그 밖의 유형은 기존 텍스트와 같다
     a = prompts.render_chunk_prompt("x", HELD, meeting_type="")
-    assert prompts.render_chunk_prompt("x", HELD, meeting_type="regular") == a == prompts.render_chunk_prompt("x", HELD, meeting_type="project")
+    for kind in ("regular", "irregular", "other"):
+        assert prompts.render_chunk_prompt("x", HELD, meeting_type=kind) == a
+    assert prompts.render_chunk_prompt("x", HELD, meeting_type="project") != a
 
 
 # ---------------- 분할기 ----------------
@@ -315,13 +318,14 @@ def test_assignee_keeps_speaker_label_and_is_never_empty():
         item("A 업무", "", "", "화자7", "00:00:10", "첫 발언"),  # 모델이 비움 → 인용 발화자
         item("B 업무", "화자5", "", "화자5", "00:00:20", "둘째 발언"),  # 화자N 유지
         item("C 업무", "", "", "", "", "셋째 발언"),  # 인용문이 있는 발언의 화자
-        item("D 업무", "", "", "", "", "전사문에 없음"),  # 마지막 수단
+        item("D 업무", "", "", "", "", "전사문에 없음"),  # 식별 불가: 빈 문자열
     ]
     transcript = "[00:00:10] 화자7: 첫 발언\n[00:00:20] 화자5: 둘째 발언\n[00:00:30] 화자2: 셋째 발언"
     result, _ = run(lambda m: reply(items), transcript)
     who = {i.candidate.task: i.candidate.assignee for i in result.items}
-    assert who == {"A 업무": "화자7", "B 업무": "화자5", "C 업무": "화자2", "D 업무": UNKNOWN_ASSIGNEE}
-    assert all(i.candidate.assignee for i in result.items)
+    assert who == {"A 업무": "화자7", "B 업무": "화자5", "C 업무": "화자2", "D 업무": ""}
+    # 원문 근거로 식별할 수 없으면 빈 문자열(현행 Gemini 경로와 같은 표준, 작업 81-1)
+    assert [i.candidate.assignee for i in result.items if i.candidate.task == "D 업무"] == [""]
 
 
 def test_relative_dates_use_meeting_datetime_and_adapter_is_compatible():
@@ -384,10 +388,12 @@ def test_retry_max_is_clamped_to_one_in_code():
 
 def test_new_modules_are_not_imported_by_existing_pipeline():
     new = {"prompts", "agenda_chunker", "json_parser", "llm_client", "chunked_extract"}
+    # 작업 81-1: 로컬 엔진 경로 연결 모듈만 이 부품을 쓴다(현행 Gemini 경로·API 는 쓰지 않는다)
+    wiring = {"local_extractor", "local_llm", "extraction_engine"}
     pattern = re.compile(r"from\s+app\.pipeline(?:\.(\w+))?\s+import\s+([^\n(]+)|import\s+app\.pipeline\.(\w+)")
     offenders = []
     for path in (ROOT / "app").rglob("*.py"):
-        if path.stem in new and path.parent.name == "pipeline":
+        if (path.stem in new and path.parent.name == "pipeline") or path.stem in wiring:
             continue
         text = path.read_text(encoding="utf-8")
         for m in pattern.finditer(text):

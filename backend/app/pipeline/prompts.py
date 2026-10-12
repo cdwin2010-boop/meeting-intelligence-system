@@ -2,7 +2,7 @@
 
 - BASE_TEMPLATE 은 현행 추출 프롬프트와 글자 단위로 같다(골든 테스트). render_base_prompt 의 결과가 extractor.build_prompt 와 같다.
 - 청크(안건) 단위 추론용 render_chunk_prompt 는 같은 본문에 구간 정보·구간 전용 지시·응답 형식 지시(```json 블록과 스키마 설명)를 더한다.
-- 회의 유형별 분기는 훅(meeting_type 인자)만 두고 지금은 모든 유형이 같은 텍스트다.
+- 회의 유형별 분기(작업 81-1): meeting_type 이 project·external 이면 관점 문단(META_TYPE_NOTES)을 더하고, 그 밖의 유형은 같은 텍스트다.
 - 순수 함수만 쓴다(전역 상태 변경·동적 import 없음).
 """
 from datetime import datetime
@@ -92,6 +92,20 @@ RESPONSE_FORMAT = """[응답 형식]
 ```"""
 
 
+# 회의 유형별 관점 지시(로컬 경로 전용). project·external 만 추가 문단이 있고 그 밖의 유형(정기·비정기·기타·미지정)은 추가 문단이 없어
+# 기존 프롬프트와 글자 단위로 같다. 5개 항목 이름과 출력 스키마는 바꾸지 않는다.
+META_TYPE_NOTES = {
+    "project": """[회의 유형 관점: 프로젝트 회의]
+- 마일스톤(단계별 목표·일정)과 진행 상황, 액션아이템, 담당자, 기한을 중심으로 봅니다.
+- 주요 논의사항(discussion)에는 마일스톤별 진행·지연 내용을, 결정사항(decisions)에는 확정된 일정·담당·기한 변경을 담습니다.
+- 담당자와 기한이 함께 언급된 업무를 놓치지 않습니다.""",
+    "external": """[회의 유형 관점: 외부 미팅]
+- 고객(상대 회사)의 니즈, 견적, 계약 조건, 후속 요청을 중심으로 봅니다.
+- 고객의 니즈·견적·계약에 관한 논의와 후속 요청은 주요 논의사항(discussion)과 결정사항(decisions)에 담습니다.
+- 우리 쪽이 해야 할 후속 조치(자료 송부, 견적 제출 등)는 업무로 뽑습니다.""",
+}
+
+
 def _weekday(held_at: datetime) -> str:
     return WEEKDAYS_KO[held_at.weekday()]
 
@@ -111,7 +125,7 @@ def render_chunk_prompt(
     participants: tuple[str, ...] = (),
     meeting_type: str = "",
 ) -> str:
-    """청크(안건 구간) 추론용 프롬프트. chunk_index 는 1부터. meeting_type 은 훅이며 지금은 텍스트에 영향이 없다."""
+    """청크(안건 구간) 추론용 프롬프트. chunk_index 는 1부터. meeting_type 이 project·external 이면 관점 문단을 더한다."""
     head = BASE_TEMPLATE.split(_TRANSCRIPT_MARK)[0].format(
         started_at=held_at.isoformat(), weekday=_weekday(held_at), transcript=""
     )
@@ -122,4 +136,9 @@ def render_chunk_prompt(
     if agenda_title:
         chunk_line += f" (안건: {agenda_title})"
     info.append(chunk_line)
-    return "\n".join([head, "\n".join(info), "", CHUNK_INSTRUCTIONS, "", RESPONSE_FORMAT, "", "전사문:", transcript])
+    parts = [head, "\n".join(info), "", CHUNK_INSTRUCTIONS, ""]
+    note = META_TYPE_NOTES.get(meeting_type or "")
+    if note:
+        parts += [note, ""]  # 유형 관점 문단(project·external 만)
+    parts += [RESPONSE_FORMAT, "", "전사문:", transcript]
+    return "\n".join(parts)

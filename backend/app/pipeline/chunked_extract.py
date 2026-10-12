@@ -4,7 +4,8 @@
 - 청크 하나가 실패해도 나머지는 계속한다. 예외를 올리지 않는다(상태·경고 목록으로 알린다).
 - 업무: 상대 날짜는 기존 정규화(extractor.postprocess → dates.resolve_due_date)를 재사용한다. 겹침 청크 때문에 생긴 중복은 제거한다.
 - 환각 방지: 근거 인용문이 그 청크 전사문에 실제로 있어야 "근거 검증"으로 본다(공백 정규화 비교). 없으면 근거 시각을 비운다.
-- 담당자는 빈 문자열·None 을 쓰지 않는다(모델 값 → 인용 발화자 → 인용문이 있는 발언의 화자 → "화자 미상").
+- 담당자: 모델 값 → 인용 발화자 → 인용문이 있는 발언의 화자 순으로 쓰고, 원문 근거로 식별할 수 없으면 빈 문자열("")로 둔다
+  (현행 Gemini 경로와 같은 표준: 저장 때 담당자 미지정이 "보완 필요"가 된다. 대체 이름을 만들어 넣지 않는다).
 - 5개 항목: 안건별 내용을 안건 제목과 함께 합치고 길이 한도 안에서 자른다. 비면 "내용없음".
 - to_extraction_result 로 현행 추출 결과(ExtractionResult)와 같은 모양으로 바꾼다.
 """
@@ -30,7 +31,6 @@ from app.pipeline.prompts import SYSTEM_PROMPT, render_chunk_prompt
 STATUS_OK = "success"
 STATUS_REPAIRED = "repaired"  # 교정 프롬프트 재시도로 성공
 STATUS_FAILED = "failed"
-UNKNOWN_ASSIGNEE = "화자 미상"
 
 _NON_WORD = re.compile(r"[\W_]+")
 _TASK_SIMILAR = 0.9  # 업무명만으로 같은 업무로 보는 유사도
@@ -107,6 +107,8 @@ class ChunkedExtraction:
     minutes: dict[str, str]  # MINUTES_FIELDS 키 전부, 비면 "내용없음"
     chunks: list[ChunkReport]
     warnings: list[str] = field(default_factory=list)
+    # 청크 호출 실패의 마지막 원인 예외(응답 형식 문제로만 실패했으면 None). 전부 실패했을 때 오류 분류에 쓴다
+    client_error: BaseException | None = None
 
     @property
     def all_failed(self) -> bool:
@@ -145,7 +147,7 @@ def _items_of_chunk(chunk: Chunk, raw: list[ExtractedItem], held_at: datetime) -
         verified = bool(quote) and quote in chunk_text_ws
         assignee = candidate.assignee.strip() or candidate.quote_speaker.strip()
         if not assignee:
-            assignee = _speaker_of_quote(chunk, candidate.quote_text) or UNKNOWN_ASSIGNEE
+            assignee = _speaker_of_quote(chunk, candidate.quote_text)  # 원문 근거가 없으면 ""
         candidate = replace(candidate, assignee=assignee)
         if verified:
             candidate = apply_evidence_times([candidate], chunk.text, None)[0]  # 서버 대조로 근거 시각 산정
@@ -226,6 +228,7 @@ def extract_chunked(
     items: list[ChunkedItem] = []
     drafts: list[tuple[Chunk, MeetingMinutesDraft]] = []
     warnings: list[str] = []
+    client_error: BaseException | None = None
     total = len(chunks)
     for chunk in chunks:
         prompt = render_chunk_prompt(
@@ -239,6 +242,8 @@ def extract_chunked(
         chunk_warnings: list[str] = []
         label = f"구간 {chunk.index + 1}/{total}"
         if outcome.value is None:
+            if outcome.client_error is not None:
+                client_error = outcome.client_error
             chunk_warnings.append(f"{label} 실패: {'; '.join(outcome.errors[:2]) or '응답을 읽지 못했습니다'}")
             reports.append(ChunkReport(chunk.index, chunk.title, STATUS_FAILED, outcome.calls, 0, outcome.truncated_recovered, tuple(chunk_warnings)))
             warnings.extend(chunk_warnings)
@@ -261,7 +266,7 @@ def extract_chunked(
     if removed:
         warnings.append(f"겹침 구간의 중복 업무 {removed}건 제거")
     minutes = _merge_minutes(drafts, total, opts.minutes_max_chars)
-    return ChunkedExtraction(items=merged_items, minutes=minutes, chunks=reports, warnings=warnings)
+    return ChunkedExtraction(items=merged_items, minutes=minutes, chunks=reports, warnings=warnings, client_error=client_error)
 
 
 def to_extraction_result(

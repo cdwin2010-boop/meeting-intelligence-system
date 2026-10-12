@@ -1,5 +1,6 @@
 """시스템 정보(로그인 필요). 처리 엔진과 처리 방식만 알려 준다:
-{"engine": "fake"|"gemini", "isFake": 불리언, "processingMode": "inline"|"queue", "queuePending": 정수, "queueProcessing": 정수}.
+{"engine": "fake"|"gemini", "isFake": 불리언, "processingMode": "inline"|"queue", "queuePending": 정수, "queueProcessing": 정수,
+ "llmProvider": "fake"|"gemini"|"local", "llmModel": 로컬 모델 이름 또는 ""}.
 키·키 모드(free·paid)·모델 이름·기타 설정은 내려주지 않는다."""
 from datetime import datetime
 
@@ -23,6 +24,9 @@ class EngineOut(CamelModel):
     processing_mode: str
     queue_pending: int
     queue_processing: int
+    # 추출(LLM) 엔진(추가 필드): fake | gemini | local 과 로컬 모델 이름(local 일 때만, 그 밖에는 ""). 주소·키는 내려주지 않는다
+    llm_provider: str
+    llm_model: str
 
 
 @router.get("/engine", response_model=EngineOut, response_model_by_alias=True)
@@ -31,6 +35,8 @@ def get_engine(account: Account = Depends(get_current_account), session: Session
     return EngineOut(
         engine=settings.stt_provider, is_fake=settings.stt_provider == "fake",
         processing_mode=settings.processing_mode, queue_pending=pending, queue_processing=processing,
+        llm_provider=settings.effective_llm_provider,
+        llm_model=settings.local_llm_model if settings.effective_llm_provider == "local" else "",
     )
 
 

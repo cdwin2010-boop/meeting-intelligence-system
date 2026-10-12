@@ -381,10 +381,10 @@ def test_engine_requires_login_and_exposes_only_engine(env, team, monkeypatch):
     assert env["client"].get("/api/system/engine").status_code == 401
     monkeypatch.setattr(settings, "stt_provider", "fake")
     res = call(env, "GET", team["staff"], "/api/system/engine")
-    assert res.status_code == 200 and res.json() == {"engine": "fake", "isFake": True, **QUEUE_FIELDS}
+    assert res.status_code == 200 and res.json() == {"engine": "fake", "isFake": True, **QUEUE_FIELDS, "llmProvider": "fake", "llmModel": ""}
     monkeypatch.setattr(settings, "stt_provider", "gemini")
     res = call(env, "GET", team["staff"], "/api/system/engine")
-    assert res.json() == {"engine": "gemini", "isFake": False, **QUEUE_FIELDS}
+    assert res.json() == {"engine": "gemini", "isFake": False, **QUEUE_FIELDS, "llmProvider": "gemini", "llmModel": ""}
     for secret in ("AIza", "paid", "free", "model-name-xyz"):
         assert secret not in res.text
 

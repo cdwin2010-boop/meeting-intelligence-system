@@ -369,7 +369,8 @@ def test_engine_endpoint_exposes_queue_fields(env, mgr, queue_mode):
     upload(env, mgr)
     tq.claim_next(env["factory"])
     body = env["client"].get("/api/system/engine", headers=auth(mgr)).json()
-    assert body == {"engine": "fake", "isFake": True, "processingMode": "queue", "queuePending": 1, "queueProcessing": 1}
+    assert body == {"engine": "fake", "isFake": True, "processingMode": "queue", "queuePending": 1, "queueProcessing": 1,
+                    "llmProvider": "fake", "llmModel": ""}
 
 
 def test_settings_defaults():

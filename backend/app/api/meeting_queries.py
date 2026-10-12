@@ -35,6 +35,7 @@ from app.models.minutes import MINUTES_FIELDS
 from app.models.closure import meeting_phase, phase_condition
 from app.models.common import MEETING_STATUSES
 from app.services.item_closure import closure_kinds
+from app.services.processing_warnings import WARNING_EVENT, processing_warnings_of
 from app.services.source_kind import SOURCE_AUDIO, source_kind_of_path
 from app.services.supersession import project_of_meeting, superseded_ids, supersession_refs
 from app.models.item_conditions import live_item, not_deleted_item
@@ -194,6 +195,7 @@ def _recent_events(session: Session, meeting: Meeting) -> list[EventOut]:
         .outerjoin(actor, actor.id == Event.actor_account_id)
         .where(
             Event.tenant_id == meeting.tenant_id,
+            Event.event_type != WARNING_EVENT,  # 처리 경고는 processingWarnings 로 따로 내려준다
             or_(
                 and_(Event.entity_type == "meeting", Event.entity_id == meeting.id),
                 and_(Event.entity_type == "job", Event.entity_id.in_(job_ids)),
@@ -310,6 +312,7 @@ def get_meeting(
         # 프로젝트 이름은 열람 가능한 회의록에서만 나간다(프로젝트를 볼 수 없어도 회의록을 볼 수 있으면 나감)
         project=ProjectRef(id=linked_project.id, name=linked_project.name) if linked_project else None,
         processing=processing_out(session, meeting),
+        processing_warnings=processing_warnings_of(session, meeting.id),
         source_kind=kind,
         has_audio=kind == SOURCE_AUDIO and bool(document is not None and document.file_path),
         allowed_actions=meeting_allowed_actions(session, account, meeting),

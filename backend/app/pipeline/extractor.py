@@ -21,6 +21,7 @@ from app.config import settings
 from app.pipeline.dates import WEEKDAYS_KO, resolve_due_date
 from app.models.minutes import MINUTES_FIELDS, NO_CONTENT
 from app.pipeline.retry import generate_with_retry
+from app.pipeline.transient import is_transient_error
 from app.pipeline.fakes import fake_items_raw, fake_minutes_raw
 
 log = logging.getLogger("app.extractor")
@@ -98,6 +99,9 @@ class ExtractionResult:
     # 회의록 5개 항목(MINUTES_FIELDS 키 -> 글자). 응답이 없거나 형식이 틀려 만들지 못했으면 None(저장 때 모두 "내용없음")
     minutes: dict[str, str] | None = None
     minutes_prompt_version: str = ""
+    # 로컬 엔진 경로(작업 81-1): 서버가 만든 엔진 표시값("로컬 LLM(모델명)", 없으면 기존 엔진 값)과 처리 경고(일부 청크 실패 등)
+    engine_label: str = ""
+    processing_warnings: tuple[str, ...] = ()
 
 
 def response_json_schema() -> dict:
@@ -344,6 +348,10 @@ class GeminiExtractor:
             )
             return parse_minutes(response.text or "")
         except Exception as exc:  # noqa: BLE001
+            if is_transient_error(exc):
+                # 재시도를 소진한 일시 오류(시간 초과·연결·429·5xx): 5개 항목을 "내용없음"으로 채워 완료하지 않고 실패로 올려 재처리할 수 있게 한다
+                log.warning("minutes generation transient failure: %s", type(exc).__name__)
+                raise
             log.warning("minutes generation failed: %s", type(exc).__name__)
             return None
 

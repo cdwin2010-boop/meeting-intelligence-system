@@ -359,7 +359,8 @@ def test_existing_engine_response_is_unchanged(db, licensed):
     client = TestClient(app)
     staff = _add(db, "s", "staff")
     body = client.get("/api/system/engine", headers=_headers(staff)).json()
-    assert set(body) == {"engine", "isFake", "processingMode", "queuePending", "queueProcessing"}
+    # 라이선스 작업 때의 필드는 그대로이고, 작업 81-1 이 llmProvider·llmModel 을 추가했다(추가만)
+    assert {"engine", "isFake", "processingMode", "queuePending", "queueProcessing"} <= set(body)
 
 
 def test_license_module_is_not_imported_by_processing_pipeline():
