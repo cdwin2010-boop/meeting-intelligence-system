@@ -18,6 +18,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Badge, Button } from "@/components/mono";
 import { useAuth } from "@/components/v2/AuthProvider";
+import { ChangePasswordDialog } from "@/components/v2/ChangePasswordDialog";
 import { FakeEngineNotice, useEngineIsFake } from "@/components/v2/EngineNotice";
 import { ProcessingBadge } from "@/components/v2/ProcessingBadge";
 import { useProcessing } from "@/components/v2/ProcessingProvider";
@@ -90,6 +91,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const asideRef = useRef<HTMLElement>(null);
   const hamburgerRef = useRef<HTMLButtonElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [passwordNotice, setPasswordNotice] = useState(false);
   const { items, announcement } = useProcessing();
   const isSystemAdmin = account?.isSystemAdmin === true;
   const navItems = isSystemAdmin ? ADMIN_NAV_ITEMS : NAV_ITEMS;
@@ -185,6 +188,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Badge>{RANK_LABEL[account.rank] ?? account.rank}</Badge>
         </div>
       ) : null}
+      {/* 768~1023 에서는 헤더가 좁아 짧은 글자만 보이고 접근성 이름은 "비밀번호 변경" 그대로다 */}
+      <Button size="sm" aria-label="비밀번호 변경" onClick={() => setPasswordOpen(true)} className="whitespace-nowrap max-md:min-h-11 md:px-2 lg:px-3">
+        <span className="md:max-lg:hidden">비밀번호 변경</span>
+        <span aria-hidden="true" className="hidden md:max-lg:inline">
+          비밀번호
+        </span>
+      </Button>
       <Button size="sm" onClick={onLogout} className="max-md:min-h-11 max-md:min-w-11">
         로그아웃
       </Button>
@@ -239,6 +249,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         </header>
         <main className="flex min-w-0 flex-1 flex-col gap-6 px-4 pt-8 pb-16 md:px-12">
           <FakeEngineNotice show={engineIsFake} />
+          {passwordNotice ? (
+            <p role="status" className="text-sm text-mn-text">
+              비밀번호를 변경했습니다.
+            </p>
+          ) : null}
           {children}
         </main>
       </div>
@@ -312,6 +327,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         ) : null}
         </div>
       </aside>
+      <ChangePasswordDialog
+        open={passwordOpen}
+        onClose={() => setPasswordOpen(false)}
+        onChanged={() => {
+          setPasswordNotice(true);
+          window.setTimeout(() => setPasswordNotice(false), 6000);
+        }}
+      />
     </div>
   );
 }
