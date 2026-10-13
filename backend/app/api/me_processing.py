@@ -23,6 +23,8 @@ class ProcessingItemOut(CamelModel):
     elapsed_sec: int
     finished_at: datetime | None
     can_reprocess: bool
+    # 즉시 변환 허용(추가 필드, 작업 88-3): 허용 동작 process_now 판정 그대로(관리자 이상·queue 모드·아직 우선 처리가 아닌 대기 작업). 담당자는 항상 false
+    can_process_now: bool = False
     # 대기열 상태(추가 필드, 작업 88-1): 의미는 회의록 상세 processing 과 같다
     queue_ahead: int | None = None
     prioritized: bool = False
@@ -38,6 +40,7 @@ def get_my_processing(account: Account = Depends(get_current_account), session: 
         ProcessingItemOut(
             meeting_id=e.meeting_id, job_id=e.job_id, title=e.title, status=e.status, error_code=e.error_code,
             elapsed_sec=e.elapsed_sec, finished_at=e.finished_at, can_reprocess=e.can_reprocess,
+            can_process_now=e.can_process_now,
             queue_ahead=e.queue.queue_ahead, prioritized=e.queue.prioritized, waiting_for_prior=e.queue.waiting_for_prior,
             worker_alive=e.queue.worker_alive,
         )

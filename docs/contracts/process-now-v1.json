@@ -19,13 +19,14 @@
   },
   "definitions": {
     "queue-state-fields": {
-      "description": "작업 상태 응답(GET /api/meetings/{id} 의 processing, GET /api/me/processing 의 각 항목)에 덧붙는 대기열 칸. queue 모드의 대기·처리 중 작업이 아니면 queueAhead·workerAlive 는 null, prioritized·waitingForPrior 는 false.",
+      "description": "작업 상태 응답(GET /api/meetings/{id} 의 processing, GET /api/me/processing 의 각 항목)에 덧붙는 대기열 칸(canProcessNow 는 /api/me/processing 항목에만). queue 모드의 대기·처리 중 작업이 아니면 queueAhead·workerAlive 는 null, prioritized·waitingForPrior 는 false.",
       "type": "object",
       "properties": {
         "queueAhead": {"type": ["integer", "null"], "minimum": 0},
         "prioritized": {"type": "boolean"},
         "waitingForPrior": {"type": "boolean"},
-        "workerAlive": {"type": ["boolean", "null"]}
+        "workerAlive": {"type": ["boolean", "null"]},
+        "canProcessNow": {"type": "boolean", "description": "추가 필드(작업 88-3, GET /api/me/processing 항목에만). 즉시 변환 허용 여부: 허용 동작 process_now 판정 그대로(관리자 이상·queue 모드·아직 우선 처리가 아닌 대기 작업·같은 고객사). 담당자는 항상 false. 화면은 이 값만 보고 [즉시 변환]을 보이며 회의록 상세를 따로 조회하지 않는다. 필드가 없는 서버 응답이면 false 로 본다."}
       }
     },
     "job-status-names": {

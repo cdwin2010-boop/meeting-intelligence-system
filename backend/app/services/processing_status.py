@@ -2,7 +2,7 @@
 - 대상: 현재 사용자가 등록한 회의록 중 최근 PROCESSING_TRACK_HOURS(기본 24)시간 안에 처리가 시작된 것(시작 전 대기 작업은 만든 시각), 삭제 단계 제외,
   회의록마다 가장 최근 작업 1건, 최신 작업 순으로 최대 10건. 같은 고객사 안의 본인 등록분만(다른 사용자·다른 회사는 포함하지 않는다).
 - 경과 초(elapsedSec)는 서버가 응답 시점 기준으로 계산한다: 대기·처리 중은 지금까지, 끝난 작업은 시작~종료.
-- 오류 코드는 분류 코드만(원본 예외 문구·키·파일 경로·설정값은 내려주지 않는다). canReprocess 는 허용 동작 판정(reprocess_meeting)을 그대로 부른다.
+- 오류 코드는 분류 코드만(원본 예외 문구·키·파일 경로·설정값은 내려주지 않는다). canReprocess·canProcessNow 는 허용 동작 판정(meeting_allowed_actions 의 reprocess_meeting·process_now)을 그대로 쓴다(규칙 중복 구현 없음, 열람 기록 없음).
 """
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.auth.actions import REPROCESS_MEETING, meeting_allowed_actions
+from app.auth.actions import PROCESS_NOW, REPROCESS_MEETING, meeting_allowed_actions
 from app.config import settings
 from app.models import Account, Job, Meeting, SourceDocument
 from app.models.common import utcnow
@@ -31,6 +31,7 @@ class ProcessingEntry:
     elapsed_sec: int
     finished_at: datetime | None
     can_reprocess: bool
+    can_process_now: bool
     queue: QueueFields
 
 
@@ -58,12 +59,16 @@ def my_processing(session: Session, account: Account, now: datetime | None = Non
         .order_by(Job.id.desc())
         .limit(PROCESSING_LIST_LIMIT)
     ).all()
-    return [
-        ProcessingEntry(
-            meeting_id=meeting.id, job_id=job.id, title=meeting.title, status=job.status, error_code=safe_error_code(job.error_code),
-            elapsed_sec=_elapsed(job, now), finished_at=job.finished_at,
-            can_reprocess=REPROCESS_MEETING in meeting_allowed_actions(session, account, meeting),
-            queue=queue_fields(session, meeting.id, job.status),
+    entries: list[ProcessingEntry] = []
+    for job, meeting in rows:
+        allowed = meeting_allowed_actions(session, account, meeting)  # 읽기 전용 판정(열람 기록을 남기지 않는다)
+        entries.append(
+            ProcessingEntry(
+                meeting_id=meeting.id, job_id=job.id, title=meeting.title, status=job.status, error_code=safe_error_code(job.error_code),
+                elapsed_sec=_elapsed(job, now), finished_at=job.finished_at,
+                can_reprocess=REPROCESS_MEETING in allowed,
+                can_process_now=PROCESS_NOW in allowed,
+                queue=queue_fields(session, meeting.id, job.status),
+            )
         )
-        for job, meeting in rows
-    ]
+    return entries

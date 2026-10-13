@@ -9,7 +9,7 @@ from alembic import command
 from sqlalchemy import select
 
 from app.config import settings
-from app.models import Event, Job, Meeting, SystemAdmin, TaskQueue, WorkerHeartbeat
+from app.models import Event, Job, Meeting, MeetingView, SystemAdmin, TaskQueue, WorkerHeartbeat
 from app.models.common import utcnow
 from app.services import task_queue as tq
 from app.services.history import HISTORY_KINDS, KIND_MEETING_PROCESS_NOW
@@ -296,6 +296,69 @@ def test_worker_run_once_records_heartbeat(env, team):
     assert w.run_once() is True
     with env["factory"]() as s:
         assert s.scalar(select(WorkerHeartbeat.worker_id)) == w.worker_id
+
+
+# ---------------- /api/me/processing 의 canProcessNow (작업 88-3) ----------------
+def mine(env, account) -> list[dict]:
+    res = env["client"].get("/api/me/processing", headers=auth(account))
+    assert res.status_code == 200
+    return res.json()
+
+
+def can_now(env, account, meeting_id) -> bool:
+    [row] = [r for r in mine(env, account) if r["meetingId"] == meeting_id]
+    return row["canProcessNow"]
+
+
+def test_can_process_now_false_for_staff_true_for_manager_and_executive_own_queued(env, team):
+    [su] = make(env, team["staff"], 1)
+    [mu] = make(env, team["mgr"], 1)
+    [eu] = make(env, team["exe"], 1)
+    assert can_now(env, team["staff"], su["meetingId"]) is False  # 담당자는 항상 false
+    assert can_now(env, team["mgr"], mu["meetingId"]) is True
+    assert can_now(env, team["exe"], eu["meetingId"]) is True
+
+
+def test_can_process_now_matches_allowed_actions_and_follows_state(env, team):
+    [a, b] = (u["meetingId"] for u in make(env, team["mgr"], 2))
+    detail = env["client"].get(f"/api/meetings/{b}", headers=auth(team["mgr"])).json()
+    assert ("process_now" in detail["allowedActions"]) is can_now(env, team["mgr"], b) is True  # 같은 판정 함수
+    assert post_now(env, team["mgr"], b).status_code == 200
+    assert can_now(env, team["mgr"], b) is False  # 이미 우선 처리
+    assert tq.claim_next(env["factory"]).meeting_id == b  # 진행 중
+    assert can_now(env, team["mgr"], b) is False
+    assert can_now(env, team["mgr"], a) is True  # 아직 대기
+
+
+def test_can_process_now_false_when_done_or_failed(env, team):
+    [done, failed] = (u["meetingId"] for u in make(env, team["mgr"], 2))
+    assert run_one(env) is True  # done 완료
+    assert run_one(env, extractor_factory=BrokenExtractor) is True  # failed 실패
+    assert can_now(env, team["mgr"], done) is False
+    assert can_now(env, team["mgr"], failed) is False
+
+
+def test_can_process_now_false_when_not_queue_mode(env, team, monkeypatch):
+    [u] = make(env, team["mgr"], 1)
+    monkeypatch.setattr(settings, "processing_mode", "inline")
+    assert can_now(env, team["mgr"], u["meetingId"]) is False
+
+
+def test_other_tenant_items_not_exposed(env, team):
+    [u] = make(env, team["mgr"], 1)
+    assert [r["meetingId"] for r in mine(env, team["other"])] == []
+    assert [r["meetingId"] for r in mine(env, team["mgr"])] == [u["meetingId"]]
+
+
+def test_me_processing_creates_no_view_record(env, team):
+    make(env, team["mgr"], 2)
+    with env["factory"]() as s:
+        before = len(list(s.scalars(select(MeetingView))))
+    for _ in range(3):
+        mine(env, team["mgr"])
+        mine(env, team["staff"])
+    with env["factory"]() as s:
+        assert len(list(s.scalars(select(MeetingView)))) == before
 
 
 # ---------------- 마이그레이션 ----------------

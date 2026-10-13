@@ -77,18 +77,23 @@ test("왼쪽 메뉴: 대기·진행·완료·실패 4단계가 같은 칩으로 
   expect(await panel.locator(".mn-chip").count()).toBeGreaterThanOrEqual(4);
 });
 
-test("왼쪽 메뉴: 서버가 process_now 를 허용한 대기 항목에만 [즉시 변환], 누르면 서버 문구 표시", async ({ page }) => {
+test("왼쪽 메뉴: canProcessNow=true 인 대기 항목에만 [즉시 변환], 회의록 상세를 조회하지 않는다(작업 88-3)", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   const posts: string[] = [];
+  const detailGets: string[] = [];
   await page.route("**/api/me/processing", (route) =>
     json(route, 200, [
-      { meetingId: 41, jobId: 77, title: "허용 회의", status: "queued", errorCode: null, elapsedSec: 5, finishedAt: null, canReprocess: false, queueAhead: 1, prioritized: false, waitingForPrior: true, workerAlive: true },
-      { meetingId: 42, jobId: 78, title: "불허 회의", status: "queued", errorCode: null, elapsedSec: 5, finishedAt: null, canReprocess: false, queueAhead: 2, prioritized: false, waitingForPrior: true, workerAlive: true },
+      { meetingId: 41, jobId: 77, title: "허용 회의", status: "queued", errorCode: null, elapsedSec: 5, finishedAt: null, canReprocess: false, canProcessNow: true, queueAhead: 1, prioritized: false, waitingForPrior: true, workerAlive: true },
+      { meetingId: 42, jobId: 78, title: "불허 회의", status: "queued", errorCode: null, elapsedSec: 5, finishedAt: null, canReprocess: false, canProcessNow: false, queueAhead: 2, prioritized: false, waitingForPrior: true, workerAlive: true },
+      { meetingId: 43, jobId: 79, title: "필드 없는 서버", status: "queued", errorCode: null, elapsedSec: 5, finishedAt: null, canReprocess: false, queueAhead: 3, prioritized: false, waitingForPrior: true, workerAlive: true },
     ]),
   );
   await loginWithMocks(page);
-  await page.route(/\/api\/meetings\/41$/, (route) => json(route, 200, queuedDetail({ id: 41 })));
-  await page.route(/\/api\/meetings\/42$/, (route) => json(route, 200, queuedDetail({ id: 42 }, {}, [])));
+  // 상세 요청이 나가면 기록한다(이 화면에서는 한 번도 나가면 안 된다)
+  await page.route(/\/api\/meetings\/\d+$/, (route) => {
+    detailGets.push(route.request().url());
+    return json(route, 200, queuedDetail());
+  });
   await page.route("**/api/meetings/41/process-now", (route) => {
     posts.push(route.request().method());
     return json(route, 200, processNowBody());
@@ -97,9 +102,11 @@ test("왼쪽 메뉴: 서버가 process_now 를 허용한 대기 항목에만 [�
   const panel = page.getByRole("region", { name: "처리 현황" });
   const buttons = panel.getByRole("button", { name: "즉시 변환" });
   await expect(buttons).toHaveCount(1);
+  await expect(panel).toContainText("앞에 3건");
   await buttons.click();
   await expect(panel.getByText(WAITING)).toBeVisible();
   expect(posts).toEqual(["POST"]);
+  expect(detailGets).toEqual([]);
 });
 
 // ---------------- 즉시 변환 버튼(회의록 상세) ----------------

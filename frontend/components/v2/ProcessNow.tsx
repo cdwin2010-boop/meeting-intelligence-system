@@ -5,14 +5,12 @@
  * - 누르면 POST /api/meetings/{id}/process-now. 요청 중에는 버튼이 비활성(중복 클릭 방지).
  * - 응답 waitingForPrior=true 면 서버 message 를 그대로, false 면 "변환을 바로 시작합니다." 를 보이고 onDone 으로 상태를 다시 받는다.
  * - 403·404·409 는 서버가 준 한국어 사유를 그대로 보인다.
- * - useCanProcessNow: 처리 현황(/api/me/processing)에는 허용 동작이 없어, 대기 항목의 허용 여부를 회의록 상세 응답의 allowedActions 로 한 번 확인한다.
+ * - 왼쪽 메뉴 처리 현황은 /api/me/processing 항목의 canProcessNow 만 본다(회의록 상세를 따로 조회하지 않는다, 작업 88-3).
  */
 import { useEffect, useRef, useState } from "react";
 
 import { Button, StatusDot } from "@/components/mono";
 import { isAbortError } from "@/lib/v2/errors";
-import { getMeeting } from "@/lib/v2/meetings";
-import { can, MEETING_ACTION } from "@/lib/v2/actions";
 import { processNowMeeting, processNowMessage } from "@/lib/v2/process-queue";
 
 export function ProcessNow({
@@ -76,23 +74,4 @@ export function ProcessNow({
       ) : null}
     </span>
   );
-}
-
-/** 처리 현황 항목의 즉시 변환 허용 여부(서버 허용 동작). 대기 중이고 아직 우선 처리가 아닐 때만 조회한다(값이 바뀌면 다시 확인) */
-export function useCanProcessNow(meetingId: number, enabled: boolean): boolean {
-  const [allowed, setAllowed] = useState(false);
-  useEffect(() => {
-    if (!enabled) {
-      setAllowed(false);
-      return;
-    }
-    const controller = new AbortController();
-    getMeeting(meetingId, controller.signal)
-      .then((detail) => setAllowed(can(detail.allowedActions, MEETING_ACTION.processNow)))
-      .catch(() => {
-        if (!controller.signal.aborted) setAllowed(false);
-      });
-    return () => controller.abort();
-  }, [meetingId, enabled]);
-  return allowed;
 }

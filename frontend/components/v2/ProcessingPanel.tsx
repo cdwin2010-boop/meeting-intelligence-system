@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/mono";
 import { JobStatusChip, QueueNotes } from "@/components/v2/JobStatusChip";
-import { ProcessNow, useCanProcessNow } from "@/components/v2/ProcessNow";
+import { ProcessNow } from "@/components/v2/ProcessNow";
 import { useProcessing, type TrackedItem } from "@/components/v2/ProcessingProvider";
 import { ReasonDialog, type ReasonAction } from "@/components/v2/ReasonDialog";
 import { detailPath } from "@/components/v2/meeting-display";
@@ -36,8 +36,8 @@ function ItemView({
   onProcessed: () => void;
 }) {
   const active = isActiveStatus(item.status);
-  // 즉시 변환: 대기 중이고 아직 우선 처리가 아닐 때만 서버 허용 동작을 확인한다(직급을 화면에서 판단하지 않는다)
-  const canProcessNow = useCanProcessNow(item.meetingId, item.status === "queued" && !item.prioritized);
+  // 즉시 변환: 서버가 항목에 내려준 canProcessNow 만 본다(직급·상세 조회로 다시 판단하지 않는다)
+  const canProcessNow = item.status === "queued" && item.canProcessNow === true;
   const elapsed = item.elapsedSec + Math.max(0, now - item.receivedAt) / 1000;
   return (
     <li className="flex flex-col gap-2 rounded-mn-control border border-mn-border p-2 text-xs">

@@ -18,6 +18,8 @@ export interface ProcessingItem extends QueueFields {
   finishedAt: string | null;
   /** 재처리 허용(서버의 reprocess_meeting 판정 그대로) */
   canReprocess: boolean;
+  /** 즉시 변환 허용(작업 88-3, 서버의 process_now 판정 그대로). 없으면 false 로 본다 */
+  canProcessNow?: boolean;
 }
 
 export const isActiveStatus = (status: string): boolean => status === "queued" || status === "running";

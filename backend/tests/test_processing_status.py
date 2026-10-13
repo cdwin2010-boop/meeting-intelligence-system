@@ -83,6 +83,7 @@ def test_states_queued_running_completed_failed_no_content(env, team):
     assert items["완료"]["finishedAt"] is not None
     assert set(items["실패"]) == {
         "meetingId", "jobId", "title", "status", "errorCode", "elapsedSec", "finishedAt", "canReprocess",
+        "canProcessNow",  # 작업 88-3: 즉시 변환 허용(추가 필드)
         "queueAhead", "prioritized", "waitingForPrior", "workerAlive",  # 작업 88-1: 대기열 상태(추가 필드)
     }
     job_ids = [i["jobId"] for i in mine(env, team["lead"])]

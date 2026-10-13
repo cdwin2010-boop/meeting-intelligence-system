@@ -149,3 +149,4 @@ ProcessNow { meetingId, jobId, status: "queued", queueAhead: number, prioritized
 - 정책: 변환은 대기열에서 접수 순서(FIFO)로 한 건씩 한다. 이 요청은 대기 작업을 맨 앞으로 올릴 뿐 진행 중인 작업을 멈추거나 동시에 돌리지 않는다. `waitingForPrior=true` 면 `message` 는 정확히 "시스템의 선행 작업완료 후 처리하겠습니다."
 - 오류: 404 not_found(없는 회의·볼 수 없는 회의), 409 invalid_state(진행 중·완료·실패, 한국어 사유), 운영 백엔드는 담당자 403.
 - 운영 백엔드와 같은 응답 모양이다(전체 설명·예시: `docs/contracts/process-now-v1.json`). **스텁은 인증이 없어 권한(관리자·지시자만)을 검사하지 않고**, 업로드를 바로 처리하므로 대기 순서도 바꾸지 않는다(모양만 맞춤). 운영에서는 서버가 반드시 권한을 검증한다.
+- 운영 백엔드의 `GET /api/me/processing` 항목에는 추가 필드 `canProcessNow`(즉시 변환 허용, 작업 88-3)가 있다. 스텁에는 이 목록 API 가 없어 해당 없음.
