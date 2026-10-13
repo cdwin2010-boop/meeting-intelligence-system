@@ -2,6 +2,7 @@
  * 처리 작업 오류 코드 → 한국어 이유(상수 한 곳). 코드는 backend app/pipeline/errors.py(error_code)·app/services/reprocess.py 가 내려주는 분류 코드다.
  * 코드 목록: gemini_key_missing · upload_missing · timeout · stt_file_failed · extraction_invalid · internal_error · server_restarted · gemini_api_{HTTP 상태}
  *   · llm_unavailable · llm_error · llm_host_blocked · external_disabled · worker_stopped(작업 82-2)
+ *   · remote_unavailable · remote_disabled · remote_not_configured(작업 91-1)
  * 매핑에 없는 코드는 "처리 중 오류가 발생했습니다 (코드)". 화면은 이유와 함께 코드 글자도 보여 준다.
  */
 const TRANSIENT = "Gemini 서버가 일시적으로 응답하지 않았습니다. 잠시 뒤 다시 처리해 보세요.";
@@ -30,6 +31,10 @@ export const PROCESSING_ERROR_TEXT: Record<string, string> = {
   llm_host_blocked: "로컬 AI 서버 주소가 허용되지 않습니다. 시스템 관리자에게 외부 주소 허용 설정 확인을 요청해 주세요.",
   external_disabled: "외부 AI 사용이 허용되지 않아 처리하지 않았습니다. 시스템 관리자에게 외부 연동 허용을 요청한 뒤 다시 처리해 주세요.",
   worker_stopped: "처리 프로그램이 멈춰 작업을 끝내지 못했습니다. 잠시 뒤 다시 처리해 보세요.",
+  // 원격(시험용) 엔진(작업 91-1): 자동으로 다른 엔진으로 넘어가지 않는다
+  remote_unavailable: "원격 엔진에 연결할 수 없습니다. 서버 주소·터널 상태를 확인한 뒤 다시 처리해 보세요.",
+  remote_disabled: "엔진 시험 모드가 꺼져 있어 원격 엔진을 쓸 수 없습니다. 시스템 관리자에게 확인을 요청해 주세요.",
+  remote_not_configured: "원격 엔진 주소·모델이 설정되지 않았습니다. 엔진 시험 화면에서 설정을 저장한 뒤 다시 처리해 주세요.",
 };
 
 /** 오류 코드 → 한국어 이유. 코드가 없으면 일반 문구 */

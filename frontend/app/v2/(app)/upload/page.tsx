@@ -18,7 +18,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useId, useRef, useState, type DragEvent, type FormEvent } from "react";
 
 import { Button, StatusDot } from "@/components/mono";
+import { EngineChoiceField, useEngineTestMode } from "@/components/v2/EngineChoice";
 import { FakeEngineNotice, useEngineIsFake } from "@/components/v2/EngineNotice";
+import type { EngineChoice } from "@/lib/v2/engine-test";
+import { isManager } from "@/lib/v2/types";
 import { useAuth } from "@/components/v2/AuthProvider";
 import { FilePicker } from "@/components/v2/FilePicker";
 import { MeetingTypeField, ProjectField } from "@/components/v2/MeetingClassFields";
@@ -93,6 +96,11 @@ function UploadForm() {
   const { refresh: refreshProcessing } = useProcessing();
   const { account } = useAuth();
   const accountId = account?.id ?? null;
+  // 엔진 시험 모드(작업 91-1, 시험 전용): 관리자 이상만 처리 엔진을 고른다. 꺼져 있으면 필드도 요청 값도 없다(현행 동작)
+  const engineTest = useEngineTestMode(true);
+  const [engineChoice, setEngineChoice] = useState<EngineChoice | null>(null);
+  const engineSelectable = engineTest.testMode && isManager(account?.rank);
+  const chosenEngine = engineSelectable ? (engineChoice ?? engineTest.defaultEngine) : undefined;
   const titleId = useId();
   const dateId = useId();
   const timeId = useId();
@@ -358,6 +366,7 @@ function UploadForm() {
           meetingType: submission.meetingType,
           projectId: submission.projectId,
           sourceKind: submission.sourceKind,
+          engine: chosenEngine,
         },
         controller.signal,
       );
@@ -637,6 +646,8 @@ function UploadForm() {
               <span className="text-xs text-mn-muted">필수 입력입니다. 회의가 열린 날짜와 시각을 입력해 주세요.</span>
             ) : null}
           </fieldset>
+
+          {engineSelectable && chosenEngine ? <EngineChoiceField value={chosenEngine} onChange={setEngineChoice} disabled={submitting} /> : null}
 
           <MeetingTypeField value={meetingType} onChange={pickType} disabled={submitting} firstRef={typeRef} />
           {meetingType === "project" ? <ProjectField value={projectId} onChange={setProjectId} disabled={submitting} selectRef={projectRef} onLeaveForNewProject={saveDraftForNewProject} /> : null}

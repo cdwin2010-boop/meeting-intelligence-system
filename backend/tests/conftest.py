@@ -15,6 +15,13 @@ os.environ["SECRET_KEY"] = secrets.token_urlsafe(48)
 os.environ["GEMINI_KEY_MODE"] = "free"
 os.environ["GEMINI_API_KEY"] = ""
 os.environ["GEMINI_PAID_API_KEY"] = ""
+# 엔진 시험 모드(작업 91-1)는 .env 값에 흔들리지 않게 꺼짐·빈 원격 설정으로 고정(켜야 하는 테스트가 직접 바꾼다)
+os.environ["ENGINE_TEST_MODE"] = "false"
+os.environ["ENGINE_TEST_DEFAULT"] = "default"
+os.environ["ENGINE_TEST_SETTINGS_PATH"] = str(_TEST_DB_DIR / "engine_test.json")
+os.environ["REMOTE_LLM_BASE_URL"] = ""
+os.environ["REMOTE_LLM_MODEL"] = ""
+os.environ["REMOTE_LLM_API_KEY"] = ""
 # CORS 테스트가 .env 값에 흔들리지 않게 기본 허용 출처로 고정
 os.environ["CORS_ORIGINS"] = "http://localhost:3000,http://127.0.0.1:3000"
 

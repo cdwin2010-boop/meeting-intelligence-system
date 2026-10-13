@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "engine-test-v1",
+  "title": "engine-test-v1: 엔진 시험 모드·원격(OpenAI 호환, 시험용) 엔진 (작업 91-1)",
+  "description": "시험 전용. ENGINE_TEST_MODE 가 꺼져 있으면(기본) 아래 요청은 모두 403 {\"detail\":\"엔진 시험 모드가 아니어서 사용할 수 없습니다\"} 로 거부된다(서버 측 거부). 권한: 관리자(manager)·지시자(executive) 또는 시스템 관리자, 담당자 403. 서버 주소·모델·키는 .env 기본값 + Git 제외 설정 파일에 저장된다. API 키는 응답에 평문으로 나오지 않는다. 원격 연결 실패는 다른 엔진으로 자동 전환되지 않고 작업이 remote_unavailable 로 실패한다. 원본 모델: backend/app/api/engine_test.py.",
+  "endpoints": {
+    "GET /api/admin/engine-test/remote": {"response": {"$ref": "#/definitions/remote-settings"}},
+    "PUT /api/admin/engine-test/remote": {
+      "request": {"$ref": "#/definitions/remote-settings-input"},
+      "response": {"$ref": "#/definitions/remote-settings"},
+      "errors": {"403": "시험 모드 꺼짐 또는 권한 없음", "422": "주소 형식·모델명·타임아웃(1~3600초)·청크 한도(0 또는 500~100000) 오류, detail 한국어 사유"}
+    },
+    "POST /api/admin/engine-test/remote/load-test": {
+      "response": {"$ref": "#/definitions/load-test"},
+      "errors": {"403": "시험 모드 꺼짐 또는 권한 없음", "409": "음성 인식·업무 추출 작업이 진행 중", "422": "주소·모델이 저장되지 않음"}
+    },
+    "GET /api/system/engine (추가 필드)": {"response": {"engineTestMode": "boolean", "engineTestDefault": "default | remote"}},
+    "POST /api/meetings/upload (추가 선택 폼 필드)": {"engine": "default | remote. 시험 모드일 때 관리자 이상만. 모드가 꺼져 있거나 담당자가 값을 보내면 403, 모르는 값 422. 생략하면 설정 기본값(시험 모드가 꺼져 있으면 현행 동작)"},
+    "POST /api/meetings/{id}/reprocess (추가 선택 본문)": {"request": {"engine": "default | remote, 업로드와 같은 규칙"}}
+  },
+  "definitions": {
+    "remote-settings": {
+      "type": "object",
+      "required": ["baseUrl", "model", "apiKeySet", "apiKeyMasked", "timeoutSeconds", "chunkMaxChars", "configured", "defaultEngine", "notice"],
+      "additionalProperties": false,
+      "properties": {
+        "baseUrl": {"type": "string", "description": "서버 주소(관리자 화면에서 바꿀 수 있어야 하므로 내려준다)"},
+        "model": {"type": "string"},
+        "apiKeySet": {"type": "boolean"},
+        "apiKeyMasked": {"type": "string", "description": "키가 있으면 고정 마스킹 문자열, 없으면 빈 문자열. 키 원문은 어떤 응답에도 없다"},
+        "timeoutSeconds": {"type": "number"},
+        "chunkMaxChars": {"type": "integer", "description": "0 = 기본 청크 한도"},
+        "configured": {"type": "boolean", "description": "주소·모델이 모두 있음"},
+        "defaultEngine": {"type": "string", "enum": ["default", "remote"]},
+        "notice": {"type": "string", "description": "\"외부 터널을 거치므로 시험용 데이터만 사용하세요\""}
+      }
+    },
+    "remote-settings-input": {
+      "type": "object",
+      "required": ["baseUrl", "model", "timeoutSeconds"],
+      "additionalProperties": false,
+      "properties": {
+        "baseUrl": {"type": "string"},
+        "model": {"type": "string"},
+        "apiKey": {"type": ["string", "null"], "description": "생략·빈 값이면 기존 키 유지"},
+        "timeoutSeconds": {"type": "number"},
+        "chunkMaxChars": {"type": "integer"}
+      }
+    },
+    "load-test": {
+      "type": "object",
+      "required": ["ok", "modelListed", "modelFound", "currentModel", "availableModels", "responseMs", "jsonParsed", "failureStage", "failureReason"],
+      "additionalProperties": false,
+      "properties": {
+        "ok": {"type": "boolean", "description": "추론 응답을 JSON 으로 읽었으면 true"},
+        "modelListed": {"type": "boolean", "description": "모델 목록 조회 성공"},
+        "modelFound": {"type": "boolean", "description": "설정한 모델이 서버 목록에 있음"},
+        "currentModel": {"type": "string"},
+        "availableModels": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+        "responseMs": {"type": ["integer", "null"], "description": "짧은 추론 1회의 응답 시간(ms)"},
+        "jsonParsed": {"type": "boolean"},
+        "failureStage": {"type": "string", "enum": ["", "models", "inference"]},
+        "failureReason": {"type": "string", "description": "한국어 사유, 주소·키·본문 없음"}
+      }
+    },
+    "job-error-codes": {
+      "remote_unavailable": "원격 엔진에 연결할 수 없음(자동 전환 없음)",
+      "remote_disabled": "접수 뒤 시험 모드가 꺼짐",
+      "remote_not_configured": "원격 주소·모델 미설정"
+    },
+    "minutes-engine-label": "처리된 회의록의 minutes.engine 값: \"원격(시험용) · {모델명}\"(열 길이 30자에 맞춰 모델명만 줄임)"
+  }
+}

@@ -31,13 +31,19 @@ def prompt_version_of(meeting_type: str) -> str:
 
 
 class LocalLlmExtractor:
-    def __init__(self, client: LlmClient, model: str, meeting_type: str = ""):
+    def __init__(
+        self, client: LlmClient, model: str, meeting_type: str = "", *,
+        options: ChunkOptions | None = None, label: str | None = None,
+    ):
         self._client = client
         self._model = model
         self._meeting_type = meeting_type
+        self._options = options  # 원격 시험 엔진이 청크 한도·재시도 상한을 따로 정할 때(작업 91-1)
+        self._label = label
 
     def extract(self, transcript: str, held_at: datetime) -> ExtractionResult:
-        result = extract_chunked(transcript, held_at, self._client, ChunkOptions.from_settings(meeting_type=self._meeting_type))
+        options = self._options or ChunkOptions.from_settings(meeting_type=self._meeting_type)
+        result = extract_chunked(transcript, held_at, self._client, options)
         if result.all_failed:
             if result.client_error is not None:
                 raise result.client_error  # 일시/영구 오류 그대로(오류 코드는 error_code 가 분류)
@@ -49,7 +55,7 @@ class LocalLlmExtractor:
             prompt_version=prompt_version_of(self._meeting_type),
             minutes_prompt_version=prompt_version_of(self._meeting_type),
         )
-        return _with(converted, engine_label(self._model), warnings)
+        return _with(converted, self._label or engine_label(self._model), warnings)
 
 
 def _with(result: ExtractionResult, label: str, warnings: tuple) -> ExtractionResult:

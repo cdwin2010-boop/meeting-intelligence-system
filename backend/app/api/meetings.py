@@ -17,6 +17,7 @@ from app.models.common import utcnow
 from app.services.classification import save_classification, validate_classification
 from app.pipeline.transcript_text import TranscriptTextError, decode_transcript
 from app.services.processing import auto_confirm_at, get_job_runner
+from app.services.engine_test import requested_engine_payload, resolve_requested_engine
 from app.services.meeting_time import parse_meeting_at
 from app.services.task_queue import enqueue
 from app.services.upload_storage import claim_stored_file
@@ -124,12 +125,14 @@ def upload_meeting(
     meeting_type: str | None = Form(None, alias="meetingType"),
     project_id: int | None = Form(None, alias="projectId"),
     source_kind: str = Form(SOURCE_AUDIO, alias="sourceKind"),
+    engine: str | None = Form(None),  # 엔진 시험 모드에서만(관리자 이상): default | remote. 모드가 꺼져 있으면 값이 있는 요청은 403(작업 91-1)
     account: Account = Depends(get_current_account),
     session: Session = Depends(get_session),
     session_factory: sessionmaker = Depends(get_session_factory),
     job_runner: Callable[[int, sessionmaker], None] = Depends(get_job_runner),
 ) -> UploadAccepted:
     forbid_system_admin(session, account)
+    chosen_engine = resolve_requested_engine(account, engine)
     held_at_utc = parse_meeting_at(held_at)  # 필수·미래 거부·UTC 변환(services/meeting_time.py)
     ids = _parse_participant_ids(participant_ids)
     _check_participants(session, account, ids)
@@ -211,6 +214,7 @@ def upload_meeting(
             entity_id=job.id,
             event_type="job.queued",
             actor_account_id=account.id,
+            payload=requested_engine_payload(chosen_engine),  # 시험 모드일 때만 engine 기록(꺼져 있으면 빈 값 = 현행)
         )
         if settings.processing_mode == "queue":
             enqueue(session, meeting.id)  # 같은 트랜잭션: 회의록·작업·큐 행이 함께 저장되거나 함께 취소된다

@@ -113,6 +113,20 @@ class Settings(BaseSettings):
     local_llm_json_mode: bool = True
     local_llm_allow_external_host: bool = False
     local_llm_max_output_tokens: int = Field(4096, ge=1)
+    # 엔진 시험 모드(작업 91-1, 시험 전용): 기본 꺼짐(납품 설정). 켜면 관리자 이상이 회의 등록·재처리 때 엔진을 고르고,
+    # "OpenAI 호환 HTTP(원격·시험용)" 엔진 설정·로딩 테스트를 쓸 수 있다. 꺼져 있으면 관련 요청은 서버가 거부한다(화면 숨김만이 아님).
+    # 원격 서버 값(주소·모델·키)은 여기 기본값이고, 화면에서 저장한 값은 Git 제외 파일(engine_test_settings_path)이 덮어쓴다.
+    # 자동 엔진 전환은 없다: 원격 연결 실패는 Gemini 로 넘어가지 않고 실패(remote_unavailable)로 끝난다.
+    engine_test_mode: bool = False
+    # 시험 모드에서 엔진을 고르지 않았을 때의 기본: default(기존 설정 엔진) / remote(원격·시험용)
+    engine_test_default: Literal["default", "remote"] = "default"
+    engine_test_settings_path: Path = Path("data/engine_test.json")
+    remote_llm_base_url: str = ""
+    remote_llm_model: str = ""
+    remote_llm_api_key: SecretStr = SecretStr("")
+    remote_llm_timeout_seconds: float = Field(300, gt=0, le=3600)
+    # 원격 엔진의 청크 한도(글자). 0 이면 EXTRACT_CHUNK_MAX_CHARS 를 쓴다
+    remote_llm_chunk_max_chars: int = Field(0, ge=0)
     # 오디오 전처리(작업 75-1 파트 B, FFmpeg 단일 체인): 기본 꺼짐. 켜면 STT 입력 직전에 16kHz 모노 wav 로 전처리한다
     # ffmpeg_path: 기본 "ffmpeg"(PATH 검색, backend/bin 에 번들 파일이 있으면 그것을 우선) / 시간 초과(초)
     audio_preprocess_enabled: bool = False

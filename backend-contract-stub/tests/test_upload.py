@@ -204,3 +204,15 @@ def test_registered_at_is_recorded_by_server_and_returned_in_list_and_detail():
     listed = next(m for m in client.get("/api/meetings").json() if m["id"] == meeting_id)
     assert detail["registeredAt"] == listed["registeredAt"] and not detail["registeredAt"].startswith("2020")
     assert detail["startedAt"] == FORM["startedAt"]  # 회의 일시와 별개로 보관
+
+
+# ---------------- 엔진 시험 모드 (작업 91-1, docs/contracts/engine-test-v1.json) ----------------
+def test_engine_test_endpoints_are_rejected_like_a_server_with_test_mode_off():
+    expected = "엔진 시험 모드가 아니어서 사용할 수 없습니다"
+    for call in (
+        lambda: client.get("/api/admin/engine-test/remote"),
+        lambda: client.put("/api/admin/engine-test/remote", json={"baseUrl": "http://x.test/v1", "model": "m", "timeoutSeconds": 30}),
+        lambda: client.post("/api/admin/engine-test/remote/load-test"),
+    ):
+        r = call()
+        assert r.status_code == 403 and r.json()["detail"] == expected

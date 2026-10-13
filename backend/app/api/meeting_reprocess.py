@@ -3,7 +3,7 @@
 회의록 상태가 failed 가 아니거나 처리 중인 작업이 있거나 보관된 음성 원본이 없으면 409(서버 문구)."""
 from collections.abc import Callable
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, status
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.meeting_audio import audio_file_or_none
@@ -14,6 +14,7 @@ from app.auth.locks import reject_if_locked
 from app.config import settings
 from app.db import get_session, get_session_factory
 from app.models import Account
+from app.services.engine_test import requested_engine_payload, resolve_requested_engine
 from app.services.processing import get_job_runner
 from app.services.reprocess import active_job_exists, start_reprocess
 from app.services.task_queue import enqueue
@@ -30,10 +31,17 @@ def _conflict(message: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=message)
 
 
+class ReprocessRequest(CamelModel):
+    """선택 본문. engine 은 엔진 시험 모드에서만(관리자 이상) 쓴다: default | remote(작업 91-1)."""
+
+    engine: str | None = None
+
+
 @router.post("/{meeting_id}/reprocess", status_code=status.HTTP_202_ACCEPTED, response_model=ReprocessAccepted, response_model_by_alias=True)
 def reprocess_meeting(
     meeting_id: int,
     background_tasks: BackgroundTasks,
+    body: ReprocessRequest | None = Body(None),
     account: Account = Depends(get_current_account),
     session: Session = Depends(get_session),
     session_factory: sessionmaker = Depends(get_session_factory),
@@ -45,13 +53,14 @@ def reprocess_meeting(
     if not can_confirm_meeting(session, account, meeting):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="회의록을 총괄하는 관리자 또는 지시자만 다시 처리할 수 있습니다")
     reject_if_locked(meeting)
+    chosen_engine = resolve_requested_engine(account, body.engine if body else None)
     if meeting.status != "failed":
         raise _conflict("처리에 실패한 회의록만 다시 처리할 수 있습니다")
     if active_job_exists(session, meeting.id):
         raise _conflict("이미 처리 중인 작업이 있습니다")
     if audio_file_or_none(session, meeting) is None:
         raise _conflict("보관된 음성 파일이 없어 다시 처리할 수 없습니다. 음성을 다시 올려 주세요")
-    job = start_reprocess(session, meeting, account)
+    job = start_reprocess(session, meeting, account, requested_engine_payload(chosen_engine))
     if settings.processing_mode == "queue":
         enqueue(session, meeting.id)  # 같은 트랜잭션에서 큐에 넣고, 처리는 단독 워커가 한다
     session.commit()

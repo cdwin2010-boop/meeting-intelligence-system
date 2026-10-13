@@ -190,9 +190,11 @@ def run_with_repair(
     timeout: float,
     repair_max_chars: int,
     retry_max: int = MAX_RETRIES,
+    retry_ceiling: int = MAX_RETRIES,
 ) -> ParseOutcome[T]:
-    """호출 → 2단계 파싱 → 실패 시 교정 프롬프트로 정확히 1회 재시도. 총 호출은 최대 2회이고 예외를 올리지 않는다."""
-    retries = max(0, min(retry_max, MAX_RETRIES))
+    """호출 → 2단계 파싱 → 실패 시 교정 프롬프트로 재시도. 기본은 정확히 1회(총 호출 최대 2회)이고 예외를 올리지 않는다.
+    retry_ceiling 은 호출부가 정하는 상한이다(기본 1; 원격 시험 엔진만 2 로 올려 쓴다, 작업 91-1)."""
+    retries = max(0, min(retry_max, retry_ceiling))
     calls = 0
     errors: list[str] = []
     truncated = False

@@ -30,6 +30,9 @@ class EngineOut(CamelModel):
     # 추출(LLM) 엔진(추가 필드): fake | gemini | local 과 로컬 모델 이름(local 일 때만, 그 밖에는 ""). 주소·키는 내려주지 않는다
     llm_provider: str
     llm_model: str
+    # 엔진 시험 모드(추가 필드, 작업 91-1): 꺼져 있으면(기본) 화면이 원격 엔진 선택·설정을 숨긴다. 서버도 관련 요청을 거부한다
+    engine_test_mode: bool
+    engine_test_default: str
 
 
 @router.get("/engine", response_model=EngineOut, response_model_by_alias=True)
@@ -40,6 +43,7 @@ def get_engine(account: Account = Depends(get_current_account), session: Session
         processing_mode=settings.processing_mode, queue_pending=pending, queue_processing=processing,
         llm_provider=settings.effective_llm_provider,
         llm_model=settings.local_llm_model if settings.effective_llm_provider == "local" else "",
+        engine_test_mode=settings.engine_test_mode, engine_test_default=settings.engine_test_default,
     )
 
 

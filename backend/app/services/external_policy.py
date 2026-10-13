@@ -39,10 +39,11 @@ def enforce_external_policy(factory: sessionmaker, meeting_id: int) -> None:
             raise ExternalDisabledError()
 
 
-def local_external_host_allowed(factory: sessionmaker, meeting_id: int) -> bool:
-    """로컬 LLM 클라이언트에 넘길 allow_external 값."""
+def local_external_host_allowed(factory: sessionmaker, meeting_id: int, remote: bool = False) -> bool:
+    """로컬 LLM 클라이언트에 넘길 allow_external 값. remote=True(원격 시험 엔진, 작업 91-1)이면 시험 모드가 켜져 있는 것을 허용 근거로 보되
+    EXTERNAL_POLICY_ENFORCED 가 참이면 시스템 관리자의 외부 주소 허용 설정도 따른다."""
     if not settings.external_policy_enforced:
-        return settings.local_llm_allow_external_host
+        return True if remote else settings.local_llm_allow_external_host
     with factory() as session:
         meeting = session.get(Meeting, meeting_id)
         if meeting is None:

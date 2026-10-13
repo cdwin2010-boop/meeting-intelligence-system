@@ -389,7 +389,8 @@ def test_retry_max_is_clamped_to_one_in_code():
 def test_new_modules_are_not_imported_by_existing_pipeline():
     new = {"prompts", "agenda_chunker", "json_parser", "llm_client", "chunked_extract"}
     # 작업 81-1: 로컬 엔진 경로 연결 모듈만 이 부품을 쓴다(현행 Gemini 경로·API 는 쓰지 않는다)
-    wiring = {"local_extractor", "local_llm", "extraction_engine"}
+    # 작업 91-1: 원격(시험용) 엔진 연결 모듈(services/engine_test.py)도 같은 부품을 로컬 추출기와 함께 쓴다
+    wiring = {"local_extractor", "local_llm", "extraction_engine", "engine_test"}
     pattern = re.compile(r"from\s+app\.pipeline(?:\.(\w+))?\s+import\s+([^\n(]+)|import\s+app\.pipeline\.(\w+)")
     offenders = []
     for path in (ROOT / "app").rglob("*.py"):

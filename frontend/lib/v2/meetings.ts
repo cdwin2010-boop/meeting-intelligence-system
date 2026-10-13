@@ -290,7 +290,11 @@ const UPLOAD_TIMEOUT_MS = Number(process.env.NEXT_PUBLIC_V2_UPLOAD_TIMEOUT_MS) |
  * 허용 형식(415)·용량(413)은 서버 설정이 판정하고, 오류 문구도 서버가 준 것을 그대로 쓴다.
  */
 export function uploadMeeting(
-  input: { file: File; title: string; heldAt: string; participantIds?: number[]; meetingType?: string; projectId?: number; sourceKind?: SourceKind },
+  input: {
+    file: File; title: string; heldAt: string; participantIds?: number[]; meetingType?: string; projectId?: number; sourceKind?: SourceKind;
+    /** 엔진 시험 모드에서만(관리자 이상): default | remote. 없으면 보내지 않는다(서버 기본값) */
+    engine?: string;
+  },
   signal?: AbortSignal,
 ): Promise<UploadAccepted> {
   const form = new FormData();
@@ -304,6 +308,7 @@ export function uploadMeeting(
   // 회의 유형은 화면에서 필수로 강제하고, projectId 는 프로젝트 회의일 때만 보낸다(서버는 둘 다 선택 입력)
   if (input.meetingType) form.append("meetingType", input.meetingType);
   if (input.meetingType === "project" && input.projectId !== undefined) form.append("projectId", String(input.projectId));
+  if (input.engine) form.append("engine", input.engine);
   return request<UploadAccepted>("/meetings/upload", { method: "POST", body: form, signal, timeoutMs: UPLOAD_TIMEOUT_MS });
 }
 
@@ -514,8 +519,13 @@ export interface MeetingProcessing extends QueueFields {
 }
 
 /** POST /api/meetings/{id}/reprocess(202): 실패한 회의록을 보관된 음성으로 다시 처리. 총괄·지시자만(서버 판정), 처리 중·음성 없음 등은 409 문구 */
-export function reprocessMeeting(id: number, signal?: AbortSignal): Promise<{ meetingId: number; jobId: number }> {
-  return request<{ meetingId: number; jobId: number }>(`/meetings/${encodeURIComponent(String(id))}/reprocess`, { method: "POST", signal });
+export function reprocessMeeting(id: number, signal?: AbortSignal, engine?: string): Promise<{ meetingId: number; jobId: number }> {
+  // engine 은 엔진 시험 모드에서 관리자 이상이 고른 값(default | remote). 없으면 본문 없이 보낸다(현행 요청)
+  return request<{ meetingId: number; jobId: number }>(`/meetings/${encodeURIComponent(String(id))}/reprocess`, {
+    method: "POST",
+    body: engine ? { engine } : undefined,
+    signal,
+  });
 }
 
 /** PATCH /api/meetings/{id}/held-at 응답(작업 88-4) */

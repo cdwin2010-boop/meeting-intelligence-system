@@ -66,6 +66,7 @@ class ChunkOptions:
     extra_markers: tuple[str, ...] = ()
     participants: tuple[str, ...] = ()
     meeting_type: str = ""
+    retry_ceiling: int = MAX_RETRIES  # 원격 시험 엔진은 2(작업 91-1)
 
     @classmethod
     def from_settings(cls, participants: tuple[str, ...] = (), meeting_type: str = "") -> "ChunkOptions":
@@ -237,7 +238,8 @@ def extract_chunked(
         )
         messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]
         outcome = run_with_repair(
-            client, messages, ChunkResponse, timeout=opts.timeout, repair_max_chars=opts.repair_max_chars, retry_max=opts.retry_max
+            client, messages, ChunkResponse, timeout=opts.timeout, repair_max_chars=opts.repair_max_chars, retry_max=opts.retry_max,
+            retry_ceiling=opts.retry_ceiling,
         )
         chunk_warnings: list[str] = []
         label = f"구간 {chunk.index + 1}/{total}"

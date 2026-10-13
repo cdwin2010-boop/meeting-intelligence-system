@@ -26,6 +26,7 @@ from app.pipeline.errors import error_code
 from app.pipeline.audio_preprocess import preprocess_audio
 from app.pipeline.gpu import release_gpu_memory
 from app.pipeline.evidence_time import apply_evidence_times
+from app.services.engine_test import job_engine
 from app.services.extraction_engine import select_extractor
 from app.services.external_policy import enforce_external_policy
 from app.services.mail import queue_immediate_new_minutes
@@ -292,7 +293,11 @@ def process_meeting(
 
         # 추출기에는 회의 일시를 현지 시각(APP_TIMEZONE)으로 넘긴다. UTC 그대로면 날짜·요일이 하루 어긋날 수 있다
         local_held_at = started["held_at"].astimezone(ZoneInfo(settings.app_timezone))
-        result = select_extractor(factory, started["meeting_id"], extractor_factory, default_extractor).extract(transcript, local_held_at)
+        # 엔진 시험 모드에서 등록·재처리 때 고른 엔진(없으면 기본). 원격이 요청됐는데 못 쓰면 실패로 끝난다(자동 전환 없음)
+        requested_engine = job_engine(factory, job_id)
+        result = select_extractor(
+            factory, started["meeting_id"], extractor_factory, default_extractor, engine=requested_engine
+        ).extract(transcript, local_held_at)
         engine = result.engine_label or engine  # 로컬 엔진이면 서버가 만든 "로컬 LLM(모델명)" 표시값
         # 근거 시각은 Gemini 응답이 아니라 저장된 전사문과 인용문을 서버가 대조해 정한다(실패한 업무도 시각만 비우고 그대로 저장)
         _progress(on_progress, 85)

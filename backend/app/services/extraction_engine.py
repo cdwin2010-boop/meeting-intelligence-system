@@ -9,6 +9,7 @@ from app.config import settings
 from app.models import MeetingClassification
 from app.pipeline.extractor import Extractor
 from app.pipeline.local_extractor import make_local_extractor
+from app.services.engine_test import ENGINE_DEFAULT, ENGINE_REMOTE, make_remote_extractor
 from app.services.external_policy import local_external_host_allowed
 
 
@@ -20,11 +21,17 @@ def meeting_type_of(factory: sessionmaker, meeting_id: int) -> str:
 
 
 def select_extractor(
-    factory: sessionmaker, meeting_id: int, extractor_factory: Callable[[], Extractor] | None, default: Callable[[], Extractor]
+    factory: sessionmaker, meeting_id: int, extractor_factory: Callable[[], Extractor] | None, default: Callable[[], Extractor],
+    engine: str = ENGINE_DEFAULT,
 ) -> Extractor:
-    """주입된 추출기가 있으면 그것을, 로컬 엔진이면 로컬 추출기를, 아니면 기본 추출기를 만든다."""
+    """주입된 추출기가 있으면 그것을, 원격 시험 엔진이 요청됐으면 원격 추출기를, 로컬 엔진이면 로컬 추출기를, 아니면 기본 추출기를 만든다.
+    원격이 요청됐는데 쓸 수 없으면 RemoteEngineError 로 실패한다(Gemini 등으로 자동 전환하지 않는다, 작업 91-1)."""
     if extractor_factory is not None:
         return extractor_factory()
+    if engine == ENGINE_REMOTE:
+        return make_remote_extractor(
+            meeting_type_of(factory, meeting_id), allow_external=local_external_host_allowed(factory, meeting_id, remote=True)
+        )
     if settings.effective_llm_provider == "local":
         return make_local_extractor(
             meeting_type_of(factory, meeting_id), allow_external=local_external_host_allowed(factory, meeting_id)

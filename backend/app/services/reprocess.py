@@ -66,7 +66,7 @@ def latest_job(session: Session, meeting_id: int) -> Job | None:
     return session.scalar(select(Job).where(Job.meeting_id == meeting_id).order_by(Job.id.desc()).limit(1))
 
 
-def start_reprocess(session: Session, meeting: Meeting, actor: Account) -> Job:
+def start_reprocess(session: Session, meeting: Meeting, actor: Account, engine_payload: dict | None = None) -> Job:
     """새 작업을 만들고 회의록을 처리 중으로 돌린다(커밋은 호출부). 호출부가 권한·상태·음성 파일을 먼저 확인한다."""
     previous = latest_job(session, meeting.id)
     previous_code = previous.error_code if previous is not None else None
@@ -76,7 +76,7 @@ def start_reprocess(session: Session, meeting: Meeting, actor: Account) -> Job:
     meeting.status = "processing"
     append_event(
         session, tenant_id=meeting.tenant_id, entity_type="job", entity_id=job.id, event_type="job.queued",
-        actor_account_id=actor.id, payload={"reprocess": True},
+        actor_account_id=actor.id, payload={"reprocess": True, **(engine_payload or {})},
     )
     record_change(
         session, tenant_id=meeting.tenant_id, target_type="meeting", target_id=meeting.id, kind=KIND_MEETING_REPROCESS,

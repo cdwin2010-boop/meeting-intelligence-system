@@ -16,7 +16,10 @@ import { ProcessNow } from "@/components/v2/ProcessNow";
 import { useProcessing, type TrackedItem } from "@/components/v2/ProcessingProvider";
 import { ReasonDialog, type ReasonAction } from "@/components/v2/ReasonDialog";
 import { detailPath } from "@/components/v2/meeting-display";
+import { engineChoiceOf, useEngineTestMode } from "@/components/v2/EngineChoice";
+import { useAuth } from "@/components/v2/AuthProvider";
 import { reprocessMeeting } from "@/lib/v2/meetings";
+import { isManager } from "@/lib/v2/types";
 import { describeProcessingError } from "@/lib/v2/processing-errors";
 import { formatElapsed, isActiveStatus } from "@/lib/v2/processing-status";
 
@@ -86,6 +89,8 @@ function ItemView({
 }
 
 export function ProcessingPanel() {
+  const { account } = useAuth();
+  const engineTest = useEngineTestMode(account !== null); // 엔진 시험 모드(작업 91-1): 재처리 팝업의 엔진 선택
   const router = useRouter();
   const pathname = usePathname();
   const viewingId = /^\/v2\/meetings\/(\d+)$/.exec(pathname)?.[1];
@@ -110,8 +115,9 @@ export function ProcessingPanel() {
     setAction({
       title: "회의록 재처리", target: item.title, confirmLabel: "재처리하기", requireReason: false,
       notice: "음성이 다시 처리되며 Gemini 모드이면 외부로 전송되고 비용이 생길 수 있습니다.",
-      run: async (_reason, signal) => {
-        await reprocessMeeting(item.meetingId, signal);
+      choice: engineTest.testMode && isManager(account?.rank) ? engineChoiceOf(engineTest.defaultEngine) : undefined,
+      run: async (_reason, signal, choice) => {
+        await reprocessMeeting(item.meetingId, signal, choice || undefined);
       },
     });
 

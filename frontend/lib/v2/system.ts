@@ -7,6 +7,9 @@ import { request } from "./http";
 export interface EngineInfo {
   engine: string;
   isFake: boolean;
+  /** 엔진 시험 모드(추가 필드, 작업 91-1). 없거나 false 면 원격 엔진 선택·설정 화면을 숨긴다 */
+  engineTestMode?: boolean;
+  engineTestDefault?: "default" | "remote";
 }
 
 export function getEngine(signal?: AbortSignal): Promise<EngineInfo> {

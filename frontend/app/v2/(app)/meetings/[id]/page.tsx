@@ -32,10 +32,13 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { meetingTypeLabel } from "@/lib/v2/meeting-types";
+import { isManager } from "@/lib/v2/types";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Badge, Button, StatusDot, type StatusDotTone } from "@/components/mono";
+import { useAuth } from "@/components/v2/AuthProvider";
 import { PersonName } from "@/components/v2/Avatar";
+import { engineChoiceOf, useEngineTestMode } from "@/components/v2/EngineChoice";
 import { StatusChip, statusChipToneFromDot } from "@/components/v2/StatusChip";
 import {
   CONFIRM_KIND_LABEL,
@@ -911,6 +914,8 @@ function TranscriptPanel({
 }
 
 export default function V2MeetingDetailPage() {
+  const { account } = useAuth();
+  const engineTest = useEngineTestMode(account !== null); // 엔진 시험 모드(작업 91-1): 재처리 팝업의 엔진 선택
   const params = useParams<{ id: string }>();
   const rawId = params?.id ?? "";
   // 숫자가 아닌 주소는 서버에 묻지 않고 바로 "찾을 수 없음"
@@ -1218,8 +1223,10 @@ export default function V2MeetingDetailPage() {
     setReasonAction({
       title: "회의록 재처리", target: meetingName, confirmLabel: "재처리하기", requireReason: false,
       notice: "음성이 다시 처리되며 Gemini 모드이면 외부로 전송되고 비용이 생길 수 있습니다.",
-      run: async (_reason, signal) => {
-        await reprocessMeeting(meeting.id, signal);
+      // 엔진 시험 모드에서 관리자 이상만 처리 엔진을 고른다(기본값은 설정값). 꺼져 있으면 현행 팝업 그대로
+      choice: engineTest.testMode && isManager(account?.rank) ? engineChoiceOf(engineTest.defaultEngine) : undefined,
+      run: async (_reason, signal, choice) => {
+        await reprocessMeeting(meeting.id, signal, choice || undefined);
       },
     });
 

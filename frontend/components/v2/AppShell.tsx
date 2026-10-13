@@ -23,6 +23,7 @@ import { Badge, Button } from "@/components/mono";
 import { ApprovalQueue } from "@/components/v2/ApprovalQueue";
 import { useAuth } from "@/components/v2/AuthProvider";
 import { ChangePasswordDialog } from "@/components/v2/ChangePasswordDialog";
+import { useEngineTestMode } from "@/components/v2/EngineChoice";
 import { FakeEngineNotice, useEngineIsFake } from "@/components/v2/EngineNotice";
 import { ProcessingBadge } from "@/components/v2/ProcessingBadge";
 import { useProcessing } from "@/components/v2/ProcessingProvider";
@@ -31,13 +32,14 @@ import { ThemeToggle } from "@/components/v2/ThemeToggle";
 import { V2_HOME, V2_LOGIN } from "@/lib/v2/next-path";
 import { isActiveStatus } from "@/lib/v2/processing-status";
 import { parseSidePosition, writeSideCookie, type SidePosition } from "@/lib/v2/side-position";
-import { RANK_LABEL } from "@/lib/v2/types";
+import { isManager, RANK_LABEL } from "@/lib/v2/types";
 
 export const V2_MEETINGS = "/v2/meetings";
 export const V2_UPLOAD = "/v2/upload";
 export const V2_PROJECTS = "/v2/projects";
 export const V2_WORKLOAD = "/v2/workload";
 export const V2_ADMIN = "/v2/admin";
+export const V2_ENGINE_TEST = "/v2/engine-test";
 
 const NAV_ITEMS = [
   { href: V2_HOME, label: "할 일" },
@@ -100,7 +102,10 @@ export function AppShell({ children, initialSidePosition = "left" }: { children:
   const [passwordNotice, setPasswordNotice] = useState(false);
   const { items, announcement } = useProcessing();
   const isSystemAdmin = account?.isSystemAdmin === true;
-  const navItems = isSystemAdmin ? ADMIN_NAV_ITEMS : NAV_ITEMS;
+  // 엔진 시험 모드(작업 91-1, 시험 전용): 켜져 있고 관리자 이상일 때만 "엔진 시험" 메뉴가 생긴다(꺼져 있으면 메뉴 구성 불변)
+  const engineTest = useEngineTestMode(account !== null);
+  const showEngineTest = engineTest.testMode && !isSystemAdmin && isManager(account?.rank);
+  const navItems = isSystemAdmin ? ADMIN_NAV_ITEMS : showEngineTest ? [...NAV_ITEMS, { href: V2_ENGINE_TEST, label: "엔진 시험" }] : NAV_ITEMS;
   const accountId = account?.id ?? null;
   const [collapsed, setCollapsed] = useState(false);
   const [sidePosition, setSidePosition] = useState<SidePosition>(parseSidePosition(initialSidePosition));

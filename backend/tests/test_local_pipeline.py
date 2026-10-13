@@ -310,7 +310,9 @@ def test_meeting_type_from_classification_reaches_the_prompt(env, mgr, local):
 # ---------------- 엔진 표시·기존 응답 ----------------
 def test_engine_endpoint_adds_fields_only(env, mgr, local):
     body = env["client"].get("/api/system/engine", headers=auth(mgr)).json()
-    assert set(body) == {"engine", "isFake", "processingMode", "queuePending", "queueProcessing", "llmProvider", "llmModel"}
+    assert set(body) == {
+        "engine", "isFake", "processingMode", "queuePending", "queueProcessing", "llmProvider", "llmModel", "engineTestMode", "engineTestDefault",
+    }
     assert body["engine"] == "fake" and body["llmProvider"] == "fake" and body["llmModel"] == ""
     srv = local([])
     body = env["client"].get("/api/system/engine", headers=auth(mgr)).json()

@@ -9,6 +9,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 
 import { useAuth } from "@/components/v2/AuthProvider";
+import { useEngineTestMode } from "@/components/v2/EngineChoice";
 
 const TABS = [
   { href: "/v2/admin/accounts", label: "계정 관리" },
@@ -22,6 +23,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const allowed = account?.isSystemAdmin === true;
+  const engineTest = useEngineTestMode(allowed); // 엔진 시험 모드(작업 91-1): 켜져 있을 때만 탭을 보인다
+  const tabs = engineTest.testMode ? [...TABS, { href: "/v2/admin/engine-test", label: "엔진 시험" }] : TABS;
 
   useEffect(() => {
     if (status === "authenticated" && !allowed) router.replace("/v2");
@@ -33,7 +36,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     <>
       <h1 className="mn-page-title text-mn-text">시스템 관리</h1>
       <nav aria-label="시스템 관리 메뉴" className="-mt-2 flex flex-wrap gap-2">
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const current = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
           return (
             <Link

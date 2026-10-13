@@ -20,6 +20,8 @@ export interface ReasonChoice {
   options: { value: string; label: string }[];
   /** 고르지 않고 확인했을 때 알림 문구 */
   requiredMessage: string;
+  /** 처음부터 골라 둘 값(없으면 아무것도 고르지 않은 상태) */
+  defaultValue?: string;
 }
 
 export interface ReasonAction {
@@ -65,7 +67,7 @@ export function ReasonDialog({ action, onClose, onDone }: ReasonDialogProps) {
   useEffect(() => {
     if (!open) return;
     setReason("");
-    setChoice("");
+    setChoice(action?.choice?.defaultValue ?? "");
     setError(null);
     setSaving(false);
     return () => runRef.current?.abort();

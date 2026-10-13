@@ -212,6 +212,18 @@ def process_now(meeting_id: str):
     }
 
 
+# ---------------- 엔진 시험 모드 (작업 91-1, docs/contracts/engine-test-v1.json) ----------------
+# 스텁은 시험 모드가 항상 꺼진 서버처럼 동작한다: 원격 엔진 설정·로딩 테스트 요청은 운영 백엔드와 같은 사유로 403 이다.
+ENGINE_TEST_OFF_MESSAGE = "엔진 시험 모드가 아니어서 사용할 수 없습니다"
+
+
+@router.get("/admin/engine-test/remote")
+@router.put("/admin/engine-test/remote")
+@router.post("/admin/engine-test/remote/load-test")
+def engine_test_disabled():
+    raise HTTPException(status_code=403, detail=ENGINE_TEST_OFF_MESSAGE)
+
+
 # ---------------- 관리자 API (v1.7 스텁: 인증 없음 → 운영에서는 서버 권한 검증 필수) ----------------
 @router.get("/admin/jobs", response_model=list[AdminJob], response_model_by_alias=True)
 def list_jobs(sort_key: str | None = Query(None, alias="sortKey"), direction: Direction = "asc"):
