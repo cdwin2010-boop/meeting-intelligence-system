@@ -35,6 +35,8 @@ import { meetingTypeLabel } from "@/lib/v2/meeting-types";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Badge, Button, StatusDot, type StatusDotTone } from "@/components/mono";
+import { PersonName } from "@/components/v2/Avatar";
+import { StatusChip, statusChipToneFromDot } from "@/components/v2/StatusChip";
 import {
   CONFIRM_KIND_LABEL,
   END_KIND_LABEL,
@@ -562,7 +564,7 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                       {item.supersededBy ? (
                         <span className="mn-chip mn-chip-superseded whitespace-nowrap">대체됨</span>
                       ) : (
-                        <StatusDot tone={status.tone} label={status.label} />
+                        <StatusChip tone={statusChipToneFromDot(status.tone, status.label)} label={status.label} />
                       )}
                     </td>
                     <td className="px-3 py-3 [overflow-wrap:anywhere] break-keep">
@@ -576,7 +578,9 @@ function LedgerTable({ items, onEditAssignee, onItemConfirmed, onItemUpdated, on
                     </td>
                     <td className="px-3">
                       <span className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="min-w-0 [overflow-wrap:anywhere]">{item.assignee?.name ?? <span className="text-mn-muted">—</span>}</span>
+                        <span className="min-w-0 [overflow-wrap:anywhere]">
+                          {item.assignee?.name ? <PersonName name={item.assignee.name} /> : <span className="text-mn-muted">—</span>}
+                        </span>
                         {can(item.allowedActions, ITEM_ACTION.setAssignee) ? (
                           <Button
                             size="sm"
@@ -1248,7 +1252,7 @@ export default function V2MeetingDetailPage() {
         <div className="flex flex-col gap-2">
           <h1 className="text-[28px] font-semibold leading-9 tracking-tight text-mn-text">{meeting.title || "(제목 없음)"}</h1>
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            <StatusDot tone={status.tone} label={status.label} />
+            <StatusChip tone={statusChipToneFromDot(status.tone, status.label)} label={status.label} />
             <span aria-label="회의록 단계">
               <Badge>{phaseText(meeting)}</Badge>
             </span>

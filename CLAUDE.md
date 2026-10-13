@@ -34,7 +34,16 @@
 - 공용 컴포넌트는 `@/components/mono`에서 import. 화면별 컴포넌트는 `components/meeting`, `components/admin`.
 - 주석은 한국어로, 핵심 로직 위주로 단다.
 
-## Mono Dark 디자인
+## Clean Light 디자인 (v2 화면 기본 테마)
+- v2 화면의 기본은 라이트(Clean Light)다. 값은 `app/mono-dark/theme-v2.css`의 `html[data-v2-theme="light"]` 범위에만 있고, 상세 규칙은 `docs/design-clean-light.md`.
+- 바탕 #F6F7F9, 카드 #FFFFFF + 1px #E3E6EB, 본문 #1B2430, 보조 #5B6675, 브랜드 #2F5BEA(주 버튼·알림 배지). 컴포넌트에는 hex 대신 토큰(`bg-mn-*` 등)만 쓴다.
+- 모서리 8(메뉴 항목)·10(버튼·입력)·12(카드·표)·알약(상태 라벨·배지·아바타). 그림자·그라데이션 금지(포커스 링만 예외). 간격은 4px 단위.
+- 상태는 `StatusChip`(승인 대기·수정 요청·보완 필요·진행 중·완료 + 회색 안내)으로 통일하고, 색과 함께 글자 라벨을 반드시 쓴다. 담당자·사람 이름은 `Avatar`/`PersonName`.
+- 표 행 높이 64px(좁은 화면은 카드형), 머리글 13px 보조색. 글꼴 IBM Plex Sans KR, 숫자·ID·시각은 Geist Mono.
+- 메뉴(보조창)는 기본 왼쪽, 사용자가 바꾼 위치는 쿠키로 유지한다.
+
+## Mono Dark 디자인 (다크 테마 전용)
+- 아래 규칙은 다크 옵션(`mi.v2.theme = "dark"`)과 v1 화면에만 적용한다. 라이트 화면은 위 Clean Light 규칙을 따른다.
 - 배경 #000000, 카드 #0A0A0A + 1px solid #262626, 본문 #EDEDED, 보조 #A1A1A1.
 - 그림자 금지. 유일한 예외는 키보드 포커스 링(`--mn-focus-ring`, box-shadow로 구현).
 - 유채색은 StatusDot(Blue/Teal/Red)과 파괴적 버튼(Red #EE0000)에만. Primary Accent는 #FFFFFF.

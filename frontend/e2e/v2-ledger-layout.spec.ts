@@ -104,7 +104,11 @@ for (const width of [1280, 1024, 900, 768, 600, 375]) {
         row.forEach((cell, i) => expect(cell.overflow, `칸 ${i} 내용 넘침`).toBe(false));
       }
       // 표 컨테이너(스크롤 영역)는 오른쪽 패널(있으면)과 겹치지 않는다. 표 자체는 컨테이너 안에서만 스크롤된다
-      if (m.aside) expect(m.wrapperRect.r).toBeLessThanOrEqual(m.aside.l + 0.5);
+      // 보조창은 기본 왼쪽(디자인 2단계)이거나 저장된 설정에 따라 오른쪽이다. 어느 쪽이든 서로 겹치지 않는다
+      if (m.aside) {
+        if (m.aside.l < m.wrapperRect.l) expect(m.wrapperRect.l).toBeGreaterThanOrEqual(m.aside.r - 0.5);
+        else expect(m.wrapperRect.r).toBeLessThanOrEqual(m.aside.l + 0.5);
+      }
     });
 
     test("동작·완료 기한 칸의 버튼이 칸 안에 있고 서로 겹치지 않는다", async ({ page }) => {

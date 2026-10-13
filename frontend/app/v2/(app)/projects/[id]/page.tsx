@@ -13,6 +13,8 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button, StatusDot } from "@/components/mono";
+import { PersonName } from "@/components/v2/Avatar";
+import { StatusChip, statusChipToneFromDot } from "@/components/v2/StatusChip";
 import { ProjectStatusChip } from "@/components/v2/ProjectStatusChip";
 import { AddMemberDialog, ChangeLeadDialog } from "@/components/v2/ProjectDialogs";
 import { ReasonDialog, type ReasonAction } from "@/components/v2/ReasonDialog";
@@ -112,7 +114,7 @@ function ProjectMeetings({ projectId }: { projectId: number }) {
                 {state.data.items.map((meeting) => {
                   const status = meetingStatus(meeting);
                   return (
-                    <tr key={meeting.id} className="min-h-12 border-b border-mn-border last:border-b-0">
+                    <tr key={meeting.id} className="h-16 border-b border-mn-border last:border-b-0">
                       <td className="px-3 py-3 [overflow-wrap:anywhere]">
                         <Link href={detailPath(meeting.id)} className="mn-focus rounded-mn-control font-medium text-mn-text hover:underline">
                           {meeting.title || "(제목 없음)"}
@@ -123,7 +125,7 @@ function ProjectMeetings({ projectId }: { projectId: number }) {
                       </td>
                       <td className="px-3 py-3">{phaseText(meeting)}</td>
                       <td className="px-3 py-3">
-                        <StatusDot tone={status.tone} label={status.label} />
+                        <StatusChip tone={statusChipToneFromDot(status.tone, status.label)} label={status.label} />
                       </td>
                     </tr>
                   );
@@ -378,8 +380,10 @@ export default function V2ProjectDetailPage() {
                 </tr>
               ) : (
                 project.members.map((member) => (
-                  <tr key={member.accountId} className="min-h-12 border-b border-mn-border last:border-b-0">
-                    <td className="px-3 py-3 font-medium [overflow-wrap:anywhere]">{member.name}</td>
+                  <tr key={member.accountId} className="h-16 border-b border-mn-border last:border-b-0">
+                    <td className="px-3 py-3 font-medium [overflow-wrap:anywhere]">
+                      <PersonName name={member.name} />
+                    </td>
                     <td className="px-3 py-3">{RANK_LABEL[member.rank] ?? member.rank}</td>
                     <td className="px-3 py-3">{ROLE_LABEL[member.role] ?? member.role}</td>
                     {canManage ? (

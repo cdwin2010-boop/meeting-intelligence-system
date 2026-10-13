@@ -351,6 +351,10 @@ const boxOf = async (locator: ReturnType<Page["locator"]>) => (await locator.bou
 for (const width of [1280, 768]) {
   test.describe(`패널 오른쪽 배치 ${width}px`, () => {
     test.use({ viewport: { width, height: 800 } });
+    // 보조창 기본 위치가 왼쪽으로 바뀌었으므로(디자인 2단계) 오른쪽 배치를 검사하는 이 묶음은 저장된 오른쪽 설정으로 시작한다
+    test.beforeEach(async ({ context }) => {
+      await context.addCookies([{ name: "mi_side_position", value: "right", url: "http://localhost:3100" }]);
+    });
 
     test("패널이 뷰포트 오른쪽 끝에 붙고 본문은 패널보다 왼쪽, 경계선은 패널 왼쪽 면, 메뉴 링크는 한 번만", async ({ page }) => {
       await start(page);
@@ -466,6 +470,10 @@ const toggle = (page: Page, name: "접기" | "펼치기") => page.getByRole("but
 for (const width of [1280, 768]) {
   test.describe(`데스크톱 패널 접기·펼치기 ${width}px`, () => {
     test.use({ viewport: { width, height: 800 } });
+    // 보조창 기본 위치가 왼쪽으로 바뀌었으므로(디자인 2단계) 오른쪽 배치를 검사하는 이 묶음은 저장된 오른쪽 설정으로 시작한다
+    test.beforeEach(async ({ context }) => {
+      await context.addCookies([{ name: "mi_side_position", value: "right", url: "http://localhost:3100" }]);
+    });
 
     test("토글 이름·aria-expanded 전환, 48px 띠와 본문 확장, 메뉴·처리 현황이 접근성 트리·Tab 에서 빠지고 펼치면 복귀", async ({ page }) => {
       await start(page, { processing: [proc(1), proc(2, { status: "queued" }), proc(3, { status: "completed" })] });

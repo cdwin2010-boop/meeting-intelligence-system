@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button, Modal, StatusDot } from "@/components/mono";
+import { PersonName } from "@/components/v2/Avatar";
 import { Card, Chip, messageOf, SelectField, TextField, inputClass } from "@/components/v2/admin/AdminUi";
 import {
   ACCOUNT_PAGE_SIZE,
@@ -186,7 +187,9 @@ export default function AdminAccountsPage() {
                     {data.items.map((account) => (
                       <tr key={account.id} className="border-t border-mn-border align-top">
                         <td className="break-words px-3 py-3 font-mn-mono text-[13px]">{account.loginId}</td>
-                        <td className="break-words px-3 py-3">{account.name}</td>
+                        <td className="break-words px-3 py-3">
+                          <PersonName name={account.name} wrap />
+                        </td>
                         <td className="break-words px-3 py-3">{account.email || "—"}</td>
                         <td className="px-3 py-3">{RANK_LABEL[account.rank] ?? account.rank}</td>
                         <td className="px-3 py-3">

@@ -1,12 +1,13 @@
-/* 프로젝트 상태 칩: 승인 대기=중립, 진행 중=정보, 반려=취소 토큰. 색만으로 구분하지 않고 한글 라벨을 함께 쓴다 */
+/* 프로젝트 상태 칩: 공용 StatusChip 으로 통합(작업 디자인 2단계). 승인 대기=승인 대기 색, 진행 중=진행 중 색, 반려=보완 필요 색. 글자 라벨은 항상 함께 쓴다 */
+import { StatusChip, type StatusChipTone } from "@/components/v2/StatusChip";
 import { STATUS_LABEL, type ProjectStatus } from "@/lib/v2/projects";
 
-const CHIP_CLASS: Record<ProjectStatus, string> = {
-  pending_approval: "mn-chip-neutral",
-  active: "mn-chip-info",
-  rejected: "mn-chip-cancelled",
+const TONE: Record<ProjectStatus, StatusChipTone> = {
+  pending_approval: "pending",
+  active: "progress",
+  rejected: "needs",
 };
 
 export function ProjectStatusChip({ status }: { status: ProjectStatus }) {
-  return <span className={`mn-chip ${CHIP_CLASS[status] ?? "mn-chip-neutral"} whitespace-nowrap`}>{STATUS_LABEL[status] ?? status}</span>;
+  return <StatusChip tone={TONE[status] ?? "neutral"} label={STATUS_LABEL[status] ?? status} />;
 }

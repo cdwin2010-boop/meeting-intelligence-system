@@ -15,7 +15,6 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { Badge, Button, StatusDot } from "@/components/mono";
 import { useAuth } from "@/components/v2/AuthProvider";
-import { Avatar } from "@/components/v2/Avatar";
 import { formatDateTime, V2_MEETINGS_PATH } from "@/components/v2/meeting-display";
 import { StatusChip, type StatusChipTone } from "@/components/v2/StatusChip";
 import { SummaryCard } from "@/components/v2/SummaryCard";
@@ -150,7 +149,7 @@ function DueCell({ item }: { item: MyItem }) {
   return <Mono>{item.dueDate}</Mono>;
 }
 
-function MyItemsTable({ list, assigneeName }: { list: TodoList<MyItem>; assigneeName: string }) {
+function MyItemsTable({ list }: { list: TodoList<MyItem> }) {
   return (
     <section aria-label="내 업무" className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -158,17 +157,15 @@ function MyItemsTable({ list, assigneeName }: { list: TodoList<MyItem>; assignee
         <Badge mono>{list.total}</Badge>
       </div>
       <div className="overflow-x-auto rounded-mn-card border border-mn-border bg-mn-surface">
-        <table aria-label="내 업무" className="w-full min-w-[640px] table-fixed border-collapse text-[15px] leading-[23px]">
+        <table aria-label="내 업무" className="w-full min-w-[480px] table-fixed border-collapse text-[15px] leading-[23px]">
           <colgroup>
             <col />
-            <col className="w-[160px]" />
             <col className="w-[140px]" />
             <col className="w-[140px]" />
           </colgroup>
           <thead>
             <tr className="h-12 border-b border-mn-border text-left text-[13px] leading-5 text-mn-muted">
               <th scope="col" className="px-4 font-medium">업무명</th>
-              <th scope="col" className="px-4 font-medium">담당자</th>
               <th scope="col" className="px-4 font-medium">완료 기한</th>
               <th scope="col" className="px-4 font-medium">상태</th>
             </tr>
@@ -176,7 +173,7 @@ function MyItemsTable({ list, assigneeName }: { list: TodoList<MyItem>; assignee
           <tbody>
             {list.items.length === 0 ? (
               <tr className="h-16">
-                <td colSpan={4} className="px-4 text-center text-mn-muted">
+                <td colSpan={3} className="px-4 text-center text-mn-muted">
                   담당 업무가 없습니다.
                 </td>
               </tr>
@@ -186,17 +183,6 @@ function MyItemsTable({ list, assigneeName }: { list: TodoList<MyItem>; assignee
                 return (
                   <tr key={item.itemId} className="h-16 border-b border-mn-border last:border-b-0">
                     <td className="truncate px-4">{item.title}</td>
-                    <td className="px-4">
-                      {/* 내 업무 표의 담당자는 로그인한 본인이다. 이름이 없으면 "미확정" */}
-                      {assigneeName ? (
-                        <span className="flex items-center gap-2">
-                          <Avatar name={assigneeName} />
-                          <span className="truncate">{assigneeName}</span>
-                        </span>
-                      ) : (
-                        <span className="text-mn-muted">미확정</span>
-                      )}
-                    </td>
                     <td className="px-4">
                       <DueCell item={item} />
                     </td>
@@ -220,7 +206,7 @@ function MyItemsTable({ list, assigneeName }: { list: TodoList<MyItem>; assignee
   );
 }
 
-function TodoContent({ todos, notices, manager, assigneeName }: { todos: Todos; notices: Notice[]; manager: boolean; assigneeName: string }) {
+function TodoContent({ todos, notices, manager }: { todos: Todos; notices: Notice[]; manager: boolean }) {
   const { awaitingConfirmMeetings: awaiting, needsCompletionItems: needs, myItems, unreadAutoConfirmed: unread } = todos;
   const changeRequests = todos.pendingChangeRequests ?? EMPTY_LIST;
   const confirmNotices = notices.filter((n) => n.kind === "confirmed_notice");
@@ -330,7 +316,7 @@ function TodoContent({ todos, notices, manager, assigneeName }: { todos: Todos; 
         </Section>
       ) : null}
 
-      <MyItemsTable list={myItems} assigneeName={assigneeName} />
+      <MyItemsTable list={myItems} />
     </>
   );
 }
@@ -381,7 +367,7 @@ export default function V2TodoPage() {
           </Button>
         </div>
       ) : (
-        <TodoContent todos={state.todos} notices={state.notices} manager={isManager(account?.rank)} assigneeName={account?.name ?? ""} />
+        <TodoContent todos={state.todos} notices={state.notices} manager={isManager(account?.rank)} />
       )}
     </>
   );

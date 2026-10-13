@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Badge, Button, StatusDot } from "@/components/mono";
+import { PersonName } from "@/components/v2/Avatar";
 import { useAuth } from "@/components/v2/AuthProvider";
 import { ProjectStatusChip } from "@/components/v2/ProjectStatusChip";
 import { isAbortError } from "@/lib/v2/errors";
@@ -70,7 +71,7 @@ function ProjectsTable({ items, myId }: { items: ProjectListItem[]; myId: number
                 key={project.id}
                 role="row"
                 onClick={() => router.push(detailHref(project.id))}
-                className="min-h-12 cursor-pointer border-b border-mn-border last:border-b-0 hover:bg-mn-elevated max-md:flex max-md:flex-col max-md:gap-1 max-md:px-4 max-md:py-3"
+                className="h-16 cursor-pointer border-b border-mn-border last:border-b-0 hover:bg-mn-elevated max-md:flex max-md:h-auto max-md:flex-col max-md:gap-1 max-md:px-4 max-md:py-3"
               >
                 <td role="cell" data-label="프로젝트" className={`px-3 py-3 [overflow-wrap:anywhere] ${CELL_LABEL}`}>
                   <span className="flex flex-wrap items-center gap-2">
@@ -91,7 +92,7 @@ function ProjectsTable({ items, myId }: { items: ProjectListItem[]; myId: number
                   {project.departmentName}
                 </td>
                 <td role="cell" data-label="총괄" className={`px-3 py-3 [overflow-wrap:anywhere] ${CELL_LABEL}`}>
-                  {project.lead?.name ?? <span className="text-mn-muted">—</span>}
+                  {project.lead?.name ? <PersonName name={project.lead.name} /> : <span className="text-mn-muted">—</span>}
                 </td>
                 <td role="cell" data-label="내 역할" className={`px-3 ${CELL_LABEL}`}>
                   {project.myRole ? ROLE_LABEL[project.myRole] : <span className="text-mn-muted">—</span>}

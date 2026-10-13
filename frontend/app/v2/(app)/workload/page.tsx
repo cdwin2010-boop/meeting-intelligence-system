@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { Button, MetricCard, StatusDot } from "@/components/mono";
+import { PersonName } from "@/components/v2/Avatar";
 import { ApiError, isAbortError } from "@/lib/v2/errors";
 import { formatSnapshotDate, getWorkload, type UrgentItem, type Workload, type WorkloadMember } from "@/lib/v2/workload";
 
@@ -32,7 +33,7 @@ function MemberRow({ member }: { member: WorkloadMember }) {
   return (
     <li className="grid gap-2 border-b border-mn-border px-5 py-4 last:border-b-0 md:grid-cols-[180px_minmax(0,1fr)] md:items-center md:gap-6">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium">{member.name}</span>
+        <PersonName name={member.name} className="text-sm font-medium" />
         {member.overloaded ? <span className="mn-chip mn-chip-warning whitespace-nowrap">미완료 과다</span> : null}
       </div>
       <div className="flex min-w-0 flex-col gap-2">
@@ -80,7 +81,7 @@ function UrgentRow({ item }: { item: UrgentItem }) {
         className="mn-focus grid gap-1 px-5 py-3 hover:bg-mn-elevated md:grid-cols-[minmax(0,1fr)_120px_110px_minmax(0,220px)] md:items-center md:gap-4"
       >
         <span className="min-w-0 truncate text-sm font-medium">{item.title || "(업무명 없음)"}</span>
-        <span className="text-sm text-mn-muted">{item.assignee.name}</span>
+        <PersonName name={item.assignee.name} className="text-sm text-mn-muted" />
         <span className="flex flex-wrap items-center gap-2">
           <span className="font-mn-mono text-[13px]">{item.dueDate}</span>
         </span>

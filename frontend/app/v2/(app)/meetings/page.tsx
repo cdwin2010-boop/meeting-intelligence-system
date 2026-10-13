@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Badge, Button, StatusDot } from "@/components/mono";
+import { StatusChip, statusChipToneFromDot } from "@/components/v2/StatusChip";
 import { detailPath, formatDateTime, formatHeldAt, meetingStatus, MEETING_PHASES, PHASE_LABEL, phaseText } from "@/components/v2/meeting-display";
 import { isAbortError } from "@/lib/v2/errors";
 import { listMeetings, type MeetingListItem, type MeetingListPage, type MeetingPhase } from "@/lib/v2/meetings";
@@ -96,7 +97,7 @@ function MeetingsTable({ items }: { items: MeetingListItem[] }) {
                 key={meeting.id}
                 role="row"
                 onClick={() => router.push(detailPath(meeting.id))}
-                className="h-12 cursor-pointer border-b border-mn-border last:border-b-0 hover:bg-mn-elevated max-md:flex max-md:h-auto max-md:flex-col max-md:gap-1 max-md:px-4 max-md:py-3"
+                className="h-16 cursor-pointer border-b border-mn-border last:border-b-0 hover:bg-mn-elevated max-md:flex max-md:h-auto max-md:flex-col max-md:gap-1 max-md:px-4 max-md:py-3"
               >
                 <td role="cell" data-label="회의 일시" className={`px-4 ${CELL_LABEL}`}>
                   <span className="block whitespace-nowrap font-mn-mono text-[13px] leading-5">{formatHeldAt(meeting.heldAt)}</span>
@@ -115,7 +116,7 @@ function MeetingsTable({ items }: { items: MeetingListItem[] }) {
                   </Link>
                 </td>
                 <td role="cell" data-label="상태" className={`px-4 ${CELL_LABEL}`}>
-                  <StatusDot tone={status.tone} label={status.label} />
+                  <StatusChip tone={statusChipToneFromDot(status.tone, status.label)} label={status.label} />
                 </td>
                 <td role="cell" data-label="업무" className={`px-4 text-right font-mn-mono text-[13px] max-md:text-left ${CELL_LABEL}`}>
                   {HAS_ITEMS.has(meeting.status) ? meeting.itemCount : <span className="text-mn-muted">—</span>}

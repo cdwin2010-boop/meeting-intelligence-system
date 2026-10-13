@@ -187,8 +187,8 @@ const box = async (page: Page, selector: string) => (await page.locator(selector
 test.describe("보조창 좌우 전환", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test("기본은 오른쪽, 전환하면 왼쪽으로 가고 쿠키에 저장되며 새로고침해도 유지된다", async ({ page }) => {
-    await open(page, "/v2");
+  test("저장된 오른쪽 설정에서 전환하면 왼쪽으로 가고 쿠키에 저장되며 새로고침해도 유지된다", async ({ page }) => {
+    await open(page, "/v2", { cookie: "right" }); // 기본 위치가 왼쪽으로 바뀌어(디자인 2단계) 저장된 오른쪽 설정으로 시작
     await expect(page.getByRole("navigation", { name: "주 메뉴" })).toBeVisible();
     const rightBox = await box(page, "aside");
     expect(rightBox.x).toBeGreaterThan(640);
@@ -216,7 +216,7 @@ test.describe("보조창 좌우 전환", () => {
     expect((await aside(page).boundingBox())!.width).toBeLessThan(60);
   });
 
-  test("쿠키 값이 left 이면 서버 렌더부터 왼쪽이고, 알 수 없는 값은 오른쪽이다", async ({ page, context }) => {
+  test("쿠키 값이 left 이면 서버 렌더부터 왼쪽이고, 알 수 없는 값은 기본값(왼쪽)이다", async ({ page, context }) => {
     await open(page, "/v2", { cookie: "left" });
     await expect(page.getByRole("navigation", { name: "주 메뉴" })).toBeVisible();
     expect((await box(page, "aside")).x).toBeLessThan(10);
@@ -224,7 +224,7 @@ test.describe("보조창 좌우 전환", () => {
     await context.addCookies([{ name: "mi_side_position", value: "evil", url: "http://localhost:3100" }]);
     await page.goto("/v2");
     await expect(page.getByRole("navigation", { name: "주 메뉴" })).toBeVisible();
-    expect((await box(page, "aside")).x).toBeGreaterThan(640);
+    expect((await box(page, "aside")).x).toBeLessThan(10);
   });
 
   test("좌우 어느 쪽이든 375/768/1280px 에서 가로 넘침이 없다", async ({ page, context }) => {

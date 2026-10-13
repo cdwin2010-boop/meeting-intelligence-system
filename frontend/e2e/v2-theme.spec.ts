@@ -119,8 +119,10 @@ test.describe("테마 선택·저장", () => {
 });
 
 for (const width of [1280, 768]) {
-  test(`토글 위치(데스크톱 ${width}px): 헤더의 사용자 표시 왼쪽, 패널 접기는 로그아웃 오른쪽 그대로`, async ({ page }) => {
+  test(`토글 위치(데스크톱 ${width}px): 헤더의 사용자 표시 왼쪽, 패널 접기는 로그아웃 오른쪽 그대로`, async ({ page, context }) => {
     await page.setViewportSize({ width, height: 800 });
+    // 보조창 기본 위치가 왼쪽으로 바뀌었으므로(디자인 2단계) 저장된 오른쪽 설정으로 시작한다
+    await context.addCookies([{ name: "mi_side_position", value: "right", url: "http://localhost:3100" }]);
     await start(page);
     await page.goto("/v2");
     const header = page.locator("header").first();
