@@ -81,7 +81,10 @@ def test_states_queued_running_completed_failed_no_content(env, team):
     assert items["실패"]["errorCode"] == "internal_error" and items["완료"]["errorCode"] is None
     assert items["실행"]["elapsedSec"] >= 75 and items["실행"]["finishedAt"] is None  # 서버가 응답 시점 기준으로 계산
     assert items["완료"]["finishedAt"] is not None
-    assert set(items["실패"]) == {"meetingId", "jobId", "title", "status", "errorCode", "elapsedSec", "finishedAt", "canReprocess"}
+    assert set(items["실패"]) == {
+        "meetingId", "jobId", "title", "status", "errorCode", "elapsedSec", "finishedAt", "canReprocess",
+        "queueAhead", "prioritized", "waitingForPrior", "workerAlive",  # 작업 88-1: 대기열 상태(추가 필드)
+    }
     job_ids = [i["jobId"] for i in mine(env, team["lead"])]
     assert job_ids == sorted(job_ids, reverse=True)  # 최신순
 

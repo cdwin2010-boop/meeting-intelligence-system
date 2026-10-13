@@ -90,3 +90,17 @@ class JobStatus(CamelModel):
     status: Literal["queued", "processing", "completed", "failed"]
     stage: Literal["STT", "LLM"] | None = None
     error_message: str = ""
+
+
+class ProcessNow(CamelModel):
+    """즉시 변환 응답(운영 백엔드 POST /api/meetings/{id}/process-now 와 같은 모양, docs/contracts/process-now-v1.json).
+    스텁은 업로드를 바로 처리하므로 순서를 바꾸지 않고 모양만 맞춘다."""
+    meeting_id: str
+    job_id: str
+    status: Literal["queued"]
+    queue_ahead: int
+    prioritized: bool
+    already_prioritized: bool
+    waiting_for_prior: bool
+    message: str
+    worker_alive: bool

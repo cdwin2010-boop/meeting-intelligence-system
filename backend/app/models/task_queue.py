@@ -16,6 +16,8 @@ class TaskQueue(Base):
         enum_check("status", TASK_QUEUE_STATUSES, "status_valid"),
         CheckConstraint("progress BETWEEN 0 AND 100", name="progress_range"),
         Index("ix_task_queue_status_created", "status", "created_at"),
+        # 작업 선택 순서(priority 내림차순 → 접수 시각 오름차순) 조회용(작업 88-1)
+        Index("ix_task_queue_status_priority_created", "status", "priority", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -27,5 +29,18 @@ class TaskQueue(Base):
     error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    # 처리 우선순위(작업 88-1): 클수록 먼저. 기본 0, 즉시 변환 요청은 설정 QUEUE_PRIORITY_IMMEDIATE 값. 같으면 접수 시각(created_at) 순
+    priority: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    promoted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)  # 즉시 변환으로 올린 시각(UTC)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
+
+
+class WorkerHeartbeat(Base):
+    """워커 생존 신호(작업 88-1). 워커 1개당 1행을 주기적으로 갱신한다. 마지막 신호가 WORKER_HEARTBEAT_STALE_SEC 보다 오래되면 응답 없음으로 본다.
+    상태 값일 뿐이라 이력을 쌓지 않는다. 이 표도 services/task_queue.py 에서만 다룬다."""
+
+    __tablename__ = "worker_heartbeats"
+
+    worker_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    beat_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)

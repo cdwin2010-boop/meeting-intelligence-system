@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "process-now-v1",
+  "title": "process-now-v1: 즉시 변환 요청 (작업 88-1)",
+  "description": "POST /api/meetings/{meetingId}/process-now (본문 없음, 로그인 필요). 대기열에서 순서를 기다리는 변환 작업을 대기열 맨 앞으로 올린다. 진행 중인 작업을 멈추거나 동시에 돌리지 않는다(GPU 1건씩): 처리기가 놀고 있으면 다음 폴링에서 바로 시작하고, 다른 작업이 진행 중이면 그 작업이 끝난 직후 시작한다. 권한: 관리자(manager)·지시자(executive)만, 담당자는 403, 볼 수 없는 회의록(다른 고객사 등)은 404. 대기 상태만 승격하며 이미 올려진 요청은 200 멱등(이력 중복 없음). 진행 중·완료·실패·대기 작업 없음·PROCESSING_MODE 가 queue 가 아님·보류/종료/삭제 잠금은 409 + detail(한국어 사유). 올린 사람·시각·사유(\"즉시 변환 요청\")는 변경 이력(구분 \"즉시 변환\")에 한 건 남는다. 원본 모델: backend/app/api/meeting_process_now.py ProcessNowOut.",
+  "type": "object",
+  "required": ["meetingId", "jobId", "status", "queueAhead", "prioritized", "alreadyPrioritized", "waitingForPrior", "message", "workerAlive"],
+  "additionalProperties": false,
+  "properties": {
+    "meetingId": {"type": "integer", "description": "회의록 번호(스텁은 문자열 id)"},
+    "jobId": {"type": ["integer", "null"], "description": "대기 중인 처리 작업 번호(스텁은 문자열 id)"},
+    "status": {"type": "string", "enum": ["queued"], "description": "응답이 200 이면 항상 대기(queued). 진행(running)·완료(completed)·실패(failed)는 409"},
+    "queueAhead": {"type": "integer", "minimum": 0, "description": "이 작업보다 먼저 시작할 대기 작업 수(진행 중인 작업은 세지 않는다)"},
+    "prioritized": {"type": "boolean", "description": "우선 처리로 올려져 있음(항상 true)"},
+    "alreadyPrioritized": {"type": "boolean", "description": "이미 올려져 있던 요청의 멱등 응답이면 true"},
+    "waitingForPrior": {"type": "boolean", "description": "선행 작업(진행 중이거나 앞선 대기 작업) 때문에 바로 시작하지 못하면 true"},
+    "message": {"type": "string", "description": "waitingForPrior 가 true 면 정확히 \"시스템의 선행 작업완료 후 처리하겠습니다.\", false 면 \"곧 변환을 시작합니다.\""},
+    "workerAlive": {"type": "boolean", "description": "워커 생존 신호가 WORKER_HEARTBEAT_STALE_SEC 이내인가. false 면 워커가 멈춘 것이라 대기 작업이 시작되지 않는다"}
+  },
+  "definitions": {
+    "queue-state-fields": {
+      "description": "작업 상태 응답(GET /api/meetings/{id} 의 processing, GET /api/me/processing 의 각 항목)에 덧붙는 대기열 칸. queue 모드의 대기·처리 중 작업이 아니면 queueAhead·workerAlive 는 null, prioritized·waitingForPrior 는 false.",
+      "type": "object",
+      "properties": {
+        "queueAhead": {"type": ["integer", "null"], "minimum": 0},
+        "prioritized": {"type": "boolean"},
+        "waitingForPrior": {"type": "boolean"},
+        "workerAlive": {"type": ["boolean", "null"]}
+      }
+    },
+    "job-status-names": {
+      "description": "작업 상태 표기(대기·진행·완료·실패) 대응. 값은 기존 jobs.status 를 그대로 쓴다.",
+      "type": "object",
+      "properties": {
+        "queued": {"const": "대기"},
+        "running": {"const": "진행"},
+        "completed": {"const": "완료"},
+        "failed": {"const": "실패"},
+        "no_content": {"const": "완료(말소리 없음)"}
+      }
+    }
+  }
+}

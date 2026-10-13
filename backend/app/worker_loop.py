@@ -7,7 +7,9 @@
 - 로그에는 작업 id·회의록 id·분류 코드만 남긴다(전사 본문·파일 경로 금지).
 """
 import logging
+import os
 import signal
+import socket
 import threading
 import time
 from collections.abc import Callable
@@ -42,6 +44,9 @@ class Worker:
         self.stt_factory = stt_factory
         self.extractor_factory = extractor_factory
         self._stop = threading.Event()
+        # 생존 신호 식별자(호스트·프로세스). 같은 DB 를 보는 워커가 여럿이어도 행이 겹치지 않는다
+        self.worker_id = f"{socket.gethostname()}:{os.getpid()}"
+        self._last_beat = 0.0
 
     # ---- 시작 점검·복구 ----
     def startup(self) -> None:
@@ -54,6 +59,7 @@ class Worker:
             settings.effective_llm_provider, settings.local_llm_base_url, settings.local_llm_allow_external_host
         )
         self.recover()
+        self.beat(force=True)
 
     def recover(self) -> None:
         result = task_queue.recover_stale(self.factory)
@@ -118,6 +124,7 @@ class Worker:
 
     def run_once(self) -> bool:
         """대기 작업 하나를 처리하고 돌아온다. 처리한 작업이 없으면 False."""
+        self.beat()
         task = task_queue.claim_next(self.factory)
         if task is None:
             return False
@@ -125,6 +132,18 @@ class Worker:
         result = self._process(task)
         log.info("task %s 종료: %s", task.id, result)
         return True
+
+    # ---- 생존 신호(작업 88-1) ----
+    def beat(self, force: bool = False) -> None:
+        """WORKER_HEARTBEAT_INTERVAL_SEC 마다 생존 신호를 기록한다. 기록 실패는 처리 흐름을 막지 않는다."""
+        now = time.monotonic()
+        if not force and now - self._last_beat < settings.worker_heartbeat_interval_sec:
+            return
+        self._last_beat = now
+        try:
+            task_queue.beat(self.factory, self.worker_id)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("생존 신호 기록 실패(계속 진행): %s", type(exc).__name__)
 
     # ---- 반복 실행 ----
     def request_stop(self) -> None:
@@ -161,6 +180,7 @@ class Worker:
         deadline: float | None = None
         while thread.is_alive():
             thread.join(0.2)
+            self.beat()  # 긴 작업(STT 수 분) 동안에도 생존 신호를 이어 간다
             if self._stop.is_set():
                 deadline = deadline if deadline is not None else time.monotonic() + settings.worker_shutdown_grace
                 if time.monotonic() >= deadline:

@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     worker_stale_seconds: int = Field(1800, ge=1)
     worker_max_attempts: int = Field(3, ge=1)
     worker_shutdown_grace: int = Field(30, ge=0)
+    # 즉시 변환(작업 88-1): 대기열 맨 앞으로 올릴 때 부여하는 우선순위 값(기본 0 보다 커야 함) / 워커 생존 신호를 쓰는 간격(초)
+    # / 마지막 신호가 이 시간(초)보다 오래되면 워커 응답 없음(workerAlive=false). 간격보다 충분히 커야 한다
+    queue_priority_immediate: int = Field(100, ge=1)
+    worker_heartbeat_interval_sec: float = Field(5.0, gt=0)
+    worker_heartbeat_stale_sec: int = Field(30, ge=1)
     # 안건 분할 추론(작업 75-2): 청크 최대 글자 수 / 앞 청크와 겹치는 글자 수 / 교정 프롬프트에 담는 원본 응답 앞부분 글자 수
     # / LLM 호출 제한 시간(초) / 파싱 실패 때 교정 재시도 횟수(코드로 최대 1회 강제) / 5개 항목 칸당 최대 글자 수 / 안건 표지 추가 문구(쉼표 구분)
     extract_chunk_max_chars: int = Field(6000, gt=0)

@@ -287,6 +287,17 @@ class Store:
             "errorMessage": errors[-1] if errors and r["status"] == "failed" else "",
         }
 
+    def meeting_job_queue_state(self, meeting_id: str) -> dict | None:
+        """회의의 가장 최근 작업과 대기 상태(읽기 전용). 작업이 없으면 None.
+        ahead = 이 작업보다 먼저 접수된 queued 업로드 작업 수, processing_exists = 처리 중인 업로드 작업이 있는가(회의와 연결되지 않은 시드 작업은 세지 않는다)."""
+        with self._lock:
+            r = self._db.execute("SELECT * FROM jobs WHERE meeting_id = ? ORDER BY seq DESC LIMIT 1", (meeting_id,)).fetchone()
+            if r is None:
+                return None
+            ahead = self._db.execute("SELECT COUNT(*) FROM jobs WHERE status = 'queued' AND seq < ? AND meeting_id IS NOT NULL AND meeting_id != ''", (r["seq"],)).fetchone()[0]
+            processing = self._db.execute("SELECT COUNT(*) FROM jobs WHERE status = 'processing' AND meeting_id IS NOT NULL AND meeting_id != ''").fetchone()[0]
+        return {"jobId": r["id"], "status": r["status"], "ahead": ahead, "processingExists": processing > 0}
+
     # ---------- 가짜 처리기가 쓰는 '조건부 UPDATE' (kill 과 경쟁해도 안전) ----------
     def start_if_queued(self, job_id: str) -> bool:
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")

@@ -11,12 +11,14 @@ from sqlalchemy.orm import Session
 
 from app.auth.access import VIEW_ALL_RANKS, can_confirm_meeting, can_write_item
 from app.auth.deps import has_rank
+from app.config import settings
 from app.auth.locks import HOLDABLE_STATUSES, reject_if_locked
 from app.models import Account, ActionItem, Meeting, Project
 from app.models.closure import PHASES
 from app.services.projects import can_change_lead, is_approver, is_project_lead
 from app.services.supersession import has_supersede_authority
 from app.services.reprocess import active_job_exists
+from app.services.task_queue import can_promote
 
 # ---------------- 회의록 단위 동작 ----------------
 CONFIRM_MEETING = "confirm_meeting"  # 회의록 확정(확정 대기일 때)
@@ -29,6 +31,7 @@ UPLOAD_UPDATE = "upload_update"  # 수정 회의록 업로드
 ADD_ITEM = "add_item"  # 업무 추가(수기 등록)
 EDIT_SPEAKERS = "edit_speakers"  # 화자 지정
 REPROCESS_MEETING = "reprocess_meeting"  # 실패한 회의록 재처리
+PROCESS_NOW = "process_now"  # 대기 중인 변환을 대기열 맨 앞으로(즉시 변환: 관리자·지시자, queue 모드의 대기 작업만)
 RESOLVE_CHANGE_REQUEST = "resolve_change_request"  # 수정 요청 해결(수락·반려)
 REQUEST_CHANGE = "request_change"  # 수정 요청 작성(회의록 전체·업무 모두 같은 이름)
 DOWNLOAD_EXCEL = "download_excel"  # 엑셀 다운로드
@@ -55,7 +58,7 @@ PROJECT_ACTIONS = (CHANGE_LEAD, MANAGE_MEMBERS, APPROVE_PROJECT, REJECT_PROJECT)
 
 MEETING_ACTIONS = (
     CONFIRM_MEETING, HOLD_MEETING, RESUME_MEETING, END_MEETING, DELETE_MEETING, EDIT_MINUTES, UPLOAD_UPDATE, ADD_ITEM,
-    EDIT_SPEAKERS, REPROCESS_MEETING, RESOLVE_CHANGE_REQUEST, REQUEST_CHANGE, DOWNLOAD_EXCEL, VIEW_HISTORY,
+    EDIT_SPEAKERS, REPROCESS_MEETING, PROCESS_NOW, RESOLVE_CHANGE_REQUEST, REQUEST_CHANGE, DOWNLOAD_EXCEL, VIEW_HISTORY,
 )
 ITEM_ACTIONS = (
     CONFIRM_ITEM, CLOSE_ITEM, DELETE_ITEM, SET_ASSIGNEE, SET_DUE, REQUEST_CHANGE, FIND_SIMILAR_ITEMS, REQUEST_SUPERSEDE, SUPERSEDE_ITEM,
@@ -81,6 +84,12 @@ def meeting_allowed_actions(session: Session, account: Account, meeting: Meeting
     allowed = [REQUEST_CHANGE, DOWNLOAD_EXCEL, VIEW_HISTORY]
     if has_rank(account, _RESOLVE_MIN_RANK):
         allowed.append(RESOLVE_CHANGE_REQUEST)
+    # 즉시 변환(작업 88-1): 권한은 관리자·지시자(직급), 큐에 대기 중인 작업이 있을 때만. 회의록 총괄 여부와 무관
+    if (
+        has_rank(account, "manager") and meeting.status == "processing" and not is_locked(meeting)
+        and settings.processing_mode == "queue" and can_promote(session, meeting.id)
+    ):
+        allowed.append(PROCESS_NOW)
     if can_confirm_meeting(session, account, meeting):
         locked = is_locked(meeting)
         holdable = meeting.status in HOLDABLE_STATUSES

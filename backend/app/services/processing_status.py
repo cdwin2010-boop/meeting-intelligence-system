@@ -15,6 +15,7 @@ from app.config import settings
 from app.models import Account, Job, Meeting, SourceDocument
 from app.models.common import utcnow
 from app.services.reprocess import safe_error_code
+from app.services.task_queue import QueueFields, queue_fields
 
 PROCESSING_LIST_LIMIT = 10
 _RUNNING = ("queued", "running")
@@ -30,6 +31,7 @@ class ProcessingEntry:
     elapsed_sec: int
     finished_at: datetime | None
     can_reprocess: bool
+    queue: QueueFields
 
 
 def _elapsed(job: Job, now: datetime) -> int:
@@ -61,6 +63,7 @@ def my_processing(session: Session, account: Account, now: datetime | None = Non
             meeting_id=meeting.id, job_id=job.id, title=meeting.title, status=job.status, error_code=safe_error_code(job.error_code),
             elapsed_sec=_elapsed(job, now), finished_at=job.finished_at,
             can_reprocess=REPROCESS_MEETING in meeting_allowed_actions(session, account, meeting),
+            queue=queue_fields(session, meeting.id, job.status),
         )
         for job, meeting in rows
     ]

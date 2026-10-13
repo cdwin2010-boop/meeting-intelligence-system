@@ -116,6 +116,13 @@ class ProcessingOut(CamelModel):
     # 처리 단계(추가 필드, 작업 84-1, 기존 값에서 파생): convert(준비·변환: 음성 변환 또는 자료 파일 읽기) | extract(업무 추출) | done(완료).
     # 실패한 작업은 멈춘 단계, 처리 중·대기 작업은 지금 단계다. 이번 작업 중 전사문이 저장됐으면 변환 단계를 마친 것으로 본다
     stage: str | None = None
+    # 대기열 상태(추가 필드, 작업 88-1). queue 모드의 대기·처리 중 작업에만 값이 있고 그 밖에는 None·false.
+    # queue_ahead = 앞서 시작할 대기 작업 수, prioritized = 즉시 변환으로 올려짐, waiting_for_prior = 선행 작업 때문에 바로 못 시작함,
+    # worker_alive = 워커 생존 신호가 최근임(false 면 워커가 멈춘 것: 대기 작업이 시작되지 않는다)
+    queue_ahead: int | None = None
+    prioritized: bool = False
+    waiting_for_prior: bool = False
+    worker_alive: bool | None = None
 
 
 class ProjectRef(CamelModel):

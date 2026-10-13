@@ -19,7 +19,7 @@ from app.models.source_document import SourceDocument
 from app.models.speaker import MeetingSpeaker
 from app.models.system_admin import SystemAdmin
 from app.models.system_setting import SystemSetting
-from app.models.task_queue import TaskQueue
+from app.models.task_queue import TaskQueue, WorkerHeartbeat
 from app.models.tenant import Tenant
 from app.models.transcript import Transcript
 from app.models.workload import WorkloadSnapshot
@@ -50,6 +50,7 @@ __all__ = [
     "SystemAdmin",
     "SystemSetting",
     "TaskQueue",
+    "WorkerHeartbeat",
     "Tenant",
     "Transcript",
     "WorkloadSnapshot",

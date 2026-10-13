@@ -975,6 +975,15 @@ A·B·C·D는 팀장 회신 2026-10-01로 [확정]됐다(부록 B). 각 표에�
 - **API**: `GET /api/system/engine` 에 `processingMode`·`queuePending`·`queueProcessing` 추가(기존 필드 불변).
 - **아직 하지 않은 것**: 작업 우선순위, 취소, 큐 관리 화면·API, 여러 워커의 부하 분산 정책, 처리 방식을 바꿀 때 남은 작업 이관, 로컬 STT·LLM 실제 엔진.
 
+- **우선순위·즉시 변환 [작업 88-1]** — 정책(확정): 등록된 파일은 대기열에 들어가 접수 순서(FIFO)로 한 건씩 변환한다. 시간대 지정 스케줄링은 하지 않는다. [즉시 변환]은 관리자·지시자만 가능하고(담당자 403, 다른 고객사·열람 불가 회의록 404) 해당 작업을 **대기열 맨 앞으로 올릴 뿐**이다. 진행 중인 작업은 멈추지 않고 동시에 돌리지도 않는다(GPU 8GB, STT 1건씩). 처리기가 놀고 있으면 다음 폴링에서 바로 시작하고, 다른 작업이 진행 중이면 그 작업 종료 직후 시작한다. 바로 못 시작하면 응답에 `waitingForPrior=true`, `message="시스템의 선행 작업완료 후 처리하겠습니다."`.
+  - **선택 순서**: `priority` 내림차순 → `created_at`(UTC) 오름차순 → `id`. `priority` 는 기본 0, 즉시 변환은 설정 `QUEUE_PRIORITY_IMMEDIATE`(기본 100). 같은 우선순위(승격 건끼리 포함)는 접수 순서다.
+  - **스키마(마이그레이션 `a9c3e5f7b218`, 운영 DB 미적용)**: `task_queue.priority`(NOT NULL, 서버 기본 0)·`task_queue.promoted_at`(NULL 허용)·인덱스 `ix_task_queue_status_priority_created`, 새 표 `worker_heartbeats`(`worker_id` PK, `beat_at`). 표를 다시 만들지 않는 직접 ALTER 이고 기존 행은 priority 0 이 되어 순서가 그대로다. downgrade 는 priority 가 0 이 아닌 행이 있으면 거부.
+  - **API**: `POST /api/meetings/{id}/process-now`(계약 `docs/contracts/process-now-v1.json`). 대기만 승격, 이미 올려진 건은 200 멱등(이력 중복 없음), 진행·완료·실패·대기 작업 없음·`PROCESSING_MODE=inline`·보류/종료/삭제 잠금은 409(한국어 사유). 조건부 UPDATE(`status='PENDING'`)로 승격해 워커의 획득과 겹쳐도 안전하다. 허용 동작 `process_now` 를 회의록 `allowedActions` 에 추가(관리자 이상 + queue 모드 + 아직 올려지지 않은 대기 작업).
+  - **이력**: 공통 변경 이력 구분 `meeting.process_now`("즉시 변환") — 실행자·시각·사유 `"즉시 변환 요청"`·우선순위 전후·`taskId`·`jobId`.
+  - **상태 응답 확장**: 회의록 상세 `processing` 과 `GET /api/me/processing` 항목에 `queueAhead`·`prioritized`·`waitingForPrior`·`workerAlive` 추가(queue 모드의 대기·처리 중 작업이 아니면 null·false). 작업 상태 표기는 기존 `queued`(대기)·`running`(진행)·`completed`(완료)·`failed`(실패)를 그대로 쓴다(`no_content` 는 말소리 없음 완료).
+  - **워커 생존 신호**: 워커는 `WORKER_HEARTBEAT_INTERVAL_SEC`(기본 5)마다, 긴 작업 중에도 `worker_heartbeats` 를 갱신한다. 마지막 신호가 `WORKER_HEARTBEAT_STALE_SEC`(기본 30)보다 오래됐거나 없으면 `workerAlive=false`. 기록 실패는 처리 흐름을 막지 않는다.
+  - **한계**: 대기 순번(`queueAhead`)은 같은 DB 전체 대기열 기준 건수라 다른 고객사 작업도 센다(내용은 노출하지 않음). 진행 중 작업의 취소·중단은 없다.
+
 ### D-28 안건 분할 추론과 3단계 JSON 파서 [구현 기준, 작업 75-2]
 - **위치와 연결 상태**: `app/pipeline/` 의 새 모듈(`prompts.py`·`agenda_chunker.py`·`json_parser.py`·`llm_client.py`·`chunked_extract.py`). **현행 파이프라인(`services/processing.py`)과 Gemini 추출 경로에는 연결하지 않았다**(가드 테스트로 확인). 새 표·마이그레이션 없음. 순수 함수 중심이며 동적 import·전역 상태 변경을 쓰지 않는다.
 - **프롬프트 템플릿**: `BASE_TEMPLATE` 은 현행 추출 프롬프트(`extractor.PROMPT_TEMPLATE`)와 글자 단위로 같다(골든 테스트). 청크용 `render_chunk_prompt` 는 같은 본문 뒤에 참석자·구간(`n/N`, 안건 제목)·구간 지시(이 구간 발언만 근거, 다른 구간 추측 금지, 인용문은 구간 전사문에서 그대로 복사)·응답 형식(```json 블록과 스키마)을 더한다. 회의 유형 인자는 훅만 있고 지금은 모든 유형이 같은 텍스트다.

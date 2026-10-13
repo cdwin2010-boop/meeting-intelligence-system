@@ -42,6 +42,7 @@ from app.models.item_conditions import live_item, not_deleted_item
 from app.services.reasons import event_reason, latest_reason
 from app.services.speakers import SpeakerView, display_text, load_speakers
 from app.services.history import record_meeting_view
+from app.services.task_queue import queue_fields
 from app.services.reprocess import latest_job, safe_error_code
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
@@ -168,8 +169,10 @@ def processing_out(session: Session, meeting: Meeting) -> ProcessingOut | None:
     if job is None:
         return None
     code = safe_error_code(job.error_code)
+    queue = queue_fields(session, meeting.id, job.status)
     return ProcessingOut(
         status=job.status, error_code=code, started_at=job.started_at, finished_at=job.finished_at, stage=_processing_stage(session, meeting, job),
+        queue_ahead=queue.queue_ahead, prioritized=queue.prioritized, waiting_for_prior=queue.waiting_for_prior, worker_alive=queue.worker_alive,
     )
 
 

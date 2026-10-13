@@ -23,6 +23,11 @@ class ProcessingItemOut(CamelModel):
     elapsed_sec: int
     finished_at: datetime | None
     can_reprocess: bool
+    # 대기열 상태(추가 필드, 작업 88-1): 의미는 회의록 상세 processing 과 같다
+    queue_ahead: int | None = None
+    prioritized: bool = False
+    waiting_for_prior: bool = False
+    worker_alive: bool | None = None
 
 
 @router.get("/processing", response_model=list[ProcessingItemOut], response_model_by_alias=True)
@@ -33,6 +38,8 @@ def get_my_processing(account: Account = Depends(get_current_account), session: 
         ProcessingItemOut(
             meeting_id=e.meeting_id, job_id=e.job_id, title=e.title, status=e.status, error_code=e.error_code,
             elapsed_sec=e.elapsed_sec, finished_at=e.finished_at, can_reprocess=e.can_reprocess,
+            queue_ahead=e.queue.queue_ahead, prioritized=e.queue.prioritized, waiting_for_prior=e.queue.waiting_for_prior,
+            worker_alive=e.queue.worker_alive,
         )
         for e in my_processing(session, account)
     ]

@@ -1,0 +1,11 @@
+{
+  "meetingId": 41,
+  "jobId": 77,
+  "status": "queued",
+  "queueAhead": 0,
+  "prioritized": true,
+  "alreadyPrioritized": false,
+  "waitingForPrior": true,
+  "message": "시스템의 선행 작업완료 후 처리하겠습니다.",
+  "workerAlive": true
+}

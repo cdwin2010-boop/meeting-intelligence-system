@@ -396,7 +396,10 @@ def test_detail_processing_info_has_code_only_never_exception_text(env, team):
     body = res.json()
     assert body["processing"]["status"] == "failed" and body["processing"]["errorCode"] == "internal_error"
     assert body["processing"]["startedAt"] and body["processing"]["finishedAt"]
-    assert set(body["processing"]) == {"status", "errorCode", "startedAt", "finishedAt", "stage"}  # 작업 84-1: 처리 단계(파생 값) 추가
+    assert set(body["processing"]) == {
+        "status", "errorCode", "startedAt", "finishedAt", "stage",  # 작업 84-1: 처리 단계(파생 값) 추가
+        "queueAhead", "prioritized", "waitingForPrior", "workerAlive",  # 작업 88-1: 대기열 상태(추가 필드)
+    }
     from tests.test_upload_processing import SECRET_TEXT
 
     assert SECRET_TEXT not in res.text

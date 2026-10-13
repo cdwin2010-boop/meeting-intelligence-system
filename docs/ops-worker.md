@@ -22,6 +22,9 @@ python worker.py
 | `WORKER_STALE_SECONDS` | `1800` | 처리 중 작업을 멈춘 것으로 보는 시간(초) |
 | `WORKER_MAX_ATTEMPTS` | `3` | 멈춘 작업을 다시 대기로 돌리는 최대 시도 수. 이상이면 실패 처리 |
 | `WORKER_SHUTDOWN_GRACE` | `30` | 종료 신호 뒤 현재 작업을 기다리는 시간(초) |
+| `QUEUE_PRIORITY_IMMEDIATE` | `100` | 즉시 변환 요청이 대기 작업에 부여하는 우선순위(기본 0 보다 큰 정수). 같은 값끼리는 접수 순서 |
+| `WORKER_HEARTBEAT_INTERVAL_SEC` | `5` | 워커가 생존 신호(`worker_heartbeats`)를 기록하는 간격(초) |
+| `WORKER_HEARTBEAT_STALE_SEC` | `30` | 마지막 생존 신호가 이 시간보다 오래되면 `workerAlive=false`(간격의 몇 배로 둔다) |
 
 ## 운영 주의
 
@@ -29,6 +32,7 @@ python worker.py
 - queue 모드의 서버는 시작 때 대기·처리 중 작업을 실패로 바꾸지 않는다. 멈춘 작업의 복구는 워커 시작 때 한다.
 - 처리 방식을 `queue` → `inline` 으로 바꾸면 큐에 남은 작업은 처리되지 않으니, 바꾸기 전에 대기 건수(`GET /api/system/engine` 의 `queuePending`·`queueProcessing`)가 0 인지 확인한다.
 - 운영 DB 에는 마이그레이션 `b8f3a1c6d204`(작업 큐 표)를 백업 후 `alembic upgrade head` 로 적용해야 queue 모드를 쓸 수 있다.
+- 즉시 변환(작업 88-1)은 대기 중인 작업을 순서만 앞으로 올린다. 진행 중인 작업은 끝까지 처리하고 그 직후 시작한다(동시 처리 없음). `workerAlive=false` 면 워커 프로세스가 멈춘 것이니 `python worker.py` 를 확인한다. 마이그레이션 `a9c3e5f7b218` 를 백업 후 적용해야 한다.
 - 로그에는 작업 id·회의록 id·분류 코드만 남기고 전사 본문·파일 경로는 남기지 않는다.
 
 ## 처리 순서와 GPU 메모리

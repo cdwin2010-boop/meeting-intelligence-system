@@ -8,7 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query
 from app.config import settings
 from app.db import ACTION_ITEM_SORT, JOB_SORT, store
 from app.pipeline.service import run_job
-from app.schemas.models import ActionItem, AdminJob, JobStatus, Meeting, MeetingSummary, SpeakerNames, UploadReceipt
+from app.schemas.models import ActionItem, AdminJob, JobStatus, Meeting, MeetingSummary, ProcessNow, SpeakerNames, UploadReceipt
 from app.upload_storage import find_upload, incoming_path, job_path
 from app.uploads import (
     ALLOWED_EXTENSIONS, detect_audio_kind, estimate_audio_seconds, expected_local_minutes, extension_of, parse_started_at,
@@ -180,6 +180,32 @@ def get_job_status(job_id: str):
     if status is None:
         raise HTTPException(status_code=404, detail="job not found")
     return status
+
+
+# ---------------- 즉시 변환 (작업 88-1, docs/contracts/process-now-v1.json) ----------------
+WAITING_MESSAGE = "시스템의 선행 작업완료 후 처리하겠습니다."
+START_SOON_MESSAGE = "곧 변환을 시작합니다."
+
+
+@router.post("/meetings/{meeting_id}/process-now", response_model=ProcessNow, response_model_by_alias=True)
+def process_now(meeting_id: str):
+    """대기(queued) 작업만 받아들인다. 진행·완료·실패는 409. 인증이 없는 스텁이라 권한(관리자·지시자만 허용, 담당자 403)은
+    검사하지 않는다 → 운영 백엔드에서는 서버가 반드시 검증한다. 스텁은 업로드를 바로 처리하므로 대기 순서는 바꾸지 않는다."""
+    state = store.meeting_job_queue_state(meeting_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="meeting not found")
+    if state["status"] == "processing":
+        raise HTTPException(status_code=409, detail="이미 변환이 진행 중입니다. 완료될 때까지 기다려 주세요.")
+    if state["status"] == "completed":
+        raise HTTPException(status_code=409, detail="이미 변환이 완료된 회의록입니다.")
+    if state["status"] != "queued":
+        raise HTTPException(status_code=409, detail="변환에 실패한 회의록입니다. 다시 처리해 주세요.")
+    waiting = state["ahead"] > 0 or state["processingExists"]
+    return {
+        "meetingId": meeting_id, "jobId": state["jobId"], "status": "queued", "queueAhead": state["ahead"],
+        "prioritized": True, "alreadyPrioritized": False, "waitingForPrior": waiting,
+        "message": WAITING_MESSAGE if waiting else START_SOON_MESSAGE, "workerAlive": True,
+    }
 
 
 # ---------------- 관리자 API (v1.7 스텁: 인증 없음 → 운영에서는 서버 권한 검증 필수) ----------------

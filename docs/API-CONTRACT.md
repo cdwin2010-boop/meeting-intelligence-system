@@ -140,3 +140,12 @@ JobStatus { id, meetingId, status: "queued"|"processing"|"completed"|"failed",
 - 처리 중 Kill 하면 처리기가 멈추고 결과를 저장하지 않는다 (단계마다 조건부 UPDATE).
 - 업로드로 만든 작업을 Retry하면 처리기가 다시 돈다(음성 파일이 있어야 함). 시드 작업은 Retry해도 `queued`로 남는다.
 - 수동 확인: `python -m scripts.smoke_gemini <음성파일> [회의일시 ISO]` — 서버 없이 `.env` 설정으로 STT → 추출 결과와 단계별 소요 시간을 출력한다(키 값은 출력하지 않음).
+
+### 8) 즉시 변환 `POST /meetings/{meetingId}/process-now` (작업 88-1)
+```ts
+ProcessNow { meetingId, jobId, status: "queued", queueAhead: number, prioritized: true, alreadyPrioritized: boolean,
+             waitingForPrior: boolean, message: string, workerAlive: boolean }
+```
+- 정책: 변환은 대기열에서 접수 순서(FIFO)로 한 건씩 한다. 이 요청은 대기 작업을 맨 앞으로 올릴 뿐 진행 중인 작업을 멈추거나 동시에 돌리지 않는다. `waitingForPrior=true` 면 `message` 는 정확히 "시스템의 선행 작업완료 후 처리하겠습니다."
+- 오류: 404 not_found(없는 회의·볼 수 없는 회의), 409 invalid_state(진행 중·완료·실패, 한국어 사유), 운영 백엔드는 담당자 403.
+- 운영 백엔드와 같은 응답 모양이다(전체 설명·예시: `docs/contracts/process-now-v1.json`). **스텁은 인증이 없어 권한(관리자·지시자만)을 검사하지 않고**, 업로드를 바로 처리하므로 대기 순서도 바꾸지 않는다(모양만 맞춤). 운영에서는 서버가 반드시 권한을 검증한다.

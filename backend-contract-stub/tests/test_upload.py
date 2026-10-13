@@ -158,3 +158,28 @@ def test_stage_moves_from_stt_to_llm(monkeypatch):
     assert client.get(f"/api/jobs/{job_id}").json()["stage"] == "STT"
     assert store.set_stage_if_processing(job_id, "LLM") is True
     assert client.get(f"/api/jobs/{job_id}").json()["stage"] == "LLM"
+
+
+# ---------------- 즉시 변환 (작업 88-1, docs/contracts/process-now-v1.json) ----------------
+def test_process_now_queued_job_returns_contract_shape(monkeypatch):
+    monkeypatch.setattr(settings, "fake_worker_enabled", False)  # 작업이 queued 로 남는다
+    first = upload("A.m4a").json()
+    second = upload("B.m4a").json()
+    r = client.post(f"/api/meetings/{second['meetingId']}/process-now")
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body) == {
+        "meetingId", "jobId", "status", "queueAhead", "prioritized", "alreadyPrioritized", "waitingForPrior", "message", "workerAlive",
+    }
+    assert body["jobId"] == second["jobId"] and body["status"] == "queued" and body["queueAhead"] == 1
+    assert body["waitingForPrior"] is True and body["message"] == "시스템의 선행 작업완료 후 처리하겠습니다."
+    head = client.post(f"/api/meetings/{first['meetingId']}/process-now").json()
+    assert head["queueAhead"] == 0 and head["waitingForPrior"] is False and head["message"] == "곧 변환을 시작합니다."
+
+
+def test_process_now_conflicts_and_not_found(monkeypatch):
+    done = upload("A.m4a").json()  # 가짜 처리기가 바로 완료까지 흘려보낸다(step 0)
+    assert client.get(f"/api/jobs/{done['jobId']}").json()["status"] == "completed"
+    r = client.post(f"/api/meetings/{done['meetingId']}/process-now")
+    assert r.status_code == 409 and "완료" in r.json()["detail"]
+    assert client.post("/api/meetings/mtg-none/process-now").status_code == 404
