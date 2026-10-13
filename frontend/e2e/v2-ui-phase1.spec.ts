@@ -358,7 +358,7 @@ for (const width of [1280, 768]) {
       const panel = await boxOf(aside(page));
       const main = await boxOf(page.locator("main"));
       expect(Math.round(panel.x + panel.width)).toBe(width);
-      expect(panel.width).toBe(248);
+      expect(panel.width).toBe(240);
       expect(main.x + main.width).toBeLessThanOrEqual(panel.x + 0.5);
       expect(await aside(page).evaluate((el) => { const c = getComputedStyle(el); return [c.borderLeftWidth, c.borderRightWidth]; })).toEqual(["1px", "0px"]);
       await expect(mainNav(page).getByRole("link", { name: "회의록" })).toHaveCount(1);
@@ -471,7 +471,7 @@ for (const width of [1280, 768]) {
       await start(page, { processing: [proc(1), proc(2, { status: "queued" }), proc(3, { status: "completed" })] });
       await page.goto("/v2");
       await expect(toggle(page, "접기")).toHaveAttribute("aria-expanded", "true");
-      expect((await boxOf(aside(page))).width).toBe(248);
+      expect((await boxOf(aside(page))).width).toBe(240);
       const mainBefore = (await boxOf(page.locator("main"))).width;
       await toggle(page, "접기").click();
       await expect(toggle(page, "펼치기")).toHaveAttribute("aria-expanded", "false");
@@ -494,7 +494,7 @@ for (const width of [1280, 768]) {
       expect(inAside.filter((v) => v !== "-")).toEqual([]); // 접힌 띠 안에는 Tab 으로 닿는 요소가 없다(토글은 헤더)
       await toggle(page, "펼치기").click();
       await expect(toggle(page, "접기")).toHaveAttribute("aria-expanded", "true");
-      expect((await boxOf(aside(page))).width).toBe(248);
+      expect((await boxOf(aside(page))).width).toBe(240);
       await expect(mainNav(page).getByRole("link", { name: "회의록" })).toHaveCount(1);
       await expect(page.getByRole("link", { name: "회의록 올리기" })).toHaveCount(1);
       await expect(page.getByRole("group", { name: /처리 중 \d+건/ })).toHaveCount(0);

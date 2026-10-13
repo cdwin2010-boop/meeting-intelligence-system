@@ -13,9 +13,12 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { Badge, Button, MetricCard, StatusDot, type StatusDotTone } from "@/components/mono";
+import { Badge, Button, StatusDot } from "@/components/mono";
 import { useAuth } from "@/components/v2/AuthProvider";
+import { Avatar } from "@/components/v2/Avatar";
 import { formatDateTime, V2_MEETINGS_PATH } from "@/components/v2/meeting-display";
+import { StatusChip, type StatusChipTone } from "@/components/v2/StatusChip";
+import { SummaryCard } from "@/components/v2/SummaryCard";
 import { isAbortError, type MissingField } from "@/lib/v2/errors";
 import {
   getNotices,
@@ -48,9 +51,9 @@ const MISSING_LABEL: Record<MissingField, string> = {
   dueDate: "기한 필요",
 };
 
-const ITEM_STATUS: Record<MyItem["status"], { tone: StatusDotTone; label: string }> = {
-  pending: { tone: "queued", label: "확정 대기" },
-  confirmed: { tone: "ready", label: "확정됨" },
+const ITEM_STATUS: Record<MyItem["status"], { tone: StatusChipTone; label: string }> = {
+  pending: { tone: "pending", label: "확정 대기" },
+  confirmed: { tone: "done", label: "확정됨" },
 };
 
 const ENTITY_LABEL = { meeting: "회의록", action_item: "업무" } as const;
@@ -74,7 +77,7 @@ function Section({ title, list, children }: { title: string; list: TodoList<unkn
   return (
     <section aria-label={title} className="overflow-hidden rounded-mn-card border border-mn-border bg-mn-surface">
       <div className="flex items-center justify-between border-b border-mn-border px-5 py-4">
-        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+        <h2 className="text-[17px] font-bold leading-6">{title}</h2>
         <Badge mono>{list.total}</Badge>
       </div>
       <ul className="divide-y divide-mn-border">{children}</ul>
@@ -93,7 +96,7 @@ function Row({ title, meta, aside, href, linkLabel }: { title: string; meta?: Re
     <>
       <div className="min-w-0">
         <p className="truncate font-medium">{title}</p>
-        {meta ? <p className="mt-1 text-xs text-mn-muted">{meta}</p> : null}
+        {meta ? <p className="mt-1 text-[13px] leading-5 text-mn-muted">{meta}</p> : null}
       </div>
       {aside ? <div className="flex shrink-0 flex-wrap items-center gap-3">{aside}</div> : null}
     </>
@@ -128,50 +131,52 @@ function ChangeRequestRow({ request }: { request: PendingChangeRequest }) {
             {request.kind === "supersede" ? <><Badge>대체 요청</Badge> </> : null}
             {request.commentPreview}
           </p>
-          <p className="mt-1 text-xs text-mn-muted">
+          <p className="mt-1 text-[13px] leading-5 text-mn-muted">
             {target}
             {request.kind === "supersede" ? <> · 대체될 업무 <Mono>#{request.supersedesItemId ?? "?"}</Mono></> : null} · {request.requester?.name ?? "알 수 없음"} · <Mono>{formatDateTime(request.createdAt)}</Mono>
           </p>
         </div>
         <span className="shrink-0">
-          <StatusDot tone="queued" label="해결 대기" />
+          <StatusChip tone="revision" label="해결 대기" />
         </span>
       </Link>
     </li>
   );
 }
 
+/** 기한 값이 없거나 미정이면 "미확정"(보조색)으로 보인다 */
 function DueCell({ item }: { item: MyItem }) {
-  if (item.dueUndetermined) return <Badge>미확정</Badge>;
-  if (!item.dueDate) return <span className="text-mn-muted">—</span>;
+  if (item.dueUndetermined || !item.dueDate) return <span className="text-mn-muted">미확정</span>;
   return <Mono>{item.dueDate}</Mono>;
 }
 
-function MyItemsTable({ list }: { list: TodoList<MyItem> }) {
+function MyItemsTable({ list, assigneeName }: { list: TodoList<MyItem>; assigneeName: string }) {
   return (
     <section aria-label="내 업무" className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold tracking-tight">내 업무</h2>
+        <h2 className="text-[17px] font-bold leading-6">내 업무</h2>
         <Badge mono>{list.total}</Badge>
       </div>
       <div className="overflow-x-auto rounded-mn-card border border-mn-border bg-mn-surface">
-        <table aria-label="내 업무" className="w-full min-w-[480px] table-fixed border-collapse text-sm">
+        <table aria-label="내 업무" className="w-full min-w-[640px] table-fixed border-collapse text-[15px] leading-[23px]">
           <colgroup>
             <col />
             <col className="w-[160px]" />
             <col className="w-[140px]" />
+            <col className="w-[140px]" />
           </colgroup>
           <thead>
-            <tr className="h-10 border-b border-mn-border text-left text-xs text-mn-muted">
+            <tr className="h-12 border-b border-mn-border text-left text-[13px] leading-5 text-mn-muted">
               <th scope="col" className="px-4 font-medium">업무명</th>
+              <th scope="col" className="px-4 font-medium">담당자</th>
               <th scope="col" className="px-4 font-medium">완료 기한</th>
               <th scope="col" className="px-4 font-medium">상태</th>
             </tr>
           </thead>
           <tbody>
             {list.items.length === 0 ? (
-              <tr className="h-12">
-                <td colSpan={3} className="px-4 text-center text-mn-muted">
+              <tr className="h-16">
+                <td colSpan={4} className="px-4 text-center text-mn-muted">
                   담당 업무가 없습니다.
                 </td>
               </tr>
@@ -179,13 +184,24 @@ function MyItemsTable({ list }: { list: TodoList<MyItem> }) {
               list.items.map((item) => {
                 const status = ITEM_STATUS[item.status] ?? { tone: "queued" as const, label: item.status };
                 return (
-                  <tr key={item.itemId} className="h-12 border-b border-mn-border last:border-b-0">
+                  <tr key={item.itemId} className="h-16 border-b border-mn-border last:border-b-0">
                     <td className="truncate px-4">{item.title}</td>
+                    <td className="px-4">
+                      {/* 내 업무 표의 담당자는 로그인한 본인이다. 이름이 없으면 "미확정" */}
+                      {assigneeName ? (
+                        <span className="flex items-center gap-2">
+                          <Avatar name={assigneeName} />
+                          <span className="truncate">{assigneeName}</span>
+                        </span>
+                      ) : (
+                        <span className="text-mn-muted">미확정</span>
+                      )}
+                    </td>
                     <td className="px-4">
                       <DueCell item={item} />
                     </td>
                     <td className="px-4">
-                      <StatusDot tone={status.tone} label={status.label} />
+                      <StatusChip tone={status.tone} label={status.label} />
                     </td>
                   </tr>
                 );
@@ -195,7 +211,7 @@ function MyItemsTable({ list }: { list: TodoList<MyItem> }) {
         </table>
       </div>
       {list.total > list.items.length ? (
-        <p className="text-xs text-mn-muted">
+        <p className="text-[13px] leading-5 text-mn-muted">
           기한이 가까운 <span className="font-mn-mono">{list.items.length}</span>건만 표시합니다 (전체{" "}
           <span className="font-mn-mono">{list.total}</span>건)
         </p>
@@ -204,7 +220,7 @@ function MyItemsTable({ list }: { list: TodoList<MyItem> }) {
   );
 }
 
-function TodoContent({ todos, notices, manager }: { todos: Todos; notices: Notice[]; manager: boolean }) {
+function TodoContent({ todos, notices, manager, assigneeName }: { todos: Todos; notices: Notice[]; manager: boolean; assigneeName: string }) {
   const { awaitingConfirmMeetings: awaiting, needsCompletionItems: needs, myItems, unreadAutoConfirmed: unread } = todos;
   const changeRequests = todos.pendingChangeRequests ?? EMPTY_LIST;
   const confirmNotices = notices.filter((n) => n.kind === "confirmed_notice");
@@ -227,7 +243,7 @@ function TodoContent({ todos, notices, manager }: { todos: Todos; notices: Notic
           <ul className="divide-y divide-mn-border">
             {confirmNotices.map((notice) => (
               <li key={notice.id} className="flex flex-wrap items-center gap-3 px-5 py-4">
-                <StatusDot tone="ready" label="확정 안내" />
+                <StatusChip tone="done" label="확정 안내" />
                 <span className="font-medium">{notice.payload.title || "(제목 없음)"}</span>
                 <span className="text-mn-muted">
                   {ENTITY_LABEL[notice.entityType] ?? notice.entityType} ·{" "}
@@ -240,15 +256,16 @@ function TodoContent({ todos, notices, manager }: { todos: Todos; notices: Notic
         </section>
       ) : null}
 
-      <div className={`grid grid-cols-2 gap-4 ${manager ? "lg:grid-cols-4" : "lg:grid-cols-2"}`}>
+      {/* 요약 카드: 칸 최소 200px 로 자동 맞춤(좁은 화면은 한 칸씩) */}
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
         {manager ? (
           <>
-            <MetricCard label="확정 대기 회의록" value={awaiting.total} />
-            <MetricCard label="보완 필요 업무" value={needs.total} />
+            <SummaryCard label="확정 대기 회의록" value={awaiting.total} hint="관리자 확정을 기다립니다" />
+            <SummaryCard label="보완 필요 업무" value={needs.total} hint="빠진 항목을 채워야 합니다" />
           </>
         ) : null}
-        <MetricCard label="내 업무" value={myItems.total} />
-        <MetricCard label="자동 확정됨 (미열람)" value={unread.total} />
+        <SummaryCard label="내 업무" value={myItems.total} hint="내가 맡은 업무입니다" />
+        <SummaryCard label="자동 확정됨 (미열람)" value={unread.total} hint="확정 내용을 확인해 주세요" />
       </div>
 
       {manager && (awaiting.total > 0 || needs.total > 0) ? (
@@ -264,7 +281,7 @@ function TodoContent({ todos, notices, manager }: { todos: Todos; notices: Notic
                       자동 확정 예정 <Mono>{formatDate(m.autoConfirmAt)}</Mono>
                     </>
                   }
-                  aside={<StatusDot tone="queued" label="확정 대기" />}
+                  aside={<StatusChip tone="pending" label="확정 대기" />}
                 />
               ))}
             </Section>
@@ -278,7 +295,7 @@ function TodoContent({ todos, notices, manager }: { todos: Todos; notices: Notic
                   href={withReturnTo(`${V2_MEETINGS_PATH}/${item.meetingId}`, "/v2", { item: item.itemId })}
                   linkLabel={`보완 필요 업무로 이동: ${item.title || "업무명 없음"}`}
                   aside={item.missingFields.map((field) => (
-                    <StatusDot key={field} tone="error" label={MISSING_LABEL[field] ?? field} />
+                    <StatusChip key={field} tone="needs" label={MISSING_LABEL[field] ?? field} />
                   ))}
                 />
               ))}
@@ -307,13 +324,13 @@ function TodoContent({ todos, notices, manager }: { todos: Todos; notices: Notic
                   <Mono>{formatDate(entry.confirmedAt)}</Mono>
                 </>
               }
-              aside={<StatusDot tone="building" label="자동 확정됨 (미열람)" />}
+              aside={<StatusChip tone="done" label="자동 확정됨 (미열람)" />}
             />
           ))}
         </Section>
       ) : null}
 
-      <MyItemsTable list={myItems} />
+      <MyItemsTable list={myItems} assigneeName={assigneeName} />
     </>
   );
 }
@@ -346,8 +363,8 @@ export default function V2TodoPage() {
   return (
     <>
       <header>
-        <h1 className="text-[28px] font-semibold leading-9 tracking-tight text-mn-text">할 일</h1>
-        <p className="mt-1 text-sm text-mn-muted">{todayLabel()} · 오늘 처리할 일을 먼저 보여 드립니다.</p>
+        <h1 className="mn-page-title text-mn-text">할 일</h1>
+        <p className="mt-1 text-[13px] leading-5 text-mn-muted">{todayLabel()} · 오늘 처리할 일을 먼저 보여 드립니다.</p>
       </header>
 
       {state.kind === "loading" ? (
@@ -364,7 +381,7 @@ export default function V2TodoPage() {
           </Button>
         </div>
       ) : (
-        <TodoContent todos={state.todos} notices={state.notices} manager={isManager(account?.rank)} />
+        <TodoContent todos={state.todos} notices={state.notices} manager={isManager(account?.rank)} assigneeName={account?.name ?? ""} />
       )}
     </>
   );

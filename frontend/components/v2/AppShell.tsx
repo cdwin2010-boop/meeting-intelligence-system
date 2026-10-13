@@ -261,7 +261,7 @@ export function AppShell({ children, initialSidePosition = "right" }: { children
   const contentNode = (
     <div key="content" inert={open} className="flex min-w-0 flex-1 flex-col">
       <header
-        className={`flex min-h-14 items-center gap-3 border-b border-mn-border px-4 md:h-14 md:px-12 ${folded ? (left ? "md:pl-[248px]" : "md:pr-[248px]") : ""}`}
+        className={`flex min-h-14 items-center gap-3 border-b border-mn-border px-4 md:h-14 md:px-12 ${folded ? (left ? "md:pl-[240px]" : "md:pr-[240px]") : ""}`}
       >
         {left ? collapseButton : null}
         <div className="ml-auto flex min-w-0 items-center gap-3">
@@ -311,7 +311,7 @@ export function AppShell({ children, initialSidePosition = "right" }: { children
       className={[
         "shrink-0 flex-col gap-6 border-mn-border px-4 py-6",
         open ? "fixed inset-y-0 right-0 z-40 flex h-dvh w-[min(86vw,320px)] overflow-y-auto overscroll-contain border-l bg-mn-bg" : "hidden",
-        `md:static md:z-auto md:flex md:h-auto md:overflow-visible ${left ? "md:border-r" : "md:border-l"} md:bg-transparent ${folded ? "md:w-12 md:items-center md:px-0" : "md:w-[248px]"}`,
+        `md:static md:z-auto md:flex md:h-auto md:overflow-visible ${left ? "md:border-r" : "md:border-l"} md:bg-mn-shell ${folded ? "md:w-12 md:items-center md:px-0" : "md:w-[240px]"}`,
       ].join(" ")}
     >
       {/* 접힌 상태에서는 아예 그리지 않는다("flex" 와 "hidden" 이 함께 있으면 flex 가 이겨 글자가 남았다) */}
@@ -342,7 +342,11 @@ export function AppShell({ children, initialSidePosition = "right" }: { children
       {folded ? (
         <>
           {activeCount > 0 ? (
-            <span role="group" aria-label={`처리 중 ${activeCount}건`} className="font-mn-mono text-xs text-mn-text">
+            <span
+              role="group"
+              aria-label={`처리 중 ${activeCount}건`}
+              className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-mn-accent px-2 font-mn-mono text-xs text-mn-on-accent"
+            >
               {activeCount}
             </span>
           ) : null}
@@ -370,8 +374,8 @@ export function AppShell({ children, initialSidePosition = "right" }: { children
               href={item.href}
               aria-current={current ? "page" : undefined}
               className={[
-                "mn-focus flex h-10 items-center rounded-mn-control px-3 text-sm max-md:h-11",
-                current ? "bg-mn-elevated font-medium text-mn-text" : "text-mn-muted hover:bg-mn-elevated hover:text-mn-text",
+                "mn-focus flex h-11 items-center rounded-mn-item px-3 text-sm",
+                current ? "bg-mn-brand-tint font-medium text-mn-brand-ink" : "text-mn-muted hover:bg-mn-elevated hover:text-mn-text",
               ].join(" ")}
             >
               {item.label}

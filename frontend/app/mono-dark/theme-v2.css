@@ -1,9 +1,10 @@
 /*
- * v2 화면 테마(작업 68-1): 기본은 라이트("Soft Warm Neutral"), 다크는 기존 Mono Dark 값 그대로.
+ * v2 화면 테마: 기본은 라이트("Clean Light", 작업 87-1), 다크는 기존 Mono Dark 값 그대로.
  * - 선택자는 html 의 data-v2-theme 속성이다. 이 속성은 v2 화면(app/v2/layout.tsx)만 붙이고 v2 를 떠나면 지우므로 v1 화면은 바뀌지 않는다.
  *   html 에 두는 이유: 모달이 document.body 로 포털되어 v2 루트 요소 밖에 그려지기 때문이다.
  * - 토큰 이름은 그대로(--mn-*), 라이트에서 값만 덮어쓴다. 컴포넌트에는 색을 직접 쓰지 않는다.
- * - 값과 대비 비율은 docs/v3-ui-theme.md 에 있다. 그림자는 포커스 링 하나뿐.
+ *   라이트 값은 [data-v2-theme="light"] 범위에만 있어 다크(:root 값)에는 영향이 없다.
+ * - 값과 대비 비율은 docs/design-clean-light.md 에 있다. 그림자·그라데이션은 쓰지 않고 영역은 1px 테두리로 나눈다(포커스 링만 예외).
  */
 html[data-v2-theme="dark"] {
   color-scheme: dark;
@@ -13,47 +14,72 @@ html[data-v2-theme="light"] {
   color-scheme: light;
 
   /* 배경 / 표면 */
-  --mn-background: #faf9f6;
+  --mn-background: #f6f7f9; /* ground */
   --mn-surface: #ffffff;
-  --mn-surface-elevated: #f4f2ee; /* hover, 모달, 메뉴 */
-  --mn-overlay: #0f172a66;
-  --mn-border: #e5e7eb;
-  --mn-control-border: #7a8494; /* 컨트롤 테두리: 흰색·오프화이트 배경 대비 3:1 이상 */
+  --mn-surface-elevated: #eef1f5; /* hover, 모달, 메뉴 */
+  --mn-overlay: #1b243066;
+  --mn-border: #e3e6eb;
+  --mn-control-border: #7a8494; /* 컨트롤 테두리: 흰색·ground 배경 대비 3:1 이상 */
+  --mn-shell-surface: #ffffff; /* 왼쪽(보조창) 메뉴 영역: surface + 1px 테두리 */
 
-  /* 인터랙션: 주 버튼은 진한 차콜 배경 + 흰 글자 */
-  --mn-accent: #1e293b;
-  --mn-accent-hover: #0f172a;
+  /* 인터랙션: 주 버튼은 brand 배경 + 흰 글자 */
+  --mn-accent: #2f5bea; /* brand */
+  --mn-accent-hover: #2548c4;
   --mn-on-accent: #ffffff;
+  --mn-brand-tint: #e9efff;
+  --mn-brand-ink: #1f3fa8;
+  --mn-avatar: #dde3ee;
 
   /* 텍스트 */
-  --mn-text: #0f172a;
-  --mn-text-muted: #475569;
+  --mn-text: #1b2430; /* ink */
+  --mn-text-muted: #5b6675; /* ink-muted */
   --mn-text-disabled: #94a3b8; /* 비활성 글자(WCAG 대비 예외) */
-  --mn-link: #1d4ed8;
-  --mn-selected: #eceae4;
-  --mn-focus: #334155;
+  --mn-link: #1f3fa8;
+  --mn-selected: #e9efff;
+  --mn-focus: #2f5bea;
 
-  /* 상태 점(장식, 글자 라벨과 함께): 채도를 낮춘 뮤트 톤 */
-  --mn-blue: #4f6f9f; /* 진행 = 소프트 슬레이트 블루 */
-  --mn-teal: #5e8c6a; /* 완료 = 세이지 그린 */
+  /* 상태 점(장식, 글자 라벨과 함께) */
+  --mn-blue: #2f5bea;
+  --mn-teal: #17613a;
   --mn-red: #b91c1c; /* 실패, 위험 버튼 배경(흰 글자 4.5:1 이상) */
   --mn-red-hover: #991b1b;
   --mn-on-red: #ffffff;
 
-  --mn-focus-ring: 0 0 0 1px #faf9f6, 0 0 0 3px #334155;
+  --mn-focus-ring: 0 0 0 1px #ffffff, 0 0 0 3px #2f5bea;
 
-  /* 상태 칩 */
-  --mn-chip-neutral-bg: #eef0f3; --mn-chip-neutral-fg: #3f4a5a;
-  --mn-chip-info-bg: #e3eaf3; --mn-chip-info-fg: #2f4a6b;
-  --mn-chip-success-bg: #e3efe6; --mn-chip-success-fg: #2d5a3a;
-  --mn-chip-warning-bg: #f6ebd3; --mn-chip-warning-fg: #7a4b05;
-  --mn-chip-muted-bg: #eceae6; --mn-chip-muted-fg: #57534e;
-  --mn-chip-danger-bg: #f8e4e1; --mn-chip-danger-fg: #8e2a1f;
-  --mn-chip-superseded-bg: #f3e8d0; --mn-chip-superseded-fg: #6b4a10;
-  --mn-chip-cancelled-bg: #ecebe6; --mn-chip-cancelled-fg: #57534e;
+  /* 상태 쌍(바탕/글자): 승인 대기=warning, 수정 요청=revision, 보완 필요=danger, 진행 중=info, 완료=success */
+  --mn-chip-warning-bg: #fff3d6; --mn-chip-warning-fg: #7a4b00;
+  --mn-chip-revision-bg: #ede7fb; --mn-chip-revision-fg: #4a2d9c;
+  --mn-chip-danger-bg: #fde8e8; --mn-chip-danger-fg: #9b1c1c;
+  --mn-chip-info-bg: #e6eeff; --mn-chip-info-fg: #1f3fa8;
+  --mn-chip-success-bg: #e3f5ea; --mn-chip-success-fg: #17613a;
+  /* 위 다섯 쌍 밖의 보조 칩(회색 계열): 프로젝트 반려·대체됨·취소 등 */
+  --mn-chip-neutral-bg: #eef1f5; --mn-chip-neutral-fg: #3f4a5a;
+  --mn-chip-muted-bg: #eef1f5; --mn-chip-muted-fg: #5b6675;
+  --mn-chip-superseded-bg: #fff3d6; --mn-chip-superseded-fg: #7a4b00;
+  --mn-chip-cancelled-bg: #eef1f5; --mn-chip-cancelled-fg: #5b6675;
+
+  /* 모서리: 8(메뉴 항목·아이콘 버튼) / 10(주요 버튼·입력) / 12(카드·표) / 알약(상태 라벨·뱃지·아바타) */
+  --mn-radius-item: 8px;
+  --mn-radius-control: 10px;
+  --mn-radius-card: 12px;
+  --mn-radius-badge: 999px;
 }
 
-/* 상태 칩: 연한 배경 + 진한 글자. 글자 라벨은 항상 함께 쓴다(색만으로 구분하지 않음). 대체됨·취소는 취소선 */
+/* 글꼴·글자 크기(라이트): IBM Plex Sans KR(자체 호스팅) → Noto Sans KR → system-ui. 숫자·ID 용 mono 는 그대로 */
+html[data-v2-theme="light"] .mn-body {
+  font-family: "IBM Plex Sans KR", "Noto Sans KR", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 23px;
+}
+html[data-v2-theme="light"] .mn-page-title {
+  font-size: 26px;
+  line-height: 34px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+/* 상태 칩: 연한 배경 + 진한 글자, 알약 모양. 글자 라벨은 항상 함께 쓴다(색만으로 구분하지 않음). 대체됨·취소는 취소선 */
 .mn-chip {
   display: inline-flex;
   align-items: center;
@@ -63,10 +89,17 @@ html[data-v2-theme="light"] {
   font-size: 12px;
   font-weight: 500;
 }
+html[data-v2-theme="light"] .mn-chip {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 13px;
+  line-height: 20px;
+}
 .mn-chip-neutral { background: var(--mn-chip-neutral-bg); color: var(--mn-chip-neutral-fg); }
 .mn-chip-info { background: var(--mn-chip-info-bg); color: var(--mn-chip-info-fg); }
 .mn-chip-success { background: var(--mn-chip-success-bg); color: var(--mn-chip-success-fg); }
 .mn-chip-warning { background: var(--mn-chip-warning-bg); color: var(--mn-chip-warning-fg); }
+.mn-chip-revision { background: var(--mn-chip-revision-bg); color: var(--mn-chip-revision-fg); }
 .mn-chip-muted { background: var(--mn-chip-muted-bg); color: var(--mn-chip-muted-fg); }
 .mn-chip-danger { background: var(--mn-chip-danger-bg); color: var(--mn-chip-danger-fg); }
 .mn-chip-superseded { background: var(--mn-chip-superseded-bg); color: var(--mn-chip-superseded-fg); text-decoration: line-through; }

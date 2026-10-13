@@ -23,8 +23,13 @@
   --color-mn-red: var(--mn-red);
   --color-mn-red-hover: var(--mn-red-hover);
   --color-mn-on-red: var(--mn-on-red);
+  --color-mn-brand-tint: var(--mn-brand-tint);
+  --color-mn-brand-ink: var(--mn-brand-ink);
+  --color-mn-avatar: var(--mn-avatar);
+  --color-mn-shell: var(--mn-shell-surface);
 
   --radius-mn-badge: var(--mn-radius-badge);
+  --radius-mn-item: var(--mn-radius-item);
   --radius-mn-control: var(--mn-radius-control);
   --radius-mn-card: var(--mn-radius-card);
 

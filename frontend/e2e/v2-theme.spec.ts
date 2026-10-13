@@ -43,7 +43,7 @@ const root = (page: Page) => page.evaluate(() => ({
 }));
 const shellBackground = (page: Page) => page.evaluate(() => getComputedStyle(document.querySelector("main")!.parentElement!.parentElement!).backgroundColor);
 const toggle = (page: Page, current: "라이트" | "다크") => page.getByRole("button", { name: `화면 테마 전환, 현재 ${current}` });
-const LIGHT_BG = "rgb(250, 249, 246)";
+const LIGHT_BG = "rgb(246, 247, 249)";
 const DARK_BG = "rgb(0, 0, 0)";
 
 test.describe("테마 선택·저장", () => {

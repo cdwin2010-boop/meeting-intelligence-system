@@ -43,6 +43,13 @@
   --mn-chip-superseded-bg: #33250a; --mn-chip-superseded-fg: #d9a441;
   --mn-chip-cancelled-bg: #171717; --mn-chip-cancelled-fg: #8a8a8a;
 
+  /* Clean Light(작업 87-1)용 확장 토큰. 다크는 기존 모습을 유지하는 값이고, 라이트 값은 theme-v2.css 가 덮어쓴다 */
+  --mn-brand-tint: #171717; /* 현재 메뉴 바탕 */
+  --mn-brand-ink: #ededed; /* 현재 메뉴 글자 */
+  --mn-avatar: #262626; /* 담당자 아바타 바탕 */
+  --mn-shell-surface: transparent; /* 데스크톱 메뉴 영역 바탕 */
+  --mn-chip-revision-bg: #1f1633; --mn-chip-revision-fg: #c9b3ff; /* 수정 요청 */
+
   /* 그림자는 포커스 링 하나만 허용 */
   --mn-focus-ring: 0 0 0 1px #000000, 0 0 0 3px #a3a3a3;
 
@@ -57,6 +64,7 @@
 
   /* 라운드 */
   --mn-radius-badge: 4px;
+  --mn-radius-item: 6px; /* 메뉴 항목·아이콘 버튼 */
   --mn-radius-control: 6px;
   --mn-radius-card: 8px;
 
