@@ -55,7 +55,8 @@ CHANGE_LEAD = "change_lead"  # 총괄 변경
 MANAGE_MEMBERS = "manage_members"  # 참여자 추가·역할 변경·제거
 APPROVE_PROJECT = "approve_project"  # 프로젝트 승인(대기 중일 때)
 REJECT_PROJECT = "reject_project"  # 프로젝트 반려(대기 중일 때)
-PROJECT_ACTIONS = (CHANGE_LEAD, MANAGE_MEMBERS, APPROVE_PROJECT, REJECT_PROJECT)
+REVERT_REJECTION = "revert_rejection"  # 반려 되돌리기(반려된 프로젝트, 등록 부서의 부서장·작업 A-1)
+PROJECT_ACTIONS = (CHANGE_LEAD, MANAGE_MEMBERS, APPROVE_PROJECT, REJECT_PROJECT, REVERT_REJECTION)
 
 MEETING_ACTIONS = (
     CONFIRM_MEETING, HOLD_MEETING, RESUME_MEETING, END_MEETING, DELETE_MEETING, EDIT_MINUTES, UPLOAD_UPDATE, ADD_ITEM,
@@ -151,6 +152,8 @@ def project_allowed_actions(session: Session, account: Account, project: Project
         allowed.append(MANAGE_MEMBERS)
     if project.status == "pending_approval" and is_approver(session, account, project):
         allowed += [APPROVE_PROJECT, REJECT_PROJECT]
+    if project.status == "rejected" and is_approver(session, account, project):
+        allowed.append(REVERT_REJECTION)
     return [name for name in PROJECT_ACTIONS if name in allowed]
 
 

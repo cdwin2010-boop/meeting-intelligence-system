@@ -3,6 +3,7 @@
  * - change_lead: 진행 중이고 총괄 본인(lead 계정) 또는 지시자
  * - manage_members: 진행 중이고 lead 역할 참여자
  * - approve_project / reject_project: 승인 대기이고 등록 부서의 부서장(승인자)
+ * - revert_rejection: 반려됐고 등록 부서의 부서장(승인자, 작업 A-1)
  */
 interface Member { accountId: number; role: string }
 interface ProjectLike { status: string; lead?: { id: number } | null; members: Member[] }
@@ -12,6 +13,7 @@ export function projectActions(project: ProjectLike, account: { id: number; rank
   if (project.status === "active" && (account.rank === "executive" || project.lead?.id === account.id)) out.push("change_lead");
   if (project.status === "active" && project.members.some((m) => m.accountId === account.id && m.role === "lead")) out.push("manage_members");
   if (project.status === "pending_approval" && approverId === account.id) out.push("approve_project", "reject_project");
+  if (project.status === "rejected" && approverId === account.id) out.push("revert_rejection");
   return out;
 }
 

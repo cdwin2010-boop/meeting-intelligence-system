@@ -113,6 +113,17 @@ class Settings(BaseSettings):
     local_llm_json_mode: bool = True
     local_llm_allow_external_host: bool = False
     local_llm_max_output_tokens: int = Field(4096, ge=1)
+    # 시스템 상태 점검(작업 A-1): 디스크 여유 공간 기준(MB). 여유 < DISK_MIN_FREE_MB 면 업로드를 거절하고, < DISK_WARN_FREE_MB 면 경고 상태.
+    disk_warn_free_mb: int = Field(5120, ge=0)
+    disk_min_free_mb: int = Field(1024, ge=0)
+    # nvidia-smi 조회 제한 시간(초). 읽지 못하면 "확인 불가"
+    gpu_status_timeout_seconds: float = Field(3.0, gt=0, le=30)
+    # 워커 자동 재기동(worker_supervisor.py): 비정상 종료 시 이 횟수까지만 다시 띄운다(창 안의 횟수, 무한 재시도 금지).
+    # 창(WORKER_RESTART_WINDOW_SEC)을 넘겨 안정적으로 돈 뒤의 종료는 횟수를 새로 센다. 한도를 넘기면 중단하고 상태 파일에 기록한다.
+    worker_restart_max: int = Field(3, ge=0, le=20)
+    worker_restart_window_sec: int = Field(600, ge=1)
+    worker_restart_delay_sec: float = Field(5.0, ge=0, le=300)
+    worker_supervisor_state_path: Path = Path("data/worker_supervisor.json")
     # 엔진 시험 모드(작업 91-1, 시험 전용): 기본 꺼짐(납품 설정). 켜면 관리자 이상이 회의 등록·재처리 때 엔진을 고르고,
     # "OpenAI 호환 HTTP(원격·시험용)" 엔진 설정·로딩 테스트를 쓸 수 있다. 꺼져 있으면 관련 요청은 서버가 거부한다(화면 숨김만이 아님).
     # 원격 서버 값(주소·모델·키)은 여기 기본값이고, 화면에서 저장한 값은 Git 제외 파일(engine_test_settings_path)이 덮어쓴다.
@@ -196,6 +207,12 @@ class Settings(BaseSettings):
             self.local_llm_base_url = url.rstrip("/")
         if self.effective_llm_provider == "local" and not (self.local_llm_base_url and self.local_llm_model.strip()):
             raise ValueError("LLM_PROVIDER=local 이면 LOCAL_LLM_BASE_URL 과 LOCAL_LLM_MODEL 이 필요합니다.")
+        return self
+
+    @model_validator(mode="after")
+    def _check_disk_thresholds(self):
+        if self.disk_min_free_mb > self.disk_warn_free_mb:
+            raise ValueError("DISK_MIN_FREE_MB 는 DISK_WARN_FREE_MB 보다 클 수 없습니다.")
         return self
 
     @model_validator(mode="after")

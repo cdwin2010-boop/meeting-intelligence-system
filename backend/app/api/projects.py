@@ -221,6 +221,17 @@ def reject(project_id: int, body: ReasonBody, account: Account = Depends(get_cur
     return _out(session, account, project, ProjectDetail)
 
 
+@router.post("/{project_id}/revert-rejection", response_model=ProjectDetail, response_model_by_alias=True)
+def revert_rejection(
+    project_id: int, body: ReasonBody, account: Account = Depends(get_current_account), session: Session = Depends(get_session)
+) -> ProjectDetail:
+    """반려 되돌리기: 반려된 프로젝트를 승인 대기로 돌린다. 등록 부서의 부서장만, 사유 필수, 이력 "프로젝트 반려 되돌리기"."""
+    project = _visible_or_404(session, account, project_id)
+    svc.revert_rejection(session, account, project, body.reason)
+    session.commit()
+    return _out(session, account, project, ProjectDetail)
+
+
 class ChangeLeadBody(ReasonBody):
     new_lead_id: int
 

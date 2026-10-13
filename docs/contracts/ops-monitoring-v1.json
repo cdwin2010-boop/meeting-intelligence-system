@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ops-monitoring-v1",
+  "title": "ops-monitoring-v1: 시스템 모니터링·반려 되돌리기·용량 거절 (작업 A-1)",
+  "description": "GET /api/admin/monitoring 은 읽기 전용(다른 메서드 405), 관리자(manager) 이상 또는 시스템 관리자만(그 밖에 403, 미로그인 401). 점검 실패 항목은 예외 없이 status=unknown(\"확인 불가\"). 경로·주소·키는 내려주지 않는다. 설정: DISK_WARN_FREE_MB·DISK_MIN_FREE_MB·GPU_STATUS_TIMEOUT_SECONDS·WORKER_RESTART_MAX·WORKER_RESTART_WINDOW_SEC·WORKER_RESTART_DELAY_SEC·WORKER_SUPERVISOR_STATE_PATH. 원본 모델: backend/app/api/monitoring.py.",
+  "endpoints": {
+    "GET /api/admin/monitoring": {"response": {"$ref": "#/definitions/monitoring"}},
+    "POST /api/projects/{id}/revert-rejection": {
+      "request": {"reason": "string, 필수(공백만 422), 최대 2000자"},
+      "response": "ProjectDetail(status=pending_approval, allowedActions 갱신)",
+      "errors": {"403": "등록 부서의 부서장이 아님", "404": "볼 수 없는 프로젝트", "409": "반려된 프로젝트가 아님", "422": "사유 없음·공백·2000자 초과"},
+      "history": "변경 이력 구분 project.rejection_reverted(\"프로젝트 반려 되돌리기\"): before={status:rejected, decidedBy, decidedAt}, after={status:pending_approval, reason}, 처리자=actor. 이전 반려 이력은 지워지지 않는다. 허용 동작 revert_rejection(반려됨 + 승인자)."
+    },
+    "POST /api/meetings/upload (추가 거절 사유)": {"507": "디스크 여유 공간이 DISK_MIN_FREE_MB 미만이면 파일을 받기 전에 거절. detail=\"서버 저장 공간이 부족하여 업로드할 수 없습니다(…). 관리자에게 문의해 주세요.\"; 점검 불가(unknown)는 거절하지 않는다"}
+  },
+  "definitions": {
+    "monitoring": {
+      "type": "object",
+      "required": ["generatedAt", "overall", "disk", "gpu", "worker", "queue"],
+      "additionalProperties": false,
+      "properties": {
+        "generatedAt": {"type": "string", "format": "date-time"},
+        "overall": {"type": "string", "enum": ["ok", "warning", "critical"], "description": "디스크 경고·위험, 워커 재기동 한도 초과(critical), queue 모드에서 대기 작업이 있는데 워커 응답 없음(warning)의 최악 값. GPU 확인 불가는 반영하지 않는다"},
+        "disk": {
+          "type": "object",
+          "properties": {
+            "warnFreeMb": {"type": "integer"},
+            "minFreeMb": {"type": "integer"},
+            "items": {"type": "array", "items": {"type": "object", "properties": {
+              "name": {"type": "string", "description": "업로드 저장 폴더 | 데이터베이스"},
+              "status": {"type": "string", "enum": ["ok", "warning", "critical", "unknown"]},
+              "freeMb": {"type": ["integer", "null"]},
+              "totalMb": {"type": ["integer", "null"]},
+              "message": {"type": "string"}
+            }}}
+          }
+        },
+        "gpu": {
+          "type": "object",
+          "properties": {
+            "status": {"type": "string", "enum": ["ok", "unknown"]},
+            "label": {"type": "string", "description": "정상 | 확인 불가"},
+            "message": {"type": "string"},
+            "gpus": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "totalMb": {"type": "integer"}, "usedMb": {"type": "integer"}, "freeMb": {"type": "integer"}, "usedPercent": {"type": "integer"}}}}
+          }
+        },
+        "worker": {
+          "type": "object",
+          "properties": {
+            "processingMode": {"type": "string", "enum": ["inline", "queue"]},
+            "alive": {"type": ["boolean", "null"], "description": "생존 신호가 설정 시간 이내인가. inline 모드면 null"},
+            "supervisor": {"type": "object", "properties": {
+              "used": {"type": "boolean"},
+              "status": {"type": ["string", "null"], "enum": ["running", "stopped", "limit_exceeded", null]},
+              "restartCount": {"type": "integer"},
+              "recentRestarts": {"type": "integer"},
+              "maxRestarts": {"type": "integer"},
+              "lastExitCode": {"type": ["integer", "null"]},
+              "lastExitAt": {"type": ["string", "null"]},
+              "lastRestartAt": {"type": ["string", "null"]},
+              "limitExceededAt": {"type": ["string", "null"]}
+            }}
+          }
+        },
+        "queue": {"type": "object", "properties": {"pending": {"type": "integer"}, "processing": {"type": "integer"}, "oldestPendingAt": {"type": ["string", "null"], "format": "date-time"}}}
+      }
+    }
+  }
+}

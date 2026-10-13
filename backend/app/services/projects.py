@@ -16,7 +16,7 @@ from app.models import Account, AccountDepartment, Department, Project, ProjectM
 from app.models.common import utcnow
 from app.services.history import (
     KIND_PROJECT_APPROVED, KIND_PROJECT_LEAD_CHANGED, KIND_PROJECT_MEMBER_ADDED, KIND_PROJECT_MEMBER_REMOVED, KIND_PROJECT_MEMBER_ROLE,
-    KIND_PROJECT_REGISTERED, KIND_PROJECT_REJECTED, record_change,
+    KIND_PROJECT_REGISTERED, KIND_PROJECT_REJECTED, KIND_PROJECT_REJECTION_REVERTED, record_change,
 )
 from app.services.org import department_head, find_department, members_of, membership
 
@@ -163,6 +163,25 @@ def reject_project(session: Session, account: Account, project: Project, reason:
     project.status, project.decided_by, project.decided_at = "rejected", account.id, utcnow()
     session.flush()
     _record(session, project, account.id, KIND_PROJECT_REJECTED, {"status": "pending_approval"}, {"status": "rejected", "reason": reason})
+
+
+def revert_rejection(session: Session, account: Account, project: Project, reason: str) -> None:
+    """반려를 되돌려 승인 대기로 돌린다(작업 A-1). 반려와 같은 처리자(등록 부서의 부서장)만, 사유 필수.
+    되돌린 처리자·사유와 이전 반려 처리자·시각은 변경 이력(record_change)에 남기고, 프로젝트의 결정 기록(decided_by·decided_at)은 비운다."""
+    _require_approver(session, account, project)
+    if project.status != "rejected":
+        raise _http(status.HTTP_409_CONFLICT, "반려된 프로젝트만 되돌릴 수 있습니다")
+    reason = (reason or "").strip()
+    if not reason:
+        raise _http(status.HTTP_422_UNPROCESSABLE_ENTITY, "사유를 입력하세요")
+    before = {
+        "status": "rejected",
+        "decidedBy": project.decided_by,
+        "decidedAt": project.decided_at.isoformat() if project.decided_at else None,
+    }
+    project.status, project.decided_by, project.decided_at = "pending_approval", None, None
+    session.flush()
+    _record(session, project, account.id, KIND_PROJECT_REJECTION_REVERTED, before, {"status": "pending_approval", "reason": reason})
 
 
 # ---------------- 참여자 관리 ----------------

@@ -43,6 +43,8 @@ export const PROJECT_ACTION = {
   manageMembers: "manage_members",
   approveProject: "approve_project",
   rejectProject: "reject_project",
+  /** 반려 되돌리기(작업 A-1): 반려된 프로젝트를 승인 대기로. 등록 부서의 부서장만 */
+  revertRejection: "revert_rejection",
 } as const;
 
 export type ProjectActionName = (typeof PROJECT_ACTION)[keyof typeof PROJECT_ACTION];

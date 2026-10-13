@@ -33,6 +33,8 @@ KIND_DEPARTMENT_UPDATE = "department.updated"
 KIND_PROJECT_REGISTERED = "project.registered"
 KIND_PROJECT_APPROVED = "project.approved"
 KIND_PROJECT_REJECTED = "project.rejected"
+# 반려 되돌리기(작업 A-1): 반려된 프로젝트를 승인 대기로 되돌린다(처리자·사유 필수)
+KIND_PROJECT_REJECTION_REVERTED = "project.rejection_reverted"
 KIND_PROJECT_MEMBER_ADDED = "project.member_added"
 KIND_PROJECT_MEMBER_REMOVED = "project.member_removed"
 KIND_PROJECT_MEMBER_ROLE = "project.member_role_changed"
@@ -63,6 +65,7 @@ HISTORY_KINDS: dict[str, str] = {
     KIND_PROJECT_REGISTERED: "프로젝트 등록",
     KIND_PROJECT_APPROVED: "프로젝트 승인",
     KIND_PROJECT_REJECTED: "프로젝트 반려",
+    KIND_PROJECT_REJECTION_REVERTED: "프로젝트 반려 되돌리기",
     KIND_PROJECT_MEMBER_ADDED: "참여자 추가",
     KIND_PROJECT_MEMBER_REMOVED: "참여자 제거",
     KIND_PROJECT_MEMBER_ROLE: "참여자 역할 변경",

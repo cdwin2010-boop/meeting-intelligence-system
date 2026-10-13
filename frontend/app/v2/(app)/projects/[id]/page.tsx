@@ -23,7 +23,7 @@ import { can, PROJECT_ACTION } from "@/lib/v2/actions";
 import { ApiError, isAbortError } from "@/lib/v2/errors";
 import type { MeetingListPage } from "@/lib/v2/meetings";
 import {
-  approveProject, getProject, listProjectMeetings, PROJECT_PAGE_SIZE, rejectProject, removeProjectMember, ROLE_LABEL,
+  approveProject, getProject, listProjectMeetings, PROJECT_PAGE_SIZE, rejectProject, removeProjectMember, revertProjectRejection, ROLE_LABEL,
   type ProjectDetail,
 } from "@/lib/v2/projects";
 import { RANK_LABEL } from "@/lib/v2/types";
@@ -228,6 +228,7 @@ export default function V2ProjectDetailPage() {
   const actions = project.allowedActions;
   const canApprove = can(actions, PROJECT_ACTION.approveProject);
   const canReject = can(actions, PROJECT_ACTION.rejectProject);
+  const canRevert = can(actions, PROJECT_ACTION.revertRejection);
   const canManage = can(actions, PROJECT_ACTION.manageMembers);
   const canChangeLead = can(actions, PROJECT_ACTION.changeLead);
 
@@ -251,9 +252,23 @@ export default function V2ProjectDetailPage() {
       target: project.name,
       confirmLabel: "반려하기",
       requireReason: true,
-      notice: "반려한 프로젝트는 다시 승인할 수 없습니다. 사유는 이력에 남습니다.",
+      notice: "반려한 프로젝트는 '반려 되돌리기'로 승인 대기로 되돌릴 수 있습니다. 사유는 이력에 남습니다.",
       run: async (reason, signal) => {
         apply(await rejectProject(project.id, reason, signal), "프로젝트를 반려했습니다");
+      },
+    });
+  }
+
+  function openRevert() {
+    setNotice(null);
+    setReasonAction({
+      title: "반려 되돌리기",
+      target: project.name,
+      confirmLabel: "반려 되돌리기",
+      requireReason: true,
+      notice: "프로젝트가 승인 대기로 돌아갑니다. 처리자와 사유는 이력에 남고, 이전 반려 기록은 지워지지 않습니다.",
+      run: async (reason, signal) => {
+        apply(await revertProjectRejection(project.id, reason, signal), "반려를 되돌려 승인 대기로 돌렸습니다");
       },
     });
   }
@@ -295,6 +310,11 @@ export default function V2ProjectDetailPage() {
             {canReject ? (
               <Button size="sm" onClick={openReject}>
                 반려
+              </Button>
+            ) : null}
+            {canRevert ? (
+              <Button size="sm" onClick={openRevert}>
+                반려 되돌리기
               </Button>
             ) : null}
             {canChangeLead ? (

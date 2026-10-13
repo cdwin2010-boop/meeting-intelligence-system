@@ -19,6 +19,7 @@ from app.pipeline.transcript_text import TranscriptTextError, decode_transcript
 from app.services.processing import auto_confirm_at, get_job_runner
 from app.services.engine_test import requested_engine_payload, resolve_requested_engine
 from app.services.meeting_time import parse_meeting_at
+from app.services.system_health import upload_block_reason
 from app.services.task_queue import enqueue
 from app.services.upload_storage import claim_stored_file
 from app.pipeline.transcript_xlsx import xlsx_to_text
@@ -133,6 +134,9 @@ def upload_meeting(
 ) -> UploadAccepted:
     forbid_system_admin(session, account)
     chosen_engine = resolve_requested_engine(account, engine)
+    blocked = upload_block_reason()  # 디스크 여유 공간이 최소 기준 미만이면 파일을 받기 전에 사유와 함께 거절(작업 A-1)
+    if blocked:
+        raise HTTPException(status_code=status.HTTP_507_INSUFFICIENT_STORAGE, detail=blocked)
     held_at_utc = parse_meeting_at(held_at)  # 필수·미래 거부·UTC 변환(services/meeting_time.py)
     ids = _parse_participant_ids(participant_ids)
     _check_participants(session, account, ids)

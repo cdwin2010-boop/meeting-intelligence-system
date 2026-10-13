@@ -275,10 +275,14 @@ def test_settings_defaults_and_validation():
 
 def test_platform_modules_are_not_imported_by_the_pipeline_or_api():
     pattern = re.compile(r"app\.platform|from\s+app\s+import\s+[^\n]*\bplatform\b")
+    # 작업 A-1: 읽기 전용 모니터링(services/system_health.py)만 GPU 감지를 쓴다(처리 파이프라인·업로드·처리 API 는 쓰지 않는다)
+    allowed = {"app/services/system_health.py"}
     offenders = [
         p.relative_to(ROOT).as_posix()
         for p in (ROOT / "app").rglob("*.py")
-        if "platform" not in p.relative_to(ROOT / "app").parts[:1] and pattern.search(p.read_text(encoding="utf-8"))
+        if "platform" not in p.relative_to(ROOT / "app").parts[:1]
+        and p.relative_to(ROOT).as_posix() not in allowed
+        and pattern.search(p.read_text(encoding="utf-8"))
     ]
     assert offenders == [], offenders
 

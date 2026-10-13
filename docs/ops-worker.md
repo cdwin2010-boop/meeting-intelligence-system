@@ -120,3 +120,10 @@ python scripts/create_system_admin.py --tenant "고객사" --login-id sysadmin -
 - 기존 담당자(staff) 계정을 지정하려면 `--create` 와 이름·이메일 없이 `--login-id` 만 준다. 상위 권한 계정은 지정할 수 없다.
 - 외부 연동 허용은 기본 꺼짐이다. 협의된 프로젝트만 시스템 관리자가 `PUT /api/admin/settings/external_llm_enabled` 로 켠다(`.env` 의 `EXTERNAL_POLICY_ENFORCED=true` 일 때 처리에 적용).
 
+## 워커 자동 재기동·모니터링 (작업 A-1)
+- `python worker_supervisor.py`(backend 폴더)가 `worker.py` 를 자식 프로세스로 띄우고 지켜본다. 정상 종료(코드 0)면 그대로 끝내고, 비정상 종료면
+  `WORKER_RESTART_DELAY_SEC` 뒤 다시 띄우되 창(`WORKER_RESTART_WINDOW_SEC`) 안에서 `WORKER_RESTART_MAX` 번까지만 재기동한다.
+  한도를 넘기면 더 띄우지 않고 종료 코드 3 으로 멈추며, 재기동·중단 기록(종료 코드·시각·횟수만)은 `WORKER_SUPERVISOR_STATE_PATH`(기본 `data/worker_supervisor.json`, Git 제외)에 남는다.
+- 멈춘 작업의 복구는 워커가 시작할 때 스스로 한다(재대기 또는 실패 처리). 감독은 프로세스 재기동만 맡는다.
+- `GET /api/admin/monitoring`(관리자 이상, 읽기 전용): 디스크 여유 공간(경고 `DISK_WARN_FREE_MB`·최소 `DISK_MIN_FREE_MB`), GPU(nvidia-smi 만 조회, 없으면 "확인 불가"), 워커 생존·재기동 기록, 큐 현황. 계약 `docs/contracts/ops-monitoring-v1.json`.
+- 디스크 여유가 최소 기준 미만이면 업로드를 507 로 거절한다(점검 불가는 거절하지 않음).

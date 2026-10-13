@@ -86,6 +86,9 @@ export interface ProjectInput {
 }
 export const createProject = (input: ProjectInput, signal?: AbortSignal) => request<ProjectDetail>("/projects", { method: "POST", body: input, signal });
 export const approveProject = (id: number, signal?: AbortSignal) => request<ProjectDetail>(path(id, "/approve"), { method: "POST", signal });
+/** 반려 되돌리기(작업 A-1): 반려된 프로젝트를 승인 대기로. 등록 부서의 부서장만(서버 판정), 사유 필수, 이력에 남는다 */
+export const revertProjectRejection = (id: number, reason: string, signal?: AbortSignal) =>
+  request<ProjectDetail>(path(id, "/revert-rejection"), { method: "POST", body: { reason }, signal });
 export const rejectProject = (id: number, reason: string, signal?: AbortSignal) =>
   request<ProjectDetail>(path(id, "/reject"), { method: "POST", body: { reason }, signal });
 export const addProjectMember = (id: number, accountId: number, role: ProjectRole, signal?: AbortSignal) =>
