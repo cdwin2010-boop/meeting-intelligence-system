@@ -8,6 +8,7 @@ import type { SourceKind } from "@/lib/v2/source-kind";
 import { request } from "./http";
 import type { MissingField } from "./errors";
 import type { ConfirmKind } from "./todos";
+import type { QueueFields } from "./process-queue";
 
 export type MeetingStatus = "processing" | "awaiting_confirmation" | "confirmed" | "failed" | "no_content";
 
@@ -499,7 +500,7 @@ export function createManualItem(id: number, input: ManualItemInput, signal?: Ab
 }
 
 /** 처리 작업 정보(상세 응답 processing) */
-export interface MeetingProcessing {
+export interface MeetingProcessing extends QueueFields {
   /** 처리 단계(추가 필드, 작업 84-1): convert | extract | done. 필드가 없는 서버 응답이면 없다 */
   stage?: string | null;
   status: "queued" | "running" | "completed" | "failed" | "no_content";

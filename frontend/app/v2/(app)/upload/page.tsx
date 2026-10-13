@@ -7,6 +7,9 @@
  * - 허용 형식(415)·용량(413)은 서버 설정이 판정한다. 오류는 서버 문구로 보여 주고 같은 입력으로 다시 시도할 수 있다
  * - 참석자는 같은 고객사 계정 중 여러 명 선택(선택 사항, 목록 조회 실패해도 올리기는 가능)
  * - 회의 유형은 필수(화면에서만 강제, 서버는 선택 입력). 프로젝트 회의면 내가 참여자인 진행 중 프로젝트를 함께 보낸다
+ * - 모바일(768 미만 또는 터치, 작업 88-2): 음성 파일을 올리기 직전에 Wi-Fi 연결 판정(lib/v2/network.ts)을 하고, wifi·ethernet 이 아니거나 알 수 없으면
+ *   안내 팝업을 띄운다. [업로드 계속]은 바로 올리고, [등록 보류]는 기기 보류 목록(IndexedDB)에 저장한다. 목록의 [지금 올리기]는 같은 흐름을 쓴다.
+ *   올리기에 성공하면 상세로 이동하면서 "대기열 등록" 안내를 한 번 보인다(lib/v2/upload-notice.ts).
  */
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -14,12 +17,26 @@ import { Suspense, useEffect, useId, useRef, useState, type DragEvent, type Form
 
 import { Button, StatusDot } from "@/components/mono";
 import { FakeEngineNotice, useEngineIsFake } from "@/components/v2/EngineNotice";
+import { useAuth } from "@/components/v2/AuthProvider";
 import { FilePicker } from "@/components/v2/FilePicker";
 import { MeetingTypeField, ProjectField } from "@/components/v2/MeetingClassFields";
 import { detailPath, V2_MEETINGS_PATH } from "@/components/v2/meeting-display";
 import { ParticipantPicker } from "@/components/v2/ParticipantPicker";
+import { PendingUploadList } from "@/components/v2/PendingUploadList";
 import { useProcessing } from "@/components/v2/ProcessingProvider";
+import { WifiNoticeDialog } from "@/components/v2/WifiNoticeDialog";
 import { isAbortError } from "@/lib/v2/errors";
+import { shouldShowWifiNotice } from "@/lib/v2/network";
+import {
+  addPending,
+  getPendingFile,
+  listPending,
+  PendingStorageError,
+  PENDING_UNAVAILABLE_MESSAGE,
+  removePending,
+  type PendingMeta,
+} from "@/lib/v2/pending-uploads";
+import { setUploadNotice } from "@/lib/v2/upload-notice";
 import type { MeetingType } from "@/lib/v2/meeting-types";
 import { downloadTranscriptTemplate, TRANSCRIPT_TEMPLATE_FILE_NAME, uploadMeeting } from "@/lib/v2/meetings";
 import {
@@ -27,6 +44,7 @@ import {
   kindForFileName,
   kindMismatchHint,
   matchesTranscriptExt,
+  sourceKindOf,
   SOURCE_KIND_LABEL,
   SOURCE_KINDS,
   transcriptExtOf,
@@ -57,6 +75,18 @@ function toOffsetIso(date: string, time: string): string | null {
   return `${date}T${time}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
 }
 
+/** 올리기 한 건의 입력(새로 고른 파일 또는 보류 목록의 파일). fromPendingId 가 있으면 보류 목록에서 온 것이다 */
+interface Submission {
+  file: File;
+  title: string;
+  heldAt: string;
+  participantIds: number[];
+  meetingType: MeetingType;
+  projectId?: number;
+  sourceKind: SourceKind;
+  fromPendingId?: string;
+}
+
 // useSearchParams 를 쓰는 화면은 Suspense 경계가 필요하다(Next 15)
 export default function V2UploadPage() {
   return (
@@ -71,6 +101,8 @@ function UploadForm() {
   const searchParams = useSearchParams();
   const engineIsFake = useEngineIsFake(true);
   const { refresh: refreshProcessing } = useProcessing();
+  const { account } = useAuth();
+  const accountId = account?.id ?? null;
   const titleId = useId();
   const dateId = useId();
   const timeId = useId();
@@ -105,6 +137,26 @@ function UploadForm() {
     query.addEventListener("change", onChange);
     return () => query.removeEventListener("change", onChange);
   }, []);
+  // 등록 보류(작업 88-2): Wi-Fi 안내 팝업 대상, 보류 목록, 항목별 올리기 실패 사유
+  const [wifiPrompt, setWifiPrompt] = useState<Submission | null>(null);
+  const [deferError, setDeferError] = useState<string | null>(null);
+  const [deferring, setDeferring] = useState(false);
+  const [pending, setPending] = useState<PendingMeta[]>([]);
+  const [pendingErrors, setPendingErrors] = useState<Record<string, string>>({});
+  const [deferredNotice, setDeferredNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!recordable || accountId === null) {
+      setPending([]);
+      return;
+    }
+    let cancelled = false;
+    void listPending(accountId).then((list) => {
+      if (!cancelled) setPending(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [recordable, accountId]);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateLoading, setTemplateLoading] = useState(false);
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
@@ -253,28 +305,138 @@ function UploadForm() {
     }
     setFormError(null);
     setError(null);
+    setDeferredNotice(null);
+    requestUpload({
+      file,
+      title: title.trim(),
+      heldAt,
+      participantIds,
+      meetingType,
+      projectId: meetingType === "project" ? Number(projectId) : undefined,
+      sourceKind,
+    });
+  }
+
+  /** 올리기 직전 판정: 모바일의 음성 파일이 wifi·ethernet 이 아니면(또는 알 수 없으면) 안내 팝업, 아니면 바로 올린다 */
+  function requestUpload(submission: Submission) {
+    if (submittingRef.current) return;
+    if (recordable && submission.sourceKind === "audio" && shouldShowWifiNotice()) {
+      setDeferError(null);
+      setWifiPrompt(submission);
+      return;
+    }
+    void runUpload(submission);
+  }
+
+  async function runUpload(submission: Submission) {
+    if (submittingRef.current) return;
     submittingRef.current = true;
     setSubmitting(true);
     const controller = new AbortController();
     controllerRef.current = controller;
     try {
-      const accepted = await uploadMeeting({
-          file,
-          title: title.trim(),
-          heldAt,
-          participantIds,
-          meetingType,
-          projectId: meetingType === "project" ? Number(projectId) : undefined,
-          sourceKind,
-        }, controller.signal);
+      const accepted = await uploadMeeting(
+        {
+          file: submission.file,
+          title: submission.title,
+          heldAt: submission.heldAt,
+          participantIds: submission.participantIds,
+          meetingType: submission.meetingType,
+          projectId: submission.projectId,
+          sourceKind: submission.sourceKind,
+        },
+        controller.signal,
+      );
       clearUploadDraft();
+      // 보류 목록에서 올린 건은 성공했을 때만 목록에서 지운다(실패하면 남겨 둔다)
+      if (submission.fromPendingId) await removePending(submission.fromPendingId);
       refreshProcessing(); // 왼쪽 메뉴 처리 현황에 바로 나타나게 한다(같은 상태 저장소)
+      setUploadNotice(accepted.meetingId);
       router.push(detailPath(accepted.meetingId));
     } catch (err) {
       if (isAbortError(err)) return;
-      setError(err instanceof Error && err.message ? err.message : "올리지 못했습니다.");
+      const message = err instanceof Error && err.message ? err.message : "올리지 못했습니다.";
+      const pendingId = submission.fromPendingId;
+      if (pendingId) setPendingErrors((prev) => ({ ...prev, [pendingId]: message })); // 목록에 남기고 사유를 항목 아래에 보인다
+      else setError(message);
       submittingRef.current = false;
       setSubmitting(false);
+    }
+  }
+
+  /** 안내 팝업 [업로드 계속] */
+  function onWifiContinue() {
+    const submission = wifiPrompt;
+    setWifiPrompt(null);
+    if (submission) void runUpload(submission);
+  }
+
+  /** 안내 팝업 [등록 보류]: 올리지 않고 기기 보류 목록에 저장한다(이미 목록에 있던 항목은 그대로 둔다) */
+  async function onWifiDefer() {
+    const submission = wifiPrompt;
+    if (!submission || deferring) return;
+    if (submission.fromPendingId) {
+      setWifiPrompt(null);
+      return;
+    }
+    if (accountId === null) {
+      setDeferError(PENDING_UNAVAILABLE_MESSAGE);
+      return;
+    }
+    setDeferring(true);
+    setDeferError(null);
+    try {
+      const saved = await addPending(accountId, {
+        file: submission.file,
+        sourceKind: submission.sourceKind,
+        meetingType: submission.meetingType,
+        title: submission.title,
+        heldAt: submission.heldAt,
+        participantIds: submission.participantIds,
+        projectId: submission.projectId ?? null,
+      });
+      setPending((prev) => [...prev, saved]);
+      setWifiPrompt(null);
+      setFile(null); // 같은 파일이 입력칸과 보류 목록에 둘 다 있지 않게 한다
+      setDeferredNotice("등록을 보류했습니다. 아래 등록 보류 목록에서 Wi-Fi 연결 후 올려 주세요.");
+    } catch (err) {
+      setDeferError(err instanceof PendingStorageError ? err.message : PENDING_UNAVAILABLE_MESSAGE);
+    } finally {
+      setDeferring(false);
+    }
+  }
+
+  /** 보류 목록 [지금 올리기]: 같은 업로드 흐름(안내 판정 포함) */
+  async function onPendingUploadNow(item: PendingMeta) {
+    if (submittingRef.current) return;
+    setPendingErrors((prev) => {
+      const { [item.id]: _removed, ...rest } = prev;
+      return rest;
+    });
+    const stored = await getPendingFile(item.id);
+    if (!stored) {
+      setPendingErrors((prev) => ({ ...prev, [item.id]: "기기에 저장된 파일을 찾지 못했습니다. 목록에서 삭제한 뒤 다시 선택해 주세요." }));
+      return;
+    }
+    requestUpload({
+      file: stored,
+      title: item.title,
+      heldAt: item.heldAt,
+      participantIds: item.participantIds,
+      meetingType: item.meetingType as MeetingType,
+      projectId: item.projectId ?? undefined,
+      sourceKind: sourceKindOf(item.sourceKind),
+      fromPendingId: item.id,
+    });
+  }
+
+  async function onPendingDelete(item: PendingMeta) {
+    if (await removePending(item.id)) {
+      setPending((prev) => prev.filter((entry) => entry.id !== item.id));
+      setPendingErrors((prev) => {
+        const { [item.id]: _removed, ...rest } = prev;
+        return rest;
+      });
     }
   }
 
@@ -482,6 +644,12 @@ function UploadForm() {
             </p>
           ) : null}
 
+          {deferredNotice ? (
+            <p role="status" className="text-sm text-mn-text">
+              {deferredNotice}
+            </p>
+          ) : null}
+
           <div className="flex justify-end gap-3">
             <Link
               href={V2_MEETINGS_PATH}
@@ -515,6 +683,26 @@ function UploadForm() {
           </ol>
         </aside>
       </div>
+
+      {/* 등록 보류(모바일만, 작업 88-2) */}
+      {recordable ? (
+        <PendingUploadList
+          items={pending}
+          errors={pendingErrors}
+          busy={submitting}
+          onUploadNow={(item) => void onPendingUploadNow(item)}
+          onDelete={onPendingDelete}
+        />
+      ) : null}
+      <WifiNoticeDialog
+        open={wifiPrompt !== null}
+        alreadyPending={wifiPrompt?.fromPendingId !== undefined}
+        error={deferError}
+        deferring={deferring}
+        onContinue={onWifiContinue}
+        onDefer={() => void onWifiDefer()}
+        onClose={() => setWifiPrompt(null)}
+      />
     </>
   );
 }

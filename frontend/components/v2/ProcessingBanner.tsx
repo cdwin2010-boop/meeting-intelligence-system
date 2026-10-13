@@ -6,6 +6,8 @@
  * - 처리 실패(failed): 오류 코드를 한국어 이유로 풀어 보여 주고 코드 글자도 함께 표시한다. "다시 처리" 버튼은 허용 동작(reprocess_meeting)이 있을 때만
  */
 import { Button, StatusDot } from "@/components/mono";
+import { JobStatusChip, QueueNotes } from "@/components/v2/JobStatusChip";
+import { ProcessNow } from "@/components/v2/ProcessNow";
 import { describeProcessingError } from "@/lib/v2/processing-errors";
 import { buildStages, stoppedAtText, type StageState, type StageView } from "@/lib/v2/processing-stages";
 import { sourceKindOf } from "@/lib/v2/source-kind";
@@ -18,6 +20,10 @@ interface ProcessingBannerProps {
   onReprocess: () => void;
   /** 자료 종류(audio | transcript_txt | transcript_xlsx). 자료 파일은 1단계가 "음성 변환 건너뜀" */
   sourceKind?: string | null;
+  /** 회의록 번호와 즉시 변환 허용 여부(서버 허용 동작 process_now), 요청 뒤 상세 다시 받기(작업 88-2) */
+  meetingId?: number;
+  canProcessNow?: boolean;
+  onProcessed?: () => void;
 }
 
 const STAGE_TONE: Record<StageState, string> = {
@@ -45,12 +51,22 @@ function Stages({ stages }: { stages: StageView[] }) {
   );
 }
 
-export function ProcessingBanner({ status, processing, canReprocess, onReprocess, sourceKind }: ProcessingBannerProps) {
+export function ProcessingBanner({ status, processing, canReprocess, onReprocess, sourceKind, meetingId, canProcessNow = false, onProcessed }: ProcessingBannerProps) {
   const kind = sourceKindOf(sourceKind);
   if (status === "processing") {
     const stages = buildStages({ status: "processing", stage: processing?.stage, sourceKind: kind });
     return (
       <div role="status" aria-label="처리 상태" className="flex flex-col gap-2 rounded-mn-card border border-mn-border bg-mn-surface px-4 py-3 text-sm">
+        <span className="flex flex-col items-start gap-2">
+          <JobStatusChip status={processing?.status ?? "queued"} />
+          <QueueNotes
+            status={processing?.status ?? "queued"}
+            queueAhead={processing?.queueAhead}
+            prioritized={processing?.prioritized}
+            workerAlive={processing?.workerAlive}
+          />
+          {meetingId !== undefined ? <ProcessNow meetingId={meetingId} allowed={canProcessNow} onDone={onProcessed} /> : null}
+        </span>
         <p>
           <StatusDot tone="building" label="음성을 처리하는 중입니다. 완료되면 업무가 표시됩니다." />
         </p>
@@ -68,7 +84,8 @@ export function ProcessingBanner({ status, processing, canReprocess, onReprocess
       aria-label="처리 상태"
       className="flex flex-wrap items-center justify-between gap-3 rounded-mn-card border border-mn-border bg-mn-surface px-4 py-3"
     >
-      <p className="flex min-w-0 flex-col gap-1 text-sm">
+      <p className="flex min-w-0 flex-col items-start gap-1 text-sm">
+        <JobStatusChip status="failed" />
         <StatusDot tone="error" label={`처리에 실패했습니다 · ${describeProcessingError(code)}`} />
         {code ? (
           <span className="text-xs text-mn-muted">

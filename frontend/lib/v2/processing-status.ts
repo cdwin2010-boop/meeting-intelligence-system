@@ -4,10 +4,11 @@
  * elapsedSec 은 서버가 응답 시점 기준으로 계산한 값이다(브라우저 시계에 의존하지 않는다).
  */
 import { request } from "./http";
+import type { QueueFields } from "./process-queue";
 
 export type ProcessingJobStatus = "queued" | "running" | "completed" | "failed" | "no_content";
 
-export interface ProcessingItem {
+export interface ProcessingItem extends QueueFields {
   meetingId: number;
   jobId: number;
   title: string;

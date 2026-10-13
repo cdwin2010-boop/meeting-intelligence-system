@@ -51,7 +51,7 @@ import { SOURCE_KIND_LABEL, sourceKindOf } from "@/lib/v2/source-kind";
 import { HistoryDialog } from "@/components/v2/HistoryDialog";
 import { ManualItemDialog } from "@/components/v2/ManualItemDialog";
 import { ProcessingBanner, ProcessingWarnings } from "@/components/v2/ProcessingBanner";
-import { useProcessingFinished } from "@/components/v2/ProcessingProvider";
+import { useProcessing, useProcessingFinished } from "@/components/v2/ProcessingProvider";
 import { MinutesDialog, MinutesPanel } from "@/components/v2/MinutesPanel";
 import { findSegmentIndex, parseSeconds, parseTranscriptBlocks } from "@/lib/v2/transcript-time";
 import { RETURN_TO_PARAM, returnLabel, validReturnTo } from "@/lib/v2/return-to";
@@ -69,6 +69,7 @@ import { SpeakerDialog } from "@/components/v2/SpeakerDialog";
 import { ApiError, isAbortError, type MissingField } from "@/lib/v2/errors";
 import { closeActionItem, confirmActionItem, deleteActionItem } from "@/lib/v2/action-items";
 import { can, ITEM_ACTION, MEETING_ACTION } from "@/lib/v2/actions";
+import { consumeUploadNotice, UPLOAD_ACCEPTED_NOTICE } from "@/lib/v2/upload-notice";
 import { FAKE_MEETING_NOTICE, PROCESSING_REFRESH_MS } from "@/lib/v2/system";
 import {
   deleteMeeting,
@@ -1069,6 +1070,13 @@ export default function V2MeetingDetailPage() {
   // 왼쪽 메뉴 처리 현황이 이 회의록의 완료·실패 전환을 알리면 상세를 조용히 다시 받는다(팝업·입력값·스크롤·전사문 펼침은 그대로).
   // 상세 자체의 자동 새로고침(위)은 올린 사람이 아닌 열람자에게도 필요해서 합치지 않고 둔다. 같은 요청이 겹치면 reloadDetail 이 앞 요청을 취소한다
   useProcessingFinished(meetingId, () => void reloadDetail());
+  const { refresh: refreshProcessing } = useProcessing();
+
+  // 올리기 직후 이동해 온 경우에만 한 번 보이는 안내(작업 88-2). 새로고침하면 다시 보이지 않는다
+  const [uploadNotice, setUploadNotice] = useState(false);
+  useEffect(() => {
+    if (meetingId !== null && consumeUploadNotice(meetingId)) setUploadNotice(true);
+  }, [meetingId]);
 
   /** 업무 동작(담당자·기한·확정) 뒤: 응답의 업무는 allowedActions 가 null 이므로 행을 그대로 바꾸지 않고 상세를 다시 받아 서버 기준으로 바꾼다 */
   const replaceItem = useCallback((saved: ActionItem) => void reloadDetail(saved), [reloadDetail]);
@@ -1236,12 +1244,25 @@ export default function V2MeetingDetailPage() {
         </div>
       </header>
       <PhaseRecords meeting={meeting} />
+      {uploadNotice ? (
+        <section aria-label="업로드 안내" className="rounded-mn-card border border-mn-border bg-mn-surface px-4 py-3">
+          <p aria-live="polite" className="text-sm text-mn-text">
+            {UPLOAD_ACCEPTED_NOTICE}
+          </p>
+        </section>
+      ) : null}
       <ProcessingBanner
         status={meeting.status}
         processing={meeting.processing}
         sourceKind={meeting.sourceKind}
         canReprocess={can(meeting.allowedActions, MEETING_ACTION.reprocessMeeting)}
         onReprocess={openReprocess}
+        meetingId={meeting.id}
+        canProcessNow={can(meeting.allowedActions, MEETING_ACTION.processNow)}
+        onProcessed={() => {
+          refreshProcessing();
+          void reloadDetail();
+        }}
       />
       <ProcessingWarnings warnings={meeting.processingWarnings} />
       <FakeMeetingNotice show={meeting.minutes?.engine === "fake"} />

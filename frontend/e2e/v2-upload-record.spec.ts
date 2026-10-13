@@ -43,6 +43,8 @@ for (const width of [375, 412]) {
 
 test("녹음하기로 고른 파일이 같은 선택 상태에 들어가 그대로 제출된다", async ({ page }) => {
   const uploads: string[] = [];
+  // 작업 88-2: 모바일 올리기는 Wi-Fi 여부를 판정한다. 이 시험은 녹음 파일 제출 흐름이 목적이라 Wi-Fi 로 주입해 안내 팝업을 건너뛴다
+  await page.addInitScript(() => Object.defineProperty(navigator, "connection", { configurable: true, get: () => ({ type: "wifi" }) }));
   await openUpload(page, 375, uploads);
   await page.locator('input[type="file"][capture]').setInputFiles(REC);
   await expect(page.getByText("녹음.m4a")).toBeVisible();

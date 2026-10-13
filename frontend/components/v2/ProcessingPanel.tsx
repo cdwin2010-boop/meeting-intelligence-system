@@ -10,7 +10,9 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { Button, StatusDot } from "@/components/mono";
+import { Button } from "@/components/mono";
+import { JobStatusChip, QueueNotes } from "@/components/v2/JobStatusChip";
+import { ProcessNow, useCanProcessNow } from "@/components/v2/ProcessNow";
 import { useProcessing, type TrackedItem } from "@/components/v2/ProcessingProvider";
 import { ReasonDialog, type ReasonAction } from "@/components/v2/ReasonDialog";
 import { detailPath } from "@/components/v2/meeting-display";
@@ -21,7 +23,7 @@ import { formatElapsed, isActiveStatus } from "@/lib/v2/processing-status";
 const VISIBLE_LIMIT = 3;
 
 function ItemView({
-  item, now, viewing, onOpen, onReprocess, onDismiss,
+  item, now, viewing, onOpen, onReprocess, onDismiss, onProcessed,
 }: {
   item: TrackedItem;
   now: number;
@@ -30,8 +32,12 @@ function ItemView({
   onOpen: () => void;
   onReprocess: () => void;
   onDismiss: () => void;
+  /** 즉시 변환 요청 뒤 처리 현황 다시 받기 */
+  onProcessed: () => void;
 }) {
   const active = isActiveStatus(item.status);
+  // 즉시 변환: 대기 중이고 아직 우선 처리가 아닐 때만 서버 허용 동작을 확인한다(직급을 화면에서 판단하지 않는다)
+  const canProcessNow = useCanProcessNow(item.meetingId, item.status === "queued" && !item.prioritized);
   const elapsed = item.elapsedSec + Math.max(0, now - item.receivedAt) / 1000;
   return (
     <li className="flex flex-col gap-2 rounded-mn-control border border-mn-border p-2 text-xs">
@@ -39,14 +45,18 @@ function ItemView({
         {item.title || "(제목 없음)"}
       </span>
       {active ? (
-        <StatusDot tone="building" label={`처리 중 · 경과 ${formatElapsed(elapsed)}`} />
+        <span className="flex flex-col items-start gap-1">
+          <JobStatusChip status={item.status} label={`${item.status === "queued" ? "대기 중" : "처리 중"} · 경과 ${formatElapsed(elapsed)}`} />
+          <QueueNotes status={item.status} queueAhead={item.queueAhead} prioritized={item.prioritized} workerAlive={item.workerAlive} />
+          {item.status === "queued" ? <ProcessNow meetingId={item.meetingId} allowed={canProcessNow} onDone={onProcessed} /> : null}
+        </span>
       ) : item.status === "completed" ? (
-        <StatusDot tone="ready" label="처리 완료" />
+        <JobStatusChip status="completed" />
       ) : item.status === "no_content" ? (
-        <StatusDot tone="queued" label="내용 없음, 파일 확인 요청" />
+        <JobStatusChip status="no_content" label="내용 없음, 파일 확인 요청" />
       ) : (
-        <span className="flex flex-col gap-1">
-          <StatusDot tone="error" label={`처리 실패 · ${describeProcessingError(item.errorCode)}`} />
+        <span className="flex flex-col items-start gap-1">
+          <JobStatusChip status="failed" label={`처리 실패 · ${describeProcessingError(item.errorCode)}`} />
           {item.errorCode ? <span className="text-mn-muted">오류 코드 <span className="font-mn-mono">{item.errorCode}</span></span> : null}
         </span>
       )}
@@ -123,6 +133,7 @@ export function ProcessingPanel() {
                 onOpen={() => router.push(detailPath(item.meetingId))}
                 onReprocess={() => openReprocess(item)}
                 onDismiss={() => dismiss(item.jobId)}
+                onProcessed={refresh}
               />
             ))}
           </ul>
