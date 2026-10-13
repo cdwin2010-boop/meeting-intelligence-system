@@ -40,6 +40,7 @@ import {
   END_KIND_LABEL,
   formatDate,
   formatDateTime,
+  HELD_AT_MISSING,
   formatOffset,
   meetingStatus,
   phaseText,
@@ -50,6 +51,7 @@ import { AudioPlayer, type SeekRequest } from "@/components/v2/AudioPlayer";
 import { SOURCE_KIND_LABEL, sourceKindOf } from "@/lib/v2/source-kind";
 import { HistoryDialog } from "@/components/v2/HistoryDialog";
 import { ManualItemDialog } from "@/components/v2/ManualItemDialog";
+import { HeldAtDialog } from "@/components/v2/HeldAtDialog";
 import { ProcessingBanner, ProcessingWarnings } from "@/components/v2/ProcessingBanner";
 import { useProcessing, useProcessingFinished } from "@/components/v2/ProcessingProvider";
 import { MinutesDialog, MinutesPanel } from "@/components/v2/MinutesPanel";
@@ -253,13 +255,32 @@ function SpeakerSummary({ speakers, notice, canEdit, onOpen }: SpeakerSummaryPro
   );
 }
 
-function Overview({ meeting, speakerSummary, minutesPanel }: { meeting: MeetingDetail; speakerSummary: ReactNode; minutesPanel: ReactNode }) {
+function Overview({
+  meeting, speakerSummary, minutesPanel, canEditHeldAt, onEditHeldAt,
+}: {
+  meeting: MeetingDetail;
+  speakerSummary: ReactNode;
+  minutesPanel: ReactNode;
+  /** 서버 허용 동작 edit_held_at(관리자·지시자, 작업 88-4) */
+  canEditHeldAt: boolean;
+  onEditHeldAt: () => void;
+}) {
   const confirmed = meeting.status === "confirmed";
   return (
     <section aria-label="회의 개요" className="flex flex-col gap-5 rounded-mn-card border border-mn-border bg-mn-surface p-5">
       <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="회의 일시">
-          <Mono>{formatDateTime(meeting.heldAt)}</Mono>
+          <span className="flex flex-wrap items-center gap-2">
+            {meeting.heldAt ? <Mono>{formatDateTime(meeting.heldAt)}</Mono> : <span className="text-mn-muted">{HELD_AT_MISSING}</span>}
+            {canEditHeldAt ? (
+              <Button size="sm" onClick={onEditHeldAt} className="max-md:min-h-11">
+                회의 일시 변경
+              </Button>
+            ) : null}
+          </span>
+        </Field>
+        <Field label="등록 일시">
+          <Mono muted>{formatDateTime(meeting.registeredAt ?? meeting.firstCreatedAt)}</Mono>
         </Field>
         <Field label="등록자">
           {meeting.registeredBy.name} · {ORIGIN_LABEL[meeting.origin] ?? meeting.origin}
@@ -1074,6 +1095,7 @@ export default function V2MeetingDetailPage() {
 
   // 올리기 직후 이동해 온 경우에만 한 번 보이는 안내(작업 88-2). 새로고침하면 다시 보이지 않는다
   const [uploadNotice, setUploadNotice] = useState(false);
+  const [heldAtOpen, setHeldAtOpen] = useState(false); // 회의 일시 변경 팝업(작업 88-4)
   useEffect(() => {
     if (meetingId !== null && consumeUploadNotice(meetingId)) setUploadNotice(true);
   }, [meetingId]);
@@ -1278,6 +1300,8 @@ export default function V2MeetingDetailPage() {
       ) : null}
       <Overview
         meeting={meeting}
+        canEditHeldAt={can(meeting.allowedActions, MEETING_ACTION.editHeldAt)}
+        onEditHeldAt={() => setHeldAtOpen(true)}
         minutesPanel={
           <MinutesPanel
             minutes={meeting.minutes}
@@ -1345,6 +1369,15 @@ export default function V2MeetingDetailPage() {
         }}
       />
       <ReasonDialog action={reasonAction} onClose={() => setReasonAction(null)} onDone={refreshAfterAction} />
+      <HeldAtDialog
+        open={heldAtOpen}
+        meetingId={meeting.id}
+        currentHeldAt={meeting.heldAt}
+        onClose={() => setHeldAtOpen(false)}
+        onChanged={async () => {
+          await reloadDetail();
+        }}
+      />
       <SimilarItemsDialog
         meetingId={meeting.id}
         item={similarTarget}

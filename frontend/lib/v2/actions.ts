@@ -17,6 +17,7 @@ export const MEETING_ACTION = {
   editSpeakers: "edit_speakers",
   reprocessMeeting: "reprocess_meeting",
   processNow: "process_now",
+  editHeldAt: "edit_held_at",
   resolveChangeRequest: "resolve_change_request",
   requestChange: "request_change",
   downloadExcel: "download_excel",

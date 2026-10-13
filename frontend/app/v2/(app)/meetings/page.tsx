@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Badge, Button, StatusDot } from "@/components/mono";
-import { detailPath, formatDateTime, meetingStatus, MEETING_PHASES, PHASE_LABEL, phaseText } from "@/components/v2/meeting-display";
+import { detailPath, formatDateTime, formatHeldAt, meetingStatus, MEETING_PHASES, PHASE_LABEL, phaseText } from "@/components/v2/meeting-display";
 import { isAbortError } from "@/lib/v2/errors";
 import { listMeetings, type MeetingListItem, type MeetingListPage, type MeetingPhase } from "@/lib/v2/meetings";
 
@@ -99,7 +99,11 @@ function MeetingsTable({ items }: { items: MeetingListItem[] }) {
                 className="h-12 cursor-pointer border-b border-mn-border last:border-b-0 hover:bg-mn-elevated max-md:flex max-md:h-auto max-md:flex-col max-md:gap-1 max-md:px-4 max-md:py-3"
               >
                 <td role="cell" data-label="회의 일시" className={`px-4 ${CELL_LABEL}`}>
-                  <span className="whitespace-nowrap font-mn-mono text-[13px]">{formatDateTime(meeting.heldAt)}</span>
+                  <span className="block whitespace-nowrap font-mn-mono text-[13px] leading-5">{formatHeldAt(meeting.heldAt)}</span>
+                  {/* 등록 일시: 서버가 자동 기록한 별개 값. 회의 일시와 구분해 작게 보인다(작업 88-4) */}
+                  <span className="block whitespace-nowrap text-[11px] leading-4 text-mn-muted">
+                    등록 <span className="font-mn-mono">{formatDateTime(meeting.registeredAt)}</span>
+                  </span>
                 </td>
                 <td role="cell" data-label="회의명" className={`truncate px-4 max-md:overflow-visible max-md:whitespace-normal max-md:break-words ${CELL_LABEL}`}>
                   <Link

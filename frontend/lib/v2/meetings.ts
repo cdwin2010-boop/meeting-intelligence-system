@@ -19,6 +19,8 @@ export type MeetingPhase = "active" | "ended" | "on_hold" | "deleted";
 export type EndKind = "auto" | "manager";
 
 export interface MeetingListItem {
+  /** 등록 일시(추가 필드, 작업 88-4): 서버가 자동 기록한 UTC 시각. 회의 일시(heldAt)와 별개. 필드가 없는 서버 응답이면 없다 */
+  registeredAt?: string;
   id: number;
   title: string;
   heldAt: string;
@@ -85,6 +87,8 @@ export interface ActionItem {
 
 /** GET /api/meetings/{id} (권한 없음·다른 고객사·없음은 모두 404) */
 export interface MeetingDetail {
+  /** 등록 일시(추가 필드, 작업 88-4): 서버가 자동 기록한 UTC 시각. 회의 일시(heldAt)와 별개 */
+  registeredAt?: string;
   id: number;
   /** 자료 종류(추가 필드): audio(음성 파일) | transcript_txt(자료 파일 txt) | transcript_xlsx(자료 파일 엑셀), 자료 파일은 STT 없음. 필드가 없으면 audio */
   sourceKind?: SourceKind;
@@ -512,4 +516,18 @@ export interface MeetingProcessing extends QueueFields {
 /** POST /api/meetings/{id}/reprocess(202): 실패한 회의록을 보관된 음성으로 다시 처리. 총괄·지시자만(서버 판정), 처리 중·음성 없음 등은 409 문구 */
 export function reprocessMeeting(id: number, signal?: AbortSignal): Promise<{ meetingId: number; jobId: number }> {
   return request<{ meetingId: number; jobId: number }>(`/meetings/${encodeURIComponent(String(id))}/reprocess`, { method: "POST", signal });
+}
+
+/** PATCH /api/meetings/{id}/held-at 응답(작업 88-4) */
+export interface HeldAtResult {
+  id: number;
+  heldAt: string;
+  registeredAt: string;
+  /** 같은 값이라 바뀌지 않았으면 false(이력도 남지 않는다) */
+  changed: boolean;
+}
+
+/** 등록 후 회의 일시 변경: 관리자·지시자만(서버 판정), 사유 필수. 이미 계산된 업무 기한은 다시 계산하지 않는다 */
+export function changeMeetingHeldAt(id: number, heldAt: string, reason: string, signal?: AbortSignal): Promise<HeldAtResult> {
+  return request<HeldAtResult>(`/meetings/${encodeURIComponent(String(id))}/held-at`, { method: "PATCH", body: { heldAt, reason }, signal });
 }

@@ -31,6 +31,7 @@ UPLOAD_UPDATE = "upload_update"  # 수정 회의록 업로드
 ADD_ITEM = "add_item"  # 업무 추가(수기 등록)
 EDIT_SPEAKERS = "edit_speakers"  # 화자 지정
 REPROCESS_MEETING = "reprocess_meeting"  # 실패한 회의록 재처리
+EDIT_HELD_AT = "edit_held_at"  # 등록 후 회의 일시 변경(관리자 이상, 사유 필수, 보류·종료·삭제 회의록 제외)
 PROCESS_NOW = "process_now"  # 대기 중인 변환을 대기열 맨 앞으로(즉시 변환: 관리자·지시자, queue 모드의 대기 작업만)
 RESOLVE_CHANGE_REQUEST = "resolve_change_request"  # 수정 요청 해결(수락·반려)
 REQUEST_CHANGE = "request_change"  # 수정 요청 작성(회의록 전체·업무 모두 같은 이름)
@@ -58,7 +59,7 @@ PROJECT_ACTIONS = (CHANGE_LEAD, MANAGE_MEMBERS, APPROVE_PROJECT, REJECT_PROJECT)
 
 MEETING_ACTIONS = (
     CONFIRM_MEETING, HOLD_MEETING, RESUME_MEETING, END_MEETING, DELETE_MEETING, EDIT_MINUTES, UPLOAD_UPDATE, ADD_ITEM,
-    EDIT_SPEAKERS, REPROCESS_MEETING, PROCESS_NOW, RESOLVE_CHANGE_REQUEST, REQUEST_CHANGE, DOWNLOAD_EXCEL, VIEW_HISTORY,
+    EDIT_SPEAKERS, REPROCESS_MEETING, PROCESS_NOW, EDIT_HELD_AT, RESOLVE_CHANGE_REQUEST, REQUEST_CHANGE, DOWNLOAD_EXCEL, VIEW_HISTORY,
 )
 ITEM_ACTIONS = (
     CONFIRM_ITEM, CLOSE_ITEM, DELETE_ITEM, SET_ASSIGNEE, SET_DUE, REQUEST_CHANGE, FIND_SIMILAR_ITEMS, REQUEST_SUPERSEDE, SUPERSEDE_ITEM,
@@ -84,6 +85,9 @@ def meeting_allowed_actions(session: Session, account: Account, meeting: Meeting
     allowed = [REQUEST_CHANGE, DOWNLOAD_EXCEL, VIEW_HISTORY]
     if has_rank(account, _RESOLVE_MIN_RANK):
         allowed.append(RESOLVE_CHANGE_REQUEST)
+    # 회의 일시 변경(작업 88-4): 관리자 이상(직급), 잠기지 않은 회의록
+    if has_rank(account, "manager") and not is_locked(meeting):
+        allowed.append(EDIT_HELD_AT)
     # 즉시 변환(작업 88-1): 권한은 관리자·지시자(직급), 큐에 대기 중인 작업이 있을 때만. 회의록 총괄 여부와 무관
     if (
         has_rank(account, "manager") and meeting.status == "processing" and not is_locked(meeting)

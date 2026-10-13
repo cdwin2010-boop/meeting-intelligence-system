@@ -38,12 +38,14 @@ def test_seed_meeting_is_listed_with_null_job_status():
     rows = meetings()
     assert [m["id"] for m in rows] == [SEED_ID]
     # camelCase 필드 4개만, 시드 회의는 업로드 작업이 없어 jobStatus가 null
-    assert rows[0] == {"id": SEED_ID, "title": rows[0]["title"], "startedAt": "2026-09-25T14:00:00+09:00", "jobStatus": None}
+    assert rows[0] == {"id": SEED_ID, "title": rows[0]["title"], "startedAt": "2026-09-25T14:00:00+09:00", "registeredAt": None, "jobStatus": None}
 
 
 def test_uploaded_meeting_appears_with_completed_status():
     receipt = upload().json()
     row = next(m for m in meetings() if m["id"] == receipt["meetingId"])
+    registered_at = row.pop("registeredAt")  # 작업 88-4: 서버가 자동 기록한 등록 일시(추가 필드)
+    assert registered_at and registered_at != row["startedAt"]
     assert row == {
         "id": receipt["meetingId"], "title": "목록 테스트 회의",
         "startedAt": "2026-09-29T14:00:00+09:00", "jobStatus": "completed",

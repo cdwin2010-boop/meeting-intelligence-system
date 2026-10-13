@@ -18,6 +18,8 @@ class Settings(BaseSettings):
 
     # ---- 음성 등록 (docs/API-CONTRACT.md "음성 등록 API") ----
     max_upload_mb: int = 500  # 이 크기를 넘으면 413
+    # 회의 시작 일시(startedAt)가 현재보다 미래여도 시계 오차로 보고 허용하는 시간(분). 넘으면 422 (작업 88-4)
+    started_at_future_tolerance_minutes: int = 10
     gpu_guard_threshold_minutes: float = 20.0  # 로컬 Whisper 예상 시간이 이 값 이상이면 409 (프로젝트 지침: 20분)
     fake_worker_enabled: bool = True  # False 이면 업로드 작업이 queued 로 남는다 (테스트/시연용)
     fake_worker_step_seconds: float = 3.0  # 가짜 처리기가 단계마다 기다리는 시간(초)

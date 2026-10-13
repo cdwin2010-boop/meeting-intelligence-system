@@ -150,3 +150,9 @@ ProcessNow { meetingId, jobId, status: "queued", queueAhead: number, prioritized
 - 오류: 404 not_found(없는 회의·볼 수 없는 회의), 409 invalid_state(진행 중·완료·실패, 한국어 사유), 운영 백엔드는 담당자 403.
 - 운영 백엔드와 같은 응답 모양이다(전체 설명·예시: `docs/contracts/process-now-v1.json`). **스텁은 인증이 없어 권한(관리자·지시자만)을 검사하지 않고**, 업로드를 바로 처리하므로 대기 순서도 바꾸지 않는다(모양만 맞춤). 운영에서는 서버가 반드시 권한을 검증한다.
 - 운영 백엔드의 `GET /api/me/processing` 항목에는 추가 필드 `canProcessNow`(즉시 변환 허용, 작업 88-3)가 있다. 스텁에는 이 목록 API 가 없어 해당 없음.
+
+### 9) 회의 일시 필수 입력·등록 일시 (작업 88-4)
+- 회의 일시(`startedAt`, 운영 백엔드는 `heldAt`)는 **필수 입력**이다. 사용자 현지 시각을 오프셋이 붙은 ISO 8601 로 보내고 서버가 UTC 로 저장한다. 현재보다 미래(시계 오차 `MEETING_AT_FUTURE_TOLERANCE_MINUTES`/`STARTED_AT_FUTURE_TOLERANCE_MINUTES`, 기본 10분 초과)면 **422**. 비어 있으면 운영 백엔드는 422(스텁은 기존 400 유지 — 프론트는 422 를 400 과 같게 취급).
+- 등록 일시 `registeredAt`(UTC)는 서버가 자동 기록한다(목록·상세 응답의 추가 필드, 입력·수정 불가, 회의 일시와 별개). 스텁은 이전 회의·시드에 `null`.
+- 등록 후 변경(운영 백엔드만): `PATCH /meetings/{id}/held-at` `{heldAt, reason}`. 관리자·지시자만, 사유 필수, 이력 기록, 업무 기한 재계산 없음. 전체 설명: `docs/contracts/meeting-held-at-v1.json`.
+

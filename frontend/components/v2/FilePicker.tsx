@@ -24,8 +24,10 @@ export function formatFileSize(bytes: number): string {
 
 interface FilePickerProps {
   file: File | null;
-  /** 파일을 골랐을 때(선택창을 취소하면 부르지 않는다) */
-  onPick: (file: File) => void;
+  /** 파일을 골랐을 때(선택창을 취소하면 부르지 않는다). source 는 일반 선택("file")인지 녹음하기("record")인지 */
+  onPick: (file: File, source: "file" | "record") => void;
+  /** "녹음하기" 버튼을 눌렀을 때(녹음 시작 시각을 제안값으로 쓰는 호출부용, 작업 88-4) */
+  onRecordClick?: () => void;
   /** 고르기 전 버튼 이름. 예) "수정할 파일 선택" */
   buttonLabel: string;
   /** 고른 뒤 버튼 이름(기본 "파일 다시 선택") */
@@ -55,15 +57,16 @@ export function FilePicker({
   className = "",
   wrapName = false,
   recordLabel,
+  onRecordClick,
 }: FilePickerProps) {
   const statusId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const recordRef = useRef<HTMLInputElement>(null);
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (source: "file" | "record") => (event: React.ChangeEvent<HTMLInputElement>) => {
     const picked = event.target.files?.[0] ?? null;
     // 같은 파일을 고쳐 다시 골라도 변경 알림이 오도록 입력값을 비운다(고른 파일은 호출부 상태에 있다)
     event.target.value = "";
-    if (picked) onPick(picked);
+    if (picked) onPick(picked, source);
   };
   return (
     <div className={`flex flex-wrap items-center gap-3 ${wrapName ? "min-w-0 max-w-full" : ""} ${className}`}>
@@ -75,7 +78,7 @@ export function FilePicker({
         accept={accept}
         tabIndex={-1}
         disabled={disabled}
-        onChange={handleChange}
+        onChange={handleChange("file")}
         className="sr-only"
       />
       {recordLabel ? (
@@ -87,12 +90,19 @@ export function FilePicker({
           {...({ capture: "microphone" } as Record<string, string>)} // React 타입은 user|environment 만 알지만 브라우저는 microphone 도 받는다
           tabIndex={-1}
           disabled={disabled}
-          onChange={handleChange}
+          onChange={handleChange("record")}
           className="sr-only"
         />
       ) : null}
       {recordLabel ? (
-        <Button variant="secondary" disabled={disabled} onClick={() => recordRef.current?.click()}>
+        <Button
+          variant="secondary"
+          disabled={disabled}
+          onClick={() => {
+            onRecordClick?.();
+            recordRef.current?.click();
+          }}
+        >
           {recordLabel}
         </Button>
       ) : null}

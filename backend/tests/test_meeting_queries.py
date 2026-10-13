@@ -68,7 +68,7 @@ def test_list_fields_and_sort_by_held_at_desc(env):
     assert [m["id"] for m in body["items"]] == [second, third, first]
     assert body["total"] == 3 and body["page"] == 1 and body["size"] == 20
     item = body["items"][0]
-    assert set(item) == {"id", "title", "heldAt", "registeredBy", "origin", "status", "confirmKind", "itemCount",
+    assert set(item) == {"id", "title", "heldAt", "registeredAt", "registeredBy", "origin", "status", "confirmKind", "itemCount",
                          "needsCompletionCount", "autoConfirmAt", "phase"}
     assert item["phase"] == "active"
     assert item["registeredBy"] == {"id": mgr.id, "name": "박관리"}

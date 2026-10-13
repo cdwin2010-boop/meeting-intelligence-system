@@ -174,16 +174,21 @@ def ordered(names: list[str]) -> list[str]:
 MANAGE_ACTIVE = ["edit_minutes", "upload_update", "add_item", "edit_speakers", "hold_meeting", "end_meeting", "delete_meeting"]
 
 
+# 회의 일시 변경(작업 88-4): 관리자 이상이고 잠기지 않은 회의록(보류·종료·삭제 제외)에서만 허용 동작에 있다
+HELD_AT = ["edit_held_at"]
+UNLOCKED_STATES = ("awaiting_confirmation", "confirmed", "processing", "failed")
+
+
 def lead_expected(state: str) -> list[str]:
     resolve = ["resolve_change_request"]
     return ordered({
-        "awaiting_confirmation": BASE + resolve + MANAGE_ACTIVE + ["confirm_meeting"],
-        "confirmed": BASE + resolve + MANAGE_ACTIVE,
+        "awaiting_confirmation": BASE + resolve + MANAGE_ACTIVE + ["confirm_meeting"] + HELD_AT,
+        "confirmed": BASE + resolve + MANAGE_ACTIVE + HELD_AT,
         "on_hold": BASE + resolve + ["resume_meeting", "delete_meeting"],
         "ended": BASE + resolve + ["delete_meeting"],
         "deleted": BASE + resolve,
-        "processing": BASE + resolve + ["edit_minutes", "upload_update", "add_item", "edit_speakers"],
-        "failed": BASE + resolve + ["edit_minutes", "upload_update", "add_item", "edit_speakers", "reprocess_meeting", "delete_meeting"],
+        "processing": BASE + resolve + ["edit_minutes", "upload_update", "add_item", "edit_speakers"] + HELD_AT,
+        "failed": BASE + resolve + ["edit_minutes", "upload_update", "add_item", "edit_speakers", "reprocess_meeting", "delete_meeting"] + HELD_AT,
     }[state])
 
 
@@ -213,7 +218,9 @@ def test_meeting_allowed_actions_for_lead_and_executive(env, team, state, who):
 @pytest.mark.parametrize("who", ["mgr_item", "mgr_other"])
 def test_meeting_allowed_actions_for_non_lead_managers(env, team, state, who):
     mid, _ = put_in_state(env, team, state)
-    assert detail(env, team[who], mid)["allowedActions"] == ordered(BASE + ["resolve_change_request"])  # 총괄 아닌 관리자: 쓰기 동작 없음
+    assert detail(env, team[who], mid)["allowedActions"] == ordered(
+        BASE + ["resolve_change_request"] + (HELD_AT if state in UNLOCKED_STATES else [])  # 총괄 아닌 관리자: 쓰기 동작 없음(회의 일시 변경만 직급 기준)
+    )
 
 
 @pytest.mark.parametrize("state", ["awaiting_confirmation", "confirmed", "ended", "processing", "failed"])

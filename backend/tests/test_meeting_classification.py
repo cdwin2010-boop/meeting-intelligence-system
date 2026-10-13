@@ -197,7 +197,7 @@ def test_project_meetings_listing(env, team, project):
     ids = [m["id"] for m in body["items"]]
     assert ids == [newer, older]  # 최신 회의 일시순, 다른 프로젝트·미연결 회의록·보류 단계는 섞이지 않음
     assert elsewhere not in ids and unlinked not in ids and held not in ids
-    assert set(body["items"][0]) == {"id", "title", "heldAt", "registeredBy", "origin", "status", "confirmKind", "itemCount",
+    assert set(body["items"][0]) == {"id", "title", "heldAt", "registeredAt", "registeredBy", "origin", "status", "confirmKind", "itemCount",
                                     "needsCompletionCount", "autoConfirmAt", "phase"}
     assert body["total"] == 2 and body["availablePhases"] == ["active", "ended"]
     # 쪽 나눔

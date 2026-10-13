@@ -17,6 +17,7 @@ from app.models.common import utcnow
 from app.services.classification import save_classification, validate_classification
 from app.pipeline.transcript_text import TranscriptTextError, decode_transcript
 from app.services.processing import auto_confirm_at, get_job_runner
+from app.services.meeting_time import parse_meeting_at
 from app.services.task_queue import enqueue
 from app.services.upload_storage import claim_stored_file
 from app.pipeline.transcript_xlsx import xlsx_to_text
@@ -34,17 +35,6 @@ class UploadAccepted(CamelModel):
 
 def _bad_request(message: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
-
-
-def _parse_held_at(value: str) -> datetime:
-    """오프셋이 있는 ISO 8601 만 받는다(예: 2026-10-01T14:00:00+09:00). 저장은 UTC."""
-    try:
-        parsed = datetime.fromisoformat(value.strip())
-    except ValueError:
-        raise _bad_request("heldAt 형식이 올바르지 않습니다(ISO 8601).") from None
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise _bad_request("heldAt 에는 시간대 오프셋이 필요합니다(예: +09:00).")
-    return parsed.astimezone(timezone.utc)
 
 
 def _parse_participant_ids(values: list[str] | None) -> list[int]:
@@ -129,7 +119,7 @@ def upload_meeting(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     title: str = Form(""),
-    held_at: str = Form(..., alias="heldAt"),
+    held_at: str = Form("", alias="heldAt"),  # 필수: 비어 있으면 서비스가 422 로 거부(작업 88-4)
     participant_ids: list[str] | None = Form(None, alias="participantIds"),
     meeting_type: str | None = Form(None, alias="meetingType"),
     project_id: int | None = Form(None, alias="projectId"),
@@ -140,7 +130,7 @@ def upload_meeting(
     job_runner: Callable[[int, sessionmaker], None] = Depends(get_job_runner),
 ) -> UploadAccepted:
     forbid_system_admin(session, account)
-    held_at_utc = _parse_held_at(held_at)
+    held_at_utc = parse_meeting_at(held_at)  # 필수·미래 거부·UTC 변환(services/meeting_time.py)
     ids = _parse_participant_ids(participant_ids)
     _check_participants(session, account, ids)
 

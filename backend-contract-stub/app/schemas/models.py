@@ -20,6 +20,8 @@ class Meeting(CamelModel):
     id: str
     title: str
     started_at: str
+    # 등록 일시(UTC, 서버 자동 기록, 작업 88-4). 이전에 저장된 회의·시드 데이터에는 없다(None)
+    registered_at: str | None = None
     attendees: list[Attendee]
     # 전사 원문. 아직 전사 전이거나 시드 데이터면 None (프론트 화면의 모달/토글에서 열람)
     transcript_text: str | None = None
@@ -37,6 +39,7 @@ class MeetingSummary(CamelModel):
     id: str
     title: str
     started_at: str
+    registered_at: str | None = None  # 등록 일시(UTC, 서버 자동 기록). 이전 회의·시드는 None
     # 가장 최근 작업의 상태. 업로드 작업이 없는 시드 회의는 None
     job_status: Literal["queued", "processing", "completed", "failed"] | None = None
 

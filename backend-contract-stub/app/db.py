@@ -167,7 +167,8 @@ class Store:
         for r in rows:
             body = json.loads(r["body"])
             meetings.append(
-                {"id": body["id"], "title": body["title"], "startedAt": body["startedAt"], "jobStatus": r["job_status"]}
+                {"id": body["id"], "title": body["title"], "startedAt": body["startedAt"], "registeredAt": body.get("registeredAt"),
+                 "jobStatus": r["job_status"]}
             )
         # startedAt은 시간대 표기(+09:00, Z 등)가 섞일 수 있어 문자열이 아니라 시각으로 비교한다
         meetings.sort(key=lambda m: (_instant(m["startedAt"]), m["id"]), reverse=True)
@@ -240,7 +241,9 @@ class Store:
                 today = datetime.now(timezone.utc).strftime("%Y%m%d")
                 job_id = f"JOB-{today}-{next_no:03d}"
                 meeting_id = f"mtg-{today}-{next_no:03d}"
-                body = {"id": meeting_id, "title": title, "startedAt": started_at_iso, "attendees": []}
+                # registeredAt: 서버가 자동 기록하는 등록 일시(UTC). 회의 일시(startedAt)와 별개이고 입력·수정할 수 없다(작업 88-4)
+                registered_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                body = {"id": meeting_id, "title": title, "startedAt": started_at_iso, "registeredAt": registered_at, "attendees": []}
                 d.execute("INSERT INTO meetings (id, body) VALUES (?, ?)", (meeting_id, json.dumps(body, ensure_ascii=False)))
                 d.execute(
                     "INSERT INTO jobs (id, meeting_title, audio_seconds, elapsed_seconds, status, attempt, started_at,"

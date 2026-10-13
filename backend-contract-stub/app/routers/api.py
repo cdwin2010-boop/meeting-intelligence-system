@@ -1,6 +1,6 @@
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, Response, UploadFile
@@ -116,6 +116,10 @@ async def upload_meeting(
         raise HTTPException(status_code=400, detail="title is required (1-200 chars)")
     if not started_at or (started := parse_started_at(started_at)) is None:
         raise HTTPException(status_code=400, detail="startedAt must be an ISO 8601 datetime")
+    # 회의 일시는 현재보다 미래일 수 없다(작업 88-4, 운영 백엔드와 같은 규칙: 422). 오프셋이 없으면 UTC 로 본다
+    started_utc = started if started.tzinfo is not None else started.replace(tzinfo=timezone.utc)
+    if started_utc > datetime.now(timezone.utc) + timedelta(minutes=settings.started_at_future_tolerance_minutes):
+        raise HTTPException(status_code=422, detail="회의 일시는 현재 시각보다 미래일 수 없습니다. 날짜와 시각을 다시 확인해 주세요.")
     if engine not in ("gemini-api", "faster-whisper"):
         raise HTTPException(status_code=400, detail="engine must be gemini-api or faster-whisper")
     if file is None or not file.filename:

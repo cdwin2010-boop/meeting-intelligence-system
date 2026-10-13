@@ -24,6 +24,8 @@ KIND_ITEM_UPDATE = "item.updated"
 KIND_MEETING_REPROCESS = "meeting.reprocessed"
 # 대기 중인 변환을 대기열 맨 앞으로 올림(작업 88-1): 실행자·시각·사유("즉시 변환 요청")·우선순위 전후
 KIND_MEETING_PROCESS_NOW = "meeting.process_now"
+# 등록 후 회의 일시 변경(작업 88-4): 변경자·시각·사유·변경 전후 값. 이미 계산된 업무 기한은 다시 계산하지 않는다
+KIND_MEETING_HELD_AT = "meeting.held_at_changed"
 # 기존 업무의 빈 근거 시각을 전사문과 대조해 채운 보정(app/jobs/backfill_evidence_time.py)
 KIND_EVIDENCE_BACKFILL = "evidence.backfilled"
 # 조직·프로젝트(작업 66-2). 대상 종류는 department·project 라 회의록 이력 조회에는 섞이지 않는다
@@ -55,6 +57,7 @@ HISTORY_KINDS: dict[str, str] = {
     KIND_ITEM_UPDATE: "업무 수정",
     KIND_MEETING_REPROCESS: "재처리",
     KIND_MEETING_PROCESS_NOW: "즉시 변환",
+    KIND_MEETING_HELD_AT: "회의 일시 변경",
     KIND_EVIDENCE_BACKFILL: "근거 시각 보정",
     KIND_DEPARTMENT_UPDATE: "부서 변경",
     KIND_PROJECT_REGISTERED: "프로젝트 등록",

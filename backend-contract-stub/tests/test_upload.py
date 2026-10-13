@@ -183,3 +183,24 @@ def test_process_now_conflicts_and_not_found(monkeypatch):
     r = client.post(f"/api/meetings/{done['meetingId']}/process-now")
     assert r.status_code == 409 and "완료" in r.json()["detail"]
     assert client.post("/api/meetings/mtg-none/process-now").status_code == 404
+
+
+# ---------------- 회의 일시 (작업 88-4) ----------------
+def test_future_started_at_is_rejected_with_422_and_nothing_is_saved():
+    from datetime import datetime, timedelta, timezone
+
+    before = len(client.get("/api/meetings").json())
+    future = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(timespec="seconds")
+    r = upload(startedAt=future)
+    assert r.status_code == 422 and "미래" in r.json()["detail"]
+    assert len(client.get("/api/meetings").json()) == before
+
+
+def test_registered_at_is_recorded_by_server_and_returned_in_list_and_detail():
+    r = upload(data={"registeredAt": "2020-01-01T00:00:00+00:00"})  # 클라이언트가 보내도 무시된다
+    assert r.status_code == 202
+    meeting_id = r.json()["meetingId"]
+    detail = client.get(f"/api/meetings/{meeting_id}").json()
+    listed = next(m for m in client.get("/api/meetings").json() if m["id"] == meeting_id)
+    assert detail["registeredAt"] == listed["registeredAt"] and not detail["registeredAt"].startswith("2020")
+    assert detail["startedAt"] == FORM["startedAt"]  # 회의 일시와 별개로 보관

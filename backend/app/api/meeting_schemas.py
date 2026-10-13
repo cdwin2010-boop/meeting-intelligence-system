@@ -14,6 +14,8 @@ class MeetingListItem(CamelModel):
     id: int
     title: str
     held_at: datetime
+    # 등록 일시(추가 필드, 작업 88-4): 서버 자동 기록(UTC). 회의 일시와 별개
+    registered_at: datetime
     registered_by: AccountRef
     origin: str
     status: str
@@ -141,6 +143,8 @@ class MeetingDetail(CamelModel):
     confirmed_by: AccountRef | None
     confirmed_at: datetime | None
     first_created_at: datetime
+    # 등록 일시(추가 필드, 작업 88-4): 서버가 UTC 로 자동 기록한 값(first_created_at 과 같다). 회의 일시(held_at)와 구분해 표시한다
+    registered_at: datetime
     auto_confirm_at: datetime | None
     registered_by: AccountRef
     origin: str

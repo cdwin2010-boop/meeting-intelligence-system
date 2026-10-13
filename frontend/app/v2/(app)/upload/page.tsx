@@ -2,7 +2,9 @@
 
 /*
  * v2 회의록 올리기 (시안 docs/ui-v2-mockups/04-upload.html)
- * - 입력: 음성 파일(선택 또는 끌어다 놓기), 회의명(비우면 서버가 파일명으로 채움), 회의 일시(브라우저 현지 시각 → 오프셋 붙은 ISO)
+ * - 입력: 음성 파일(선택 또는 끌어다 놓기), 회의명(비우면 서버가 파일명으로 채움), 회의 일시(필수, 브라우저 현지 시각 → 오프셋 붙은 ISO)
+ * - 회의 일시(작업 88-4): 처음에는 빈칸이다. 파일을 고르면 파일의 수정 시각을, "녹음하기"로 고르면 녹음을 시작한 시각을 제안값으로 미리 채우고
+ *   등록자가 확인한다(직접 고친 값은 덮어쓰지 않음). 제안값이 없으면 빈칸 + 필수 안내. 비어 있거나 현재보다 미래면 서버를 부르지 않고 안내한다
  * - POST /api/meetings/upload(202) 성공 시 /v2/meetings/{meetingId} 로 이동. 처리(전사·추출)는 서버 백그라운드
  * - 허용 형식(415)·용량(413)은 서버 설정이 판정한다. 오류는 서버 문구로 보여 주고 같은 입력으로 다시 시도할 수 있다
  * - 참석자는 같은 고객사 계정 중 여러 명 선택(선택 사항, 목록 조회 실패해도 올리기는 가능)
@@ -26,6 +28,13 @@ import { PendingUploadList } from "@/components/v2/PendingUploadList";
 import { useProcessing } from "@/components/v2/ProcessingProvider";
 import { WifiNoticeDialog } from "@/components/v2/WifiNoticeDialog";
 import { isAbortError } from "@/lib/v2/errors";
+import {
+  isFutureMeetingAt,
+  MEETING_AT_FUTURE_MESSAGE,
+  MEETING_AT_REQUIRED_MESSAGE,
+  suggestionFromTimestamp,
+  toOffsetIso,
+} from "@/lib/v2/meeting-at";
 import { shouldShowWifiNotice } from "@/lib/v2/network";
 import {
   addPending,
@@ -55,25 +64,6 @@ import { clearUploadDraft, loadUploadDraft, saveUploadDraft, UPLOAD_PATH } from 
 
 const inputClass =
   "mn-focus h-10 w-full rounded-mn-control border border-mn-control bg-mn-bg px-3 text-sm text-mn-text outline-none disabled:opacity-50";
-
-const pad = (n: number) => String(n).padStart(2, "0");
-
-/** 지금 시각(현지)을 date·time 입력 기본값으로 */
-function nowParts(): { date: string; time: string } {
-  const d = new Date();
-  return { date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, time: `${pad(d.getHours())}:${pad(d.getMinutes())}` };
-}
-
-/** 현지 날짜·시각 → 오프셋 붙은 ISO 8601 (예: 2026-10-01T13:20:00+09:00). 잘못된 값이면 null */
-function toOffsetIso(date: string, time: string): string | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return null;
-  const local = new Date(`${date}T${time}:00`);
-  if (Number.isNaN(local.getTime())) return null;
-  const offsetMin = -local.getTimezoneOffset(); // 그 날짜 기준(서머타임 반영)
-  const sign = offsetMin >= 0 ? "+" : "-";
-  const abs = Math.abs(offsetMin);
-  return `${date}T${time}:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
-}
 
 /** 올리기 한 건의 입력(새로 고른 파일 또는 보류 목록의 파일). fromPendingId 가 있으면 보류 목록에서 온 것이다 */
 interface Submission {
@@ -126,6 +116,12 @@ function UploadForm() {
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [restoredNotice, setRestoredNotice] = useState(false);
+  // 회의 일시 제안값(작업 88-4): 사용자가 날짜·시각을 직접 고친 적이 있으면 제안값으로 덮어쓰지 않는다
+  const heldAtTouched = useRef(false);
+  const heldAtSuggested = useRef(false);
+  const [suggestedNotice, setSuggestedNotice] = useState(false);
+  const recordStartedAt = useRef<number | null>(null);
+  const dateRef = useRef<HTMLInputElement | null>(null);
   // 사용자가 자료 종류를 직접 고른 적이 있는가(그러면 파일을 골라도 종류를 자동으로 바꾸지 않는다)
   const kindPickedByUser = useRef(false);
   // 모바일(768 미만) 또는 터치 기기에서만 "녹음하기"를 보인다(작업 86-1a). PC 에서는 DOM 에도 없다
@@ -161,14 +157,6 @@ function UploadForm() {
   const [templateLoading, setTemplateLoading] = useState(false);
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
 
-  // 기본 일시는 화면을 연 시각(서버 렌더링과 어긋나지 않도록 마운트 후 채움)
-  useEffect(() => {
-    const parts = nowParts();
-    // 이미 값이 있으면(복원된 값, 개발 모드 이중 실행) 덮어쓰지 않는다
-    setDate((prev) => prev || parts.date);
-    setTime((prev) => prev || parts.time);
-  }, []);
-
   // 새 프로젝트 등록에서 돌아온 경우(resume=1)만 임시 저장값을 복원한다. 메뉴로 들어오면 저장값을 버린다.
   // 처리한 인자(resume, newProject)는 주소에서 지워 새로고침해도 다시 적용되지 않게 한다.
   useEffect(() => {
@@ -185,6 +173,7 @@ function UploadForm() {
         setTitle(draft.title);
         if (draft.date) setDate(draft.date);
         if (draft.time) setTime(draft.time);
+        if (draft.date || draft.time) heldAtTouched.current = true; // 복원된 값은 사용자가 입력한 값
         setParticipantIds(draft.participantIds);
         setMeetingType(draft.meetingType);
         setSourceKind(draft.sourceKind);
@@ -217,7 +206,26 @@ function UploadForm() {
   // 화면을 떠나면 진행 중인 전송 취소
   useEffect(() => () => controllerRef.current?.abort(), []);
 
-  function pickFile(next: File | null) {
+  /** 파일(또는 녹음)에서 회의 일시 제안값을 채운다. 사용자가 이미 직접 입력했으면 건드리지 않는다 */
+  function suggestHeldAt(next: File, source: "file" | "record") {
+    if (heldAtTouched.current) return;
+    const startedAt = source === "record" ? recordStartedAt.current : null;
+    const suggestion = suggestionFromTimestamp(startedAt ?? next.lastModified);
+    if (suggestion) {
+      setDate(suggestion.date);
+      setTime(suggestion.time);
+      heldAtSuggested.current = true;
+      setSuggestedNotice(true);
+    } else {
+      setDate("");
+      setTime("");
+      heldAtSuggested.current = false;
+      setSuggestedNotice(false);
+    }
+  }
+
+  function pickFile(next: File | null, source: "file" | "record" = "file") {
+    if (next) suggestHeldAt(next, source);
     // 확장자로 자료 종류를 자동 선택한다(.xlsx → 엑셀, .txt → txt, 음성 확장자 → 음성). 직접 바꾼 선택은 그대로 둔다
     const detected = next ? kindForFileName(next.name) : null;
     if (detected && detected !== sourceKind && !kindPickedByUser.current) setSourceKind(detected);
@@ -231,7 +239,7 @@ function UploadForm() {
     setDragOver(false);
     if (submitting) return;
     const dropped = event.dataTransfer.files?.[0];
-    if (dropped) pickFile(dropped);
+    if (dropped) pickFile(dropped, "file");
   }
 
   // 자료 종류를 바꾸면 고른 파일을 비운다(종류마다 받는 파일이 다르다)
@@ -290,7 +298,13 @@ function UploadForm() {
     }
     const heldAt = toOffsetIso(date, time);
     if (!heldAt) {
-      setFormError("회의 일시를 입력하세요.");
+      setFormError(MEETING_AT_REQUIRED_MESSAGE);
+      dateRef.current?.focus();
+      return;
+    }
+    if (isFutureMeetingAt(heldAt)) {
+      setFormError(MEETING_AT_FUTURE_MESSAGE); // 서버도 같은 사유로 거부한다
+      dateRef.current?.focus();
       return;
     }
     if (!meetingType) {
@@ -549,6 +563,9 @@ function UploadForm() {
               className="justify-center"
               wrapName
               onPick={pickFile}
+              onRecordClick={() => {
+                recordStartedAt.current = Date.now(); // 녹음 시작 시각(회의 일시 제안값)
+              }}
             />
             {file && kindMismatchHint(sourceKind, file.name) ? (
               <p role="status" className="text-sm">
@@ -585,7 +602,12 @@ function UploadForm() {
                 value={date}
                 required
                 disabled={submitting}
-                onChange={(event) => setDate(event.target.value)}
+                ref={dateRef}
+                onChange={(event) => {
+                  heldAtTouched.current = true;
+                  setSuggestedNotice(false);
+                  setDate(event.target.value);
+                }}
                 className={`${inputClass} w-[160px] font-mn-mono`}
               />
               <label htmlFor={timeId} className="sr-only">
@@ -597,12 +619,23 @@ function UploadForm() {
                 value={time}
                 required
                 disabled={submitting}
-                onChange={(event) => setTime(event.target.value)}
+                onChange={(event) => {
+                  heldAtTouched.current = true;
+                  setSuggestedNotice(false);
+                  setTime(event.target.value);
+                }}
                 className={`${inputClass} w-[120px] font-mn-mono`}
               />
               <span className="text-xs text-mn-muted">이 컴퓨터의 현지 시각</span>
             </div>
             <span className="text-xs text-mn-muted">상대 날짜(다음 주 화요일 등)를 이 일시 기준으로 계산합니다.</span>
+            {suggestedNotice ? (
+              <span role="status" className="text-xs text-mn-text">
+                파일의 시각을 제안값으로 채웠습니다. 실제 회의가 열린 일시가 맞는지 확인해 주세요.
+              </span>
+            ) : !date || !time ? (
+              <span className="text-xs text-mn-muted">필수 입력입니다. 회의가 열린 날짜와 시각을 입력해 주세요.</span>
+            ) : null}
           </fieldset>
 
           <MeetingTypeField value={meetingType} onChange={pickType} disabled={submitting} firstRef={typeRef} />

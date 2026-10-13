@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "meeting-held-at-v1",
+  "title": "meeting-held-at-v1: 회의 일시 필수 입력·등록 일시·등록 후 변경 (작업 88-4)",
+  "description": "회의 일시(운영 백엔드 필드명 heldAt, 스텁 startedAt)는 회의(상담) 등록 때 필수 입력이다. 입력은 사용자 현지 시각을 오프셋이 붙은 ISO 8601 로 보내고(예: 2026-10-01T14:00:00+09:00) 서버가 UTC 로 저장한다. 비어 있으면 422(\"회의 일시를 입력해 주세요(필수 입력입니다).\"), 형식·오프셋 오류는 400, 현재보다 미래(시계 오차 허용 MEETING_AT_FUTURE_TOLERANCE_MINUTES, 기본 10분 초과)는 422(\"회의 일시는 현재 시각보다 미래일 수 없습니다. ...\"). 등록 일시(registeredAt)는 서버가 UTC 로 자동 기록하며 입력·수정할 수 없고 회의 일시와 별개로 보관한다. 상대 날짜(다음 주 화요일 등) 계산의 기준일은 회의 일시의 현지 날짜다. 자동 확정 기간의 기준은 기존대로 등록 일시(최초 생성)다. 등록 후 변경은 관리자(manager)·지시자(executive)만, 사유 필수, 변경 이력(구분 \"회의 일시 변경\")에 변경자·시각·사유·전후 값을 남기며 이미 계산된 업무 기한은 다시 계산하지 않는다. 원본 모델: backend/app/services/meeting_time.py, backend/app/api/meeting_held_at.py.",
+  "definitions": {
+    "upload-field": {
+      "description": "POST /api/meetings/upload 의 폼 필드(스텁은 POST /api/meetings 의 startedAt)",
+      "type": "object",
+      "required": ["heldAt"],
+      "properties": {
+        "heldAt": {"type": "string", "format": "date-time", "description": "필수. 오프셋 포함 ISO 8601. 미래 불가"}
+      }
+    },
+    "change-request": {
+      "description": "PATCH /api/meetings/{meetingId}/held-at 요청 본문 (관리자·지시자, 허용 동작 edit_held_at)",
+      "type": "object",
+      "required": ["heldAt", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "heldAt": {"type": "string", "format": "date-time"},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 2000, "description": "공백뿐이면 422"}
+      }
+    },
+    "change-response": {
+      "description": "200 응답. 같은 값이면 changed=false(이력 없음, 멱등). 담당자 403, 볼 수 없으면 404, 보류·종료·삭제 409.",
+      "type": "object",
+      "required": ["id", "heldAt", "registeredAt", "changed"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "integer"},
+        "heldAt": {"type": "string", "format": "date-time"},
+        "registeredAt": {"type": "string", "format": "date-time"},
+        "changed": {"type": "boolean"}
+      }
+    },
+    "response-fields": {
+      "description": "목록(GET /api/meetings 항목)·상세(GET /api/meetings/{id})에 추가된 필드. 스텁은 같은 이름의 registeredAt(이전 회의·시드는 null).",
+      "type": "object",
+      "properties": {
+        "registeredAt": {"type": "string", "format": "date-time", "description": "등록 일시(UTC, 서버 자동 기록). 상세의 firstCreatedAt 과 같은 값"}
+      }
+    }
+  }
+}

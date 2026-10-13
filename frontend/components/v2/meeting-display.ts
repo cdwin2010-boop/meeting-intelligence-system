@@ -65,6 +65,12 @@ export function formatDateTime(iso: string | null | undefined): string {
   return date.toLocaleString("sv-SE", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+/** 회의 일시 표시: 값이 없는 옛 회의록은 "회의 일시 미입력"(계산은 기존 방식인 등록 일시 기준을 유지한다) */
+export const HELD_AT_MISSING = "회의 일시 미입력";
+export function formatHeldAt(iso: string | null | undefined): string {
+  return iso ? formatDateTime(iso) : HELD_AT_MISSING;
+}
+
 /** ISO 시각 → 브라우저 현지 날짜 YYYY-MM-DD */
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";

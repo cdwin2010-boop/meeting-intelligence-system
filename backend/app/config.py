@@ -83,6 +83,8 @@ class Settings(BaseSettings):
     worker_shutdown_grace: int = Field(30, ge=0)
     # 즉시 변환(작업 88-1): 대기열 맨 앞으로 올릴 때 부여하는 우선순위 값(기본 0 보다 커야 함) / 워커 생존 신호를 쓰는 간격(초)
     # / 마지막 신호가 이 시간(초)보다 오래되면 워커 응답 없음(workerAlive=false). 간격보다 충분히 커야 한다
+    # 회의 일시(작업 88-4): 현재 시각보다 이만큼(분)까지는 시계 오차로 보고 허용한다. 그보다 미래면 거부(422)
+    meeting_at_future_tolerance_minutes: int = Field(10, ge=0)
     queue_priority_immediate: int = Field(100, ge=1)
     worker_heartbeat_interval_sec: float = Field(5.0, gt=0)
     worker_heartbeat_stale_sec: int = Field(30, ge=1)
