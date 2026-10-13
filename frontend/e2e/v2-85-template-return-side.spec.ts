@@ -62,7 +62,7 @@ async function open(page: Page, path: string, options: Options = {}) {
   await page.route(/\/api\/meetings\/\d+\/change-requests$/, (route) => json(route, []));
   await page.route("**/api/accounts", (route) => json(route, [{ id: 7, name: "한팀장", rank: "manager" }]));
   if (options.cookie) {
-    await page.context().addCookies([{ name: "mi_side_position", value: options.cookie, url: "http://localhost:3100" }]);
+    await page.context().addCookies([{ name: "mi_side_position", value: options.cookie, url: `http://localhost:${process.env.E2E_PORT ?? 3100}` }]);
   }
   await page.goto("/v2/login");
   await page.evaluate(([k, t]) => window.sessionStorage.setItem(k, t), [TOKEN_KEY, FAKE_TOKEN]);
@@ -221,7 +221,7 @@ test.describe("보조창 좌우 전환", () => {
     await expect(page.getByRole("navigation", { name: "주 메뉴" })).toBeVisible();
     expect((await box(page, "aside")).x).toBeLessThan(10);
     await context.clearCookies();
-    await context.addCookies([{ name: "mi_side_position", value: "evil", url: "http://localhost:3100" }]);
+    await context.addCookies([{ name: "mi_side_position", value: "evil", url: `http://localhost:${process.env.E2E_PORT ?? 3100}` }]);
     await page.goto("/v2");
     await expect(page.getByRole("navigation", { name: "주 메뉴" })).toBeVisible();
     expect((await box(page, "aside")).x).toBeLessThan(10);

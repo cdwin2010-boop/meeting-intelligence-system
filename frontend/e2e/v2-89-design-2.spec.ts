@@ -35,7 +35,7 @@ async function open(page: Page, path: string, cookie?: "left" | "right") {
       },
     ]),
   );
-  if (cookie) await page.context().addCookies([{ name: "mi_side_position", value: cookie, url: "http://localhost:3100" }]);
+  if (cookie) await page.context().addCookies([{ name: "mi_side_position", value: cookie, url: `http://localhost:${process.env.E2E_PORT ?? 3100}` }]);
   await page.goto("/v2/login");
   await page.evaluate(([k, t]) => window.sessionStorage.setItem(k, t), [TOKEN_KEY, FAKE_TOKEN]);
   await page.goto(path);

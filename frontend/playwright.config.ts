@@ -12,7 +12,8 @@
 import { defineConfig } from "@playwright/test";
 
 const externalBaseURL = process.env.E2E_BASE_URL;
-const PORT = 3100;
+// 같은 PC 의 다른 폴더(테스트 폴더)와 포트가 겹치지 않도록 E2E_PORT 로 바꿀 수 있다(기본 3100)
+const PORT = Number(process.env.E2E_PORT ?? 3100);
 
 export default defineConfig({
   testDir: "./e2e",

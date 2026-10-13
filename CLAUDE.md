@@ -1,5 +1,11 @@
 # 프로젝트 규칙: 음성 회의록 AI 의사결정 추적관리 시스템
 
+## 개발 폴더 분리 (필수, 상세는 docs/dev-workflow.md)
+- 모든 개발은 개발 폴더 `C:\meeting-intelligence-system-dev`(git worktree, `dev` 브랜치)에서만 한다. 테스트 폴더 `C:\meeting-intelligence-system-v1.7`(`main`)은 형님이 서버를 띄워 시험하므로 소스·`.env`·DB·업로드·설정 파일을 직접 수정하지 않는다.
+- 테스트 폴더는 형님 승인 후 백업을 한 다음 `dev` 를 병합(`--ff-only` 우선)해서만 갱신한다. 병합 때 `.env`·DB·업로드 파일·엔진 시험 설정 파일은 건드리지 않는다.
+- 마이그레이션이 포함되면 백업 후 형님 승인을 받아 적용과 서버·워커 재시작을 한 번에 한다.
+- 개발 폴더 포트: 백엔드 8101·스텁 8100·프론트 3200·E2E 3201(`E2E_PORT`). 8000/8001/3000/3100 은 테스트 폴더 전용이다.
+
 ## 구조와 실행 명령
 - backend-contract-stub/: FastAPI + SQLite(파일, `STUB_DB_PATH` 기본 `data/stub.db`, 재시작해도 유지·자동 초기화 없음) + STT/LLM 파이프라인(fake / Gemini) 참고 서버 (Python 3.11+, `.venv`). **현재 실행되는 서버는 이 스텁이다.**
 - backend/: 운영 백엔드 자리. **아직 이 저장소에 없다.**
