@@ -11,6 +11,8 @@ from typing import Sequence
 
 _LINE_TIMED = re.compile(r"^\[\s*(\d{1,3}:\d{2}(?::\d{2})?)\s*\]\s*(.*)$")
 _LINE_LABEL = re.compile(r"^([^:：\n]{1,20}?)\s*[:：]\s*(.*)$")
+# 한 줄로 이어진 전사문(STT 가 줄바꿈 없이 "... [00:00:13] 화자2: ..." 로 이어 씀)의 발언 경계: 앞이 공백이고 뒤가 "[시각] 라벨:" 인 곳만
+_INLINE_BOUNDARY = re.compile(r"[ \t]+(?=\[\s*\d{1,3}:\d{2}(?::\d{2})?\s*\]\s*[^\s:：\[\]\n.,!?。]{1,20}\s*[:：])")
 _SENTENCE_END = re.compile(r"(?<=[.!?。！？])\s+|(?<=다\.)\s*|\n")
 _TITLE_MAX = 40
 
@@ -76,7 +78,8 @@ class Chunk:
 def parse_utterances(text: str) -> list[Utterance]:
     """정규화된 전사문("[hh:mm:ss] 화자: 내용" 또는 "화자: 내용" 줄) → 발언 목록. 라벨 없는 줄은 앞 발언에 이어 붙인다."""
     result: list[Utterance] = []
-    for raw in (text or "").splitlines():
+    # 줄바꿈 없이 이어진 발언은 발언 경계에서 줄을 나눈 뒤 읽는다(안 나누면 전체가 한 발언·첫 화자로 읽힌다, 작업 B-1a)
+    for raw in _INLINE_BOUNDARY.sub("\n", text or "").splitlines():
         line = raw.strip()
         if not line:
             continue

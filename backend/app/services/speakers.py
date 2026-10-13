@@ -16,8 +16,23 @@ from app.models import Account, ActionItem, Event, MeetingSpeaker, Transcript, a
 from app.models.item_conditions import pending_item
 
 UNREGISTERED_SUFFIX = "(미등록)"
-# "[00:12:40] 화자1: 말" — 대괄호 타임스탬프 뒤 첫 콜론 앞까지를 화자 표기로 본다
-_LINE = re.compile(r"^(\s*\[[^\]\n]*\]\s*)([^:\n]+?)(\s*:)", re.MULTILINE)
+# "[00:12:40] 화자1: 말" — 대괄호 타임스탬프 뒤 첫 콜론 앞까지를 화자 표기로 본다.
+# 줄 머리는 대괄호 내용을 가리지 않고 기존 규칙 그대로다(그룹 1·2). 줄 중간(STT 가 줄바꿈 없이 한 줄로 이어 쓴 전사문, 작업 B-1a)은
+# 시각 모양([mm:ss]·[hh:mm:ss]) 뒤에 공백·문장부호 없는 짧은 표기가 오고 콜론이 이어질 때만 화자로 본다(그룹 3·4).
+# 그래야 말 속의 "[00:12] 쯤 확정하겠습니다. 시간: 오후" 같은 부분을 화자로 잘못 읽지 않는다.
+_LINE = re.compile(
+    r"(?:(^\s*\[[^\]\n]*\]\s*)([^:\n]+?)"
+    r"|((?<=\s)\[\d{1,3}:\d{2}(?::\d{2})?(?:\.\d+)?\]\s*)([^\s:：\[\]\n.,!?。]{1,20}))"
+    r"(\s*:)",
+    re.MULTILINE,
+)
+
+
+def _parts(match: "re.Match[str]") -> tuple[str, str, str]:
+    """(타임스탬프 부분, 화자 표기, 콜론 부분)"""
+    if match.group(2) is not None:
+        return match.group(1), match.group(2), match.group(5)
+    return match.group(3), match.group(4), match.group(5)
 
 
 @dataclass(frozen=True)
@@ -44,7 +59,7 @@ def transcript_labels(transcript: Transcript | None) -> list[str]:
     if transcript.segments:
         labels = [str(s.get("speaker") or "").strip() for s in transcript.segments if isinstance(s, dict)]
     else:
-        labels = [m.group(2).strip() for m in _LINE.finditer(transcript.full_text or "")]
+        labels = [_parts(m)[1].strip() for m in _LINE.finditer(transcript.full_text or "")]
     return [label for label in dict.fromkeys(labels) if label]
 
 
@@ -69,8 +84,9 @@ def display_text(full_text: str, speakers: list[SpeakerView]) -> str:
         return full_text
 
     def replace(match: re.Match) -> str:
-        label = match.group(2).strip()
-        return f"{match.group(1)}{names[label]}{match.group(3)}" if label in names else match.group(0)
+        head, raw_label, colon = _parts(match)
+        label = raw_label.strip()
+        return f"{head}{names[label]}{colon}" if label in names else match.group(0)
 
     return _LINE.sub(replace, full_text or "")
 
