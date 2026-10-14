@@ -41,6 +41,7 @@ from app.services.supersession import project_of_meeting, superseded_ids, supers
 from app.models.item_conditions import live_item, not_deleted_item
 from app.services.reasons import event_reason, latest_reason
 from app.services.speakers import SpeakerView, display_text, load_speakers
+from app.services.evidence_recompute import approx_evidence_items
 from app.services.history import record_meeting_view
 from app.services.task_queue import queue_fields
 from app.services.reprocess import latest_job, safe_error_code
@@ -70,6 +71,9 @@ def _item_counts():
     )
 
 
+SEARCH_MAX_CHARS = 100  # 검색어 길이 상한
+
+
 @router.get("", response_model=MeetingListPage, response_model_by_alias=True)
 def list_meetings(
     status_filter: MeetingStatus | None = Query(None, alias="status"),
@@ -77,6 +81,10 @@ def list_meetings(
     phase: Literal["active", "ended", "on_hold", "deleted"] = Query("active"),
     mine: Literal["registered", "assigned"] | None = Query(None),
     needs_completion: bool | None = Query(None, alias="needsCompletion"),
+    # 정렬(작업 B-1c-1): held = 회의 일시 최신순(기본, 변경 없음) | registered = 등록 일시 최신순(과거 날짜로 등록한 회의록이 앞쪽에 오게)
+    sort: Literal["held", "registered"] = Query("held"),
+    # 검색어(작업 B-1c-1): 제목·등록자 이름 부분 일치, 회의 일자(2026-10-14 · 2026-10 · 2026.10.14 · 20261014)
+    q: str | None = Query(None, max_length=SEARCH_MAX_CHARS),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     account: Account = Depends(get_current_account),
@@ -84,7 +92,44 @@ def list_meetings(
 ) -> MeetingListPage:
     return build_meeting_page(
         session, account, status_filter=status_filter, phase=phase, mine=mine, needs_completion=needs_completion, page=page, size=size,
+        sort=sort, q=q,
     )
+
+
+_DATE_QUERY = re.compile(r"^\s*(\d{4})(?:[-./]?(\d{1,2}))?(?:[-./]?(\d{1,2}))?\s*$")
+
+
+def _escape_like(text: str) -> str:
+    """LIKE 와일드카드(%·_)와 이스케이프 문자 자체를 글자로 취급하게 한다(ORM 의 escape 옵션과 함께 사용)."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _date_range(text: str):
+    """검색어가 날짜(연·연월·연월일)이면 현지 시각(APP_TIMEZONE) 기준 [시작, 끝) UTC 범위, 아니면 None."""
+    from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+
+    from app.config import settings
+
+    match = _DATE_QUERY.match(text)
+    if not match or (match.group(2) is None and len(text.strip()) != 4):
+        return None
+    year = int(match.group(1))
+    month = int(match.group(2)) if match.group(2) else None
+    day = int(match.group(3)) if match.group(3) else None
+    try:
+        zone = ZoneInfo(settings.app_timezone)
+        if month is None:
+            start, end = datetime(year, 1, 1, tzinfo=zone), datetime(year + 1, 1, 1, tzinfo=zone)
+        elif day is None:
+            start = datetime(year, month, 1, tzinfo=zone)
+            end = datetime(year + (month == 12), month % 12 + 1, 1, tzinfo=zone)
+        else:
+            start = datetime(year, month, day, tzinfo=zone)
+            end = start + timedelta(days=1)
+    except ValueError:
+        return None
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
 
 
 def build_meeting_page(
@@ -98,6 +143,8 @@ def build_meeting_page(
     page: int,
     size: int,
     extra_conditions: tuple = (),
+    sort: str = "held",
+    q: str | None = None,
 ) -> MeetingListPage:
     """회의록 목록 쪽(열람 가능한 것만, 최신 회의 일시순). 회의록 목록 API 와 프로젝트별 회의록 조회(extra_conditions 로 범위를 좁힘)가 함께 쓴다."""
     if not phase_allowed(account, phase):
@@ -132,10 +179,18 @@ def build_meeting_page(
     elif needs_completion is False:
         stmt = stmt.where(needs_count == 0)
 
+    keyword = (q or "").strip()[:SEARCH_MAX_CHARS]
+    if keyword:
+        pattern = f"%{_escape_like(keyword)}%"
+        conditions = [Meeting.title.ilike(pattern, escape="\\"), registrant.name.ilike(pattern, escape="\\")]
+        window = _date_range(keyword)
+        if window is not None:
+            conditions.append(and_(Meeting.held_at >= window[0], Meeting.held_at < window[1]))
+        stmt = stmt.where(or_(*conditions))
+
     total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
-    rows = session.execute(
-        stmt.order_by(Meeting.held_at.desc(), Meeting.id.desc()).limit(size).offset((page - 1) * size)
-    ).all()
+    order = (Meeting.first_created_at.desc(), Meeting.id.desc()) if sort == "registered" else (Meeting.held_at.desc(), Meeting.id.desc())
+    rows = session.execute(stmt.order_by(*order).limit(size).offset((page - 1) * size)).all()
 
     items = [
         MeetingListItem(
@@ -291,6 +346,10 @@ def get_meeting(
         out.supersedes = [
             SupersessionRef(item_id=r["itemId"], meeting_id=r["meetingId"], meeting_title=r["meetingTitle"]) for r in supersedes.get(row.ActionItem.id, [])
         ]
+
+    approx = approx_evidence_items(session, item_rows)
+    for out, row in zip(action_items, item_rows):
+        out.evidence_approx = approx.get(row.ActionItem.id, False)
 
     hold = session.get(MeetingHold, meeting.id)
     closure = session.get(MeetingClosure, meeting.id)

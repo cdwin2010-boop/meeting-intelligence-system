@@ -48,8 +48,21 @@ export interface MeetingListPage {
 export const MEETINGS_PAGE_SIZE = 20;
 
 /** GET /api/meetings?phase=…(기본 active). 담당자가 on_hold·deleted 를 요청하면 서버가 403 */
-export function listMeetings(page: number, signal?: AbortSignal, phase: MeetingPhase = "active"): Promise<MeetingListPage> {
+/** 목록 정렬(작업 B-1c-1): held = 회의 일시 최신순(기본) | registered = 등록 일시 최신순 */
+export type MeetingSort = "held" | "registered";
+/** 검색어 길이 상한(서버와 같다) */
+export const MEETING_SEARCH_MAX = 100;
+
+export function listMeetings(
+  page: number,
+  signal?: AbortSignal,
+  phase: MeetingPhase = "active",
+  options: { sort?: MeetingSort; q?: string } = {},
+): Promise<MeetingListPage> {
   const query = new URLSearchParams({ page: String(page), size: String(MEETINGS_PAGE_SIZE), phase });
+  if (options.sort && options.sort !== "held") query.set("sort", options.sort);
+  const q = (options.q ?? "").trim().slice(0, MEETING_SEARCH_MAX);
+  if (q) query.set("q", q);
   return request<MeetingListPage>(`/meetings?${query.toString()}`, { signal });
 }
 
@@ -71,6 +84,8 @@ export interface ActionItem {
   confirmKind: ConfirmKind | null;
   evidenceStartSec: number | null;
   evidenceQuote: string | null;
+  /** 근사 위치(추가 필드, 작업 B-1c-1): 근거 위치 재계산이 가장 가까운 앞쪽 발화로 대체한 값 */
+  evidenceApprox?: boolean;
   needsCompletion: boolean;
   missingFields: MissingField[];
   /** 종결 구분(추가 필드): completed(정상 완료) | forced(직권 종료). 종결 아님·구분 없음·필드 없음이면 null/undefined */
@@ -540,6 +555,28 @@ export interface HeldAtResult {
 }
 
 /** 등록 후 회의 일시 변경: 관리자·지시자만(서버 판정), 사유 필수. 이미 계산된 업무 기한은 다시 계산하지 않는다 */
+/** 근거 위치 재계산 결과(작업 B-1c-1). dryRun 이면 저장 없이 건수만 */
+export interface EvidenceRecomputeResult {
+  targets: number;
+  changed: number;
+  approx: number;
+  unchanged: number;
+  excluded: number;
+  applied: boolean;
+}
+
+export function recomputeEvidence(
+  id: number,
+  options: { dryRun?: boolean; reason?: string },
+  signal?: AbortSignal,
+): Promise<EvidenceRecomputeResult> {
+  return request<EvidenceRecomputeResult>(`/meetings/${encodeURIComponent(String(id))}/recompute-evidence`, {
+    method: "POST",
+    body: { dryRun: options.dryRun === true, reason: options.reason ?? "" },
+    signal,
+  });
+}
+
 export function changeMeetingHeldAt(id: number, heldAt: string, reason: string, signal?: AbortSignal): Promise<HeldAtResult> {
   return request<HeldAtResult>(`/meetings/${encodeURIComponent(String(id))}/held-at`, { method: "PATCH", body: { heldAt, reason }, signal });
 }

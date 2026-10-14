@@ -28,6 +28,8 @@ KIND_MEETING_PROCESS_NOW = "meeting.process_now"
 KIND_MEETING_HELD_AT = "meeting.held_at_changed"
 # 기존 업무의 빈 근거 시각을 전사문과 대조해 채운 보정(app/jobs/backfill_evidence_time.py)
 KIND_EVIDENCE_BACKFILL = "evidence.backfilled"
+# 관리자 이상이 회의록 상세에서 누른 근거 위치 재계산(작업 B-1c-1): 업무마다 변경 전후 시각·근사 여부, 회의록에는 건수 요약
+KIND_EVIDENCE_RECOMPUTE = "evidence.recomputed"
 # 조직·프로젝트(작업 66-2). 대상 종류는 department·project 라 회의록 이력 조회에는 섞이지 않는다
 KIND_DEPARTMENT_UPDATE = "department.updated"
 KIND_PROJECT_REGISTERED = "project.registered"
@@ -61,6 +63,7 @@ HISTORY_KINDS: dict[str, str] = {
     KIND_MEETING_PROCESS_NOW: "즉시 변환",
     KIND_MEETING_HELD_AT: "회의 일시 변경",
     KIND_EVIDENCE_BACKFILL: "근거 시각 보정",
+    KIND_EVIDENCE_RECOMPUTE: "근거 위치 재계산",
     KIND_DEPARTMENT_UPDATE: "부서 변경",
     KIND_PROJECT_REGISTERED: "프로젝트 등록",
     KIND_PROJECT_APPROVED: "프로젝트 승인",

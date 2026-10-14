@@ -140,6 +140,8 @@ class Settings(BaseSettings):
     remote_llm_chunk_max_chars: int = Field(0, ge=0)
     # 원격 모델 서버의 맥락 길이(n_ctx, 토큰). 구간 글자 수 상한을 (맥락 - 출력 예약 - 고정 지시) 기준으로 보수적으로 자동 계산한다(작업 B-1d)
     remote_llm_context_tokens: int = Field(8192, ge=1024)
+    # 내부 전용 작업 수 확인(/internal/queue-status, 작업 B-1c-1): 요청의 실제 연결 주소가 루프백일 때만 응답한다. 기본 켬
+    internal_queue_status_enabled: bool = True
     # 원격 엔진 프로파일 나머지 항목(app/pipeline/engine_profile.py): JSON 응답 형식 지원·글자당 토큰(보수적, 한국어는 크게)·
     # 서버 토크나이저 사용(옵션, 기본 꺼짐, 아직 값만)·요청에 맥락 길이 명시(향후 Ollama num_ctx, 아직 값만)
     remote_llm_json_format: bool = True

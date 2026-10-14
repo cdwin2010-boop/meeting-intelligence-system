@@ -63,6 +63,8 @@ class ActionItemOut(CamelModel):
     closure_kind: str | None = None
     # 업무 출처(추가 필드): ai(AI 추출) | manual(수기·업로드 직권 등록, 근거는 "등록자 직권 지정")
     origin: str = "ai"
+    # 근사 위치(추가 필드, 작업 B-1c-1): 근거 위치 재계산이 인용문을 못 찾아 가장 가까운 앞쪽 발화로 대체한 값이면 true
+    evidence_approx: bool = False
     # 이 사용자가 이 업무에서 지금 할 수 있는 동작(추가 필드, 회의록 상세 응답에서만 채움·그 밖의 응답은 None). 화면 표시용이며 거부 판정은 각 API 가 한다
     allowed_actions: list[str] | None = None
 
