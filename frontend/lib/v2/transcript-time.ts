@@ -66,22 +66,34 @@ export function normalizeForMatch(text: string | null | undefined): string {
  * 3) 둘 다 못 찾으면 시각 이전 가장 가까운 발화(68-2 의 기존 동작). 시각도 없고 인용문도 못 찾으면 -1(안내)
  */
 export function resolveEvidenceIndex(starts: (number | null)[], texts: string[], sec: number | null, quote: string | null | undefined): number {
+  return resolveEvidenceMatch(starts, texts, sec, quote).index;
+}
+
+/** resolveEvidenceIndex 와 같은 규칙. 시각·인용문으로 못 찾고 시각 이전 가장 가까운 발화로 대체한 경우 approx=true("근사 위치" 표시용, 작업 B-1c-3) */
+export function resolveEvidenceMatch(
+  starts: (number | null)[],
+  texts: string[],
+  sec: number | null,
+  quote: string | null | undefined,
+): { index: number; approx: boolean } {
   const q = normalizeForMatch(quote);
   const holdsQuote = (i: number) => q !== "" && normalizeForMatch(texts[i]).includes(q);
   if (sec !== null) {
     const exact = starts.flatMap((start, i) => (start === sec ? [i] : []));
-    if (exact.length === 1) return exact[0];
-    if (exact.length > 1) return exact.find(holdsQuote) ?? exact[0];
+    if (exact.length === 1) return { index: exact[0], approx: false };
+    if (exact.length > 1) return { index: exact.find(holdsQuote) ?? exact[0], approx: false };
   }
   if (q !== "") {
     const found = texts.flatMap((_, i) => (holdsQuote(i) ? [i] : []));
     if (found.length > 0) {
-      if (sec === null) return found[0];
+      if (sec === null) return { index: found[0], approx: false };
       const dist = (i: number) => (starts[i] === null ? Infinity : Math.abs((starts[i] as number) - sec));
-      return found.reduce((best, i) => (dist(i) < dist(best) ? i : best));
+      return { index: found.reduce((best, i) => (dist(i) < dist(best) ? i : best), found[0]), approx: false };
     }
   }
-  return sec !== null ? findSegmentIndex(starts, sec) : -1;
+  if (sec === null) return { index: -1, approx: false };
+  const nearest = findSegmentIndex(starts, sec);
+  return { index: nearest, approx: nearest >= 0 };
 }
 
 /**

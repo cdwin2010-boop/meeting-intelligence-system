@@ -61,7 +61,7 @@ import { EvidenceRecomputeDialog } from "@/components/v2/EvidenceRecomputeDialog
 import { ProcessingBanner, ProcessingErrorDetails, ProcessingWarnings } from "@/components/v2/ProcessingBanner";
 import { useProcessing, useProcessingFinished } from "@/components/v2/ProcessingProvider";
 import { MinutesDialog, MinutesPanel } from "@/components/v2/MinutesPanel";
-import { parseSeconds, parseTranscriptBlocks, resolveEvidenceIndex, splitStamp } from "@/lib/v2/transcript-time";
+import { parseSeconds, parseTranscriptBlocks, resolveEvidenceMatch, splitStamp } from "@/lib/v2/transcript-time";
 import { RETURN_TO_PARAM, returnLabel, validReturnTo } from "@/lib/v2/return-to";
 import { UploadUpdateDialog } from "@/components/v2/UploadUpdateDialog";
 import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
@@ -205,6 +205,17 @@ function ViewTranscriptButton({ item, onView }: { item: ActionItem; onView: (sec
   const raw: unknown = item.evidenceStartSec;
   const has = raw !== null && raw !== undefined && raw !== ""; // 0 초는 유효한 시각이다(없음과 구분)
   const sec = parseSeconds(raw);
+  // 시각이 없어도 인용문이 있으면 인용문으로 전사문에서 위치를 찾는다(작업 B-1c-3). 둘 다 없을 때만 사유를 보인다
+  // 수기 등록 업무의 인용문은 전사문 인용이 아니라 지정 사유이므로 전사문 검색에 쓰지 않는다(기존 비활성 유지)
+  const manual = item.origin === "manual";
+  const quote = manual ? "" : (item.evidenceQuote ?? "").trim();
+  if (!has && quote === "" && !manual) {
+    return (
+      <span className="text-xs text-mn-muted" data-testid="evidence-none" title="이 업무에는 근거 시각과 인용문이 모두 없습니다">
+        근거 위치 없음(시각·인용문 없음)
+      </span>
+    );
+  }
   return (
     <span className="inline-flex shrink-0 flex-wrap items-center gap-2">
       {has && item.evidenceApprox ? (
@@ -214,10 +225,10 @@ function ViewTranscriptButton({ item, onView }: { item: ActionItem; onView: (sec
       ) : null}
     <Button
       size="sm"
-      disabled={!has}
-      title={has ? undefined : "근거 시각이 없어 전사문 위치를 알 수 없습니다"}
+      disabled={!has && quote === ""}
+      title={has || quote !== "" ? undefined : "근거 시각이 없어 전사문 위치를 알 수 없습니다"}
       aria-label={`근거 위치 보기: ${item.title || "업무명 없음"}${sec !== null ? ` ${formatOffset(sec)}` : ""}`}
-      onClick={(event) => has && onView(sec, event.currentTarget, item.evidenceQuote ?? "")}
+      onClick={(event) => (has || quote !== "") && onView(sec, event.currentTarget, item.evidenceQuote ?? "")}
       className="shrink-0 whitespace-nowrap"
     >
       근거 위치 보기
@@ -868,7 +879,8 @@ function TranscriptPanel({
     }
   }
   // 근거 시각과 인용문을 1:1 로 대응(같은 시각 여럿이면 인용문으로 구분, 시각으로 못 찾으면 인용문 검색). 둘 다 못 찾으면 -1 → 안내
-  const hit = target && state.kind === "ready" ? resolveEvidenceIndex(starts, texts, target.sec, target.quote) : -1;
+  const match = target && state.kind === "ready" ? resolveEvidenceMatch(starts, texts, target.sec, target.quote) : { index: -1, approx: false };
+  const hit = match.index;
   const notFound = target !== null && state.kind === "ready" && hit < 0;
 
   // 조회가 끝나 해당 구간이 그려지면 가시 영역 안(가능하면 중앙)으로 스크롤하고 그 줄에 포커스(요청마다 한 번)
@@ -925,6 +937,11 @@ function TranscriptPanel({
                 </Button>
               ) : null}
             </div>
+          ) : null}
+          {match.approx && hit >= 0 ? (
+            <p role="status" className="border-b border-mn-border px-5 py-3 text-sm" data-testid="evidence-approx-notice">
+              <StatusDot tone="queued" label="근사 위치: 인용문을 찾지 못해 가까운 앞쪽 발화로 표시했습니다" />
+            </p>
           ) : null}
           {notFound ? (
             <p role="status" className="border-b border-mn-border px-5 py-3 text-sm">
