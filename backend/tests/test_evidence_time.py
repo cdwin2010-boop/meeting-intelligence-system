@@ -271,3 +271,18 @@ def test_apply_twice_is_idempotent(env, data, capsys):
     with env["factory"]() as s:
         assert len(s.scalars(select(Event).where(Event.event_type == "evidence.backfilled")).all()) == 4  # 두 번째 실행은 대상만 다시 보고 새 기록은 없다
     assert "대상 1건" in out  # 남은 대상은 대조 실패 1건뿐
+
+
+def test_single_line_transcript_is_split_by_stamp_boundary():
+    """줄바꿈 없는 한 줄 전사문도 "[시각] 화자:" 경계로 구간을 나눠 근거 시각을 정확히 찾는다(B-1b).
+    말 속 "[00:12] 쯤 … 시간:" 은 경계가 아니다(화자 표기 규칙 동일)."""
+    from app.pipeline.evidence_time import locate, segments_of
+
+    text = (
+        "[00:00:00] 화자1: 오늘 회의를 시작합니다. [00:00:10] 화자2: 개선안을 금요일까지 정리해 주세요. "
+        "[00:00:20] 화자3: 시안은 [00:12] 쯤 확정하겠습니다. 시간: 오후입니다. [00:00:30] 화자1: 알겠습니다."
+    )
+    segs = segments_of(text, None)
+    assert [s.start_sec for s in segs] == [0.0, 10.0, 20.0, 30.0]
+    assert locate(segs, "개선안을 금요일까지 정리해 주세요") == 10.0
+    assert locate(segs, "시안은 쯤 확정하겠습니다") == 20.0

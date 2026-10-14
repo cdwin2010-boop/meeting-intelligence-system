@@ -228,7 +228,7 @@ test.describe("업무 근거 → 전사문 딥링크", () => {
     await deepLink(page, "업무 A", "00:50:00").click();
     await expect(page.getByRole("alert").filter({ hasText: "전사문을 불러오지 못했습니다" })).toBeVisible();
     await expect(page.getByRole("button", { name: "다시 시도" })).toBeVisible();
-    await expect(page.getByText("근거 시각에 해당하는 전사문 위치를 찾지 못했습니다")).toHaveCount(0);
+    await expect(page.getByText("근거 위치를 찾을 수 없습니다")).toHaveCount(0);
   });
 
   test("prefers-reduced-motion 이면 즉시 이동한다(스크롤 애니메이션 없음)", async ({ page }) => {
@@ -379,7 +379,7 @@ test.describe("실제 데이터 형식(구간 목록 없음 + 줄머리 [mm:ss])
       transcript: (route) => json(route, { fullText: "시각이 없는 평범한 본문입니다.", segments: null, sttProvider: "fake", displayText: "시각이 없는 평범한 본문입니다.", speakers: [] }),
     });
     await deepLink(page, "평문 업무", "00:00:15").click();
-    const message = "근거 시각에 해당하는 전사문 위치를 찾지 못했습니다";
+    const message = "근거 위치를 찾을 수 없습니다";
     const status = page.getByRole("status").filter({ hasText: message });
     await expect(status).toBeVisible();
     await expect(panel(page).getByRole("button", { expanded: true })).toBeVisible();
@@ -397,7 +397,7 @@ test.describe("실제 데이터 형식(구간 목록 없음 + 줄머리 [mm:ss])
     const button = page.getByRole("button", { name: "근거 위치 보기: 이상한 업무" });
     await expect(button).toBeEnabled();
     await button.click();
-    await expect(page.getByRole("status").filter({ hasText: "근거 시각에 해당하는 전사문 위치를 찾지 못했습니다" })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "근거 위치를 찾을 수 없습니다" })).toBeVisible();
     await expect(page.locator("[data-segment-index]", { hasText: "근거 위치" })).toHaveCount(0);
   });
 
@@ -445,3 +445,38 @@ for (const theme of ["light", "dark"] as const) {
     expect(problems).toEqual([]);
   });
 }
+
+// ================= 한 줄 전사문 표시·근거 위치(작업 B-1b) =================
+// 저장 전사문이 줄바꿈 없는 한 줄이어도 표시 단계에서 "[시각] 화자:" 경계로 나눠 시각을 굵게 보이고, 근거는 그 발화 단위로 강조한다.
+const ONE_LINE =
+  "[00:00:00] 화자1: 회의를 시작합니다. [00:00:10] 화자2: 견적서는 이번 주까지 보내겠습니다. [00:00:10] 화자3: 일정은 [00:12] 쯤 정하겠습니다. 시간: 오후입니다. [00:00:30] 화자1: 알겠습니다.";
+const oneLine = (route: Route) => json(route, { fullText: ONE_LINE, segments: null, sttProvider: "gemini", displayText: ONE_LINE, speakers: [] });
+
+test.describe("한 줄 전사문(B-1b)", () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  test("발화마다 줄이 나뉘고 시각이 굵게 보이며, 같은 시각은 인용문으로, 시각 불일치는 인용문 검색으로 찾고, 못 찾으면 안내한다", async ({ page }) => {
+    await open(page, {
+      detail: realDetail([
+        { title: "견적 발송", evidenceStartSec: 10, evidenceQuote: "견적서는 이번 주까지 보내겠습니다" },
+        { title: "일정 확정", evidenceStartSec: 10, evidenceQuote: "시간: 오후입니다" },
+        { title: "시각 어긋남", evidenceStartSec: 99, evidenceQuote: "알겠습니다" },
+      ]),
+      transcript: oneLine,
+    });
+    await deepLink(page, "견적 발송", "00:00:10").click();
+    // 말 속 "[00:12] 쯤 … 시간:" 은 경계가 아니므로 발화는 4개
+    await expect(page.locator("[data-segment-index]")).toHaveCount(4);
+    await expect(page.locator("[data-segment-index] strong").first()).toHaveText("[00:00:00]");
+    const weight = await page.locator("[data-segment-index] strong").first().evaluate((el) => Number(getComputedStyle(el).fontWeight));
+    expect(weight).toBeGreaterThanOrEqual(600);
+    await expect(lineIn(page, 1)).toContainText("근거 위치");
+    // 같은 시각(10초)의 두 번째 발화는 인용문 일치로 구분한다. 이전 강조는 해제된다
+    await deepLink(page, "일정 확정", "00:00:10").click();
+    await expect(lineIn(page, 2)).toContainText("근거 위치");
+    await expect(lineIn(page, 1)).not.toContainText("근거 위치");
+    // 시각으로 못 찾으면 인용문 텍스트로 대체(둘 다 못 찾는 안내는 위 "시각을 가진 줄이 없거나…" 테스트가 확인)
+    await deepLink(page, "시각 어긋남", "00:01:39").click();
+    await expect(lineIn(page, 3)).toContainText("근거 위치");
+  });
+});

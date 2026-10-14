@@ -45,15 +45,54 @@ export interface TranscriptBlock {
 }
 
 const LINE_STAMP = /^\s*\[(\d{1,3}:\d{2}(?::\d{2})?(?:\.\d+)?)\]/;
+/** 한 줄 전사문의 발화 경계: 공백 뒤에 "[시각] 화자:" 가 이어질 때만(말 속 "[00:12] 쯤 … 시간:" 은 경계가 아니다). 백엔드 agenda_chunker 와 같은 식 */
+const INLINE_BOUNDARY = /[ \t]+(?=\[\s*\d{1,3}:\d{2}(?::\d{2})?\s*\]\s*[^\s:：[\]\n.,!?。]{1,20}\s*[:：])/g;
+
+/** 발화 블록 머리의 "[시각]" 과 나머지를 나눈다(시각을 굵게 보이기 위함). 시각이 없으면 stamp 는 빈 문자열 */
+export function splitStamp(text: string): { stamp: string; rest: string } {
+  const match = /^(\s*\[[^\]\n]*\])([\s\S]*)$/.exec(text);
+  return match ? { stamp: match[1], rest: match[2] } : { stamp: "", rest: text };
+}
+
+/** 인용문 대조용: 글자·숫자만 남긴다(공백·구두점 무시, 백엔드 대조와 같은 취지) */
+export function normalizeForMatch(text: string | null | undefined): string {
+  return (text ?? "").replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+/**
+ * 근거 시각·인용문으로 렌더링된 발화 번호를 찾는다(1:1 대응, 못 찾으면 -1).
+ * 1) 시작 시각이 같은 발화: 하나면 그것, 여럿이면 인용문이 든 것(없으면 첫 번째)
+ * 2) 시각으로 못 찾고 인용문이 있으면 인용문 텍스트 검색(여럿이면 근거 시각에 가장 가까운 것)
+ * 3) 둘 다 못 찾으면 시각 이전 가장 가까운 발화(68-2 의 기존 동작). 시각도 없고 인용문도 못 찾으면 -1(안내)
+ */
+export function resolveEvidenceIndex(starts: (number | null)[], texts: string[], sec: number | null, quote: string | null | undefined): number {
+  const q = normalizeForMatch(quote);
+  const holdsQuote = (i: number) => q !== "" && normalizeForMatch(texts[i]).includes(q);
+  if (sec !== null) {
+    const exact = starts.flatMap((start, i) => (start === sec ? [i] : []));
+    if (exact.length === 1) return exact[0];
+    if (exact.length > 1) return exact.find(holdsQuote) ?? exact[0];
+  }
+  if (q !== "") {
+    const found = texts.flatMap((_, i) => (holdsQuote(i) ? [i] : []));
+    if (found.length > 0) {
+      if (sec === null) return found[0];
+      const dist = (i: number) => (starts[i] === null ? Infinity : Math.abs((starts[i] as number) - sec));
+      return found.reduce((best, i) => (dist(i) < dist(best) ? i : best));
+    }
+  }
+  return sec !== null ? findSegmentIndex(starts, sec) : -1;
+}
 
 /**
  * 구간 목록이 없는 전사문 본문을 "[mm:ss] 화자: 내용" 줄 단위 블록으로 나눈다. 시각이 붙은 줄이 새 블록을 시작하고,
- * 시각이 없는 줄은 앞 블록에 이어 붙인다(첫 줄이 시각 없이 시작하면 시각 없는 블록). 블록 글자를 이으면 원문과 같다.
+ * 시각이 없는 줄은 앞 블록에 이어 붙인다(첫 줄이 시각 없이 시작하면 시각 없는 블록).
+ * 줄바꿈 없이 한 줄로 저장된 본문은 "[시각] 화자:" 경계(백엔드 B-1a 규칙과 동일)에서 먼저 나눈다. 표시용 변환이며 저장 데이터는 바꾸지 않는다.
  * 시각이 붙은 줄이 하나도 없으면 빈 배열(줄 단위 이동을 지원하지 않는 본문).
  */
 export function parseTranscriptBlocks(text: string): TranscriptBlock[] {
   const blocks: TranscriptBlock[] = [];
-  const lines = text.split("\n");
+  const lines = text.replace(INLINE_BOUNDARY, "\n").split("\n");
   lines.forEach((line, index) => {
     const withBreak = index < lines.length - 1 ? `${line}\n` : line;
     const stamp = LINE_STAMP.exec(line);

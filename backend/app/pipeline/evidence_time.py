@@ -20,6 +20,8 @@ from app.config import settings
 log = logging.getLogger("app.evidence")
 
 _STAMP = re.compile(r"^\s*\[?\s*(\d{1,3}(?::\d{1,2}){1,2})\s*\]?\s*(.*)$", re.DOTALL)
+# 한 줄 전사문의 발화 경계(agenda_chunker 와 같은 식. 기존 파이프라인이 새 모듈을 가져오지 않는 규칙 때문에 복제한다)
+_INLINE_BOUNDARY = re.compile(r"[ \t]+(?=\[\s*\d{1,3}:\d{2}(?::\d{2})?\s*\]\s*[^\s:：\[\]\n.,!?。]{1,20}\s*[:：])")
 _DROP = re.compile(r"[\W_]+")  # 공백·구두점·기호(한글·영문·숫자는 남는다)
 _WINDOW = 3  # 유사도 대조 때 이어 붙여 보는 구간 수 최대
 _MAX_SPEAKER_LEN = 20
@@ -57,7 +59,8 @@ def segments_of(full_text: str | None, segments: list[dict[str, Any]] | None) ->
         if found:
             return found
     result: list[Segment] = []
-    for line in (full_text or "").splitlines():
+    # 줄바꿈 없이 한 줄로 저장된 전사문도 "[시각] 화자:" 경계로 나눈다(B-1a 와 같은 규칙, 저장 데이터는 그대로)
+    for line in _INLINE_BOUNDARY.sub("\n", full_text or "").splitlines():
         match = _STAMP.match(line)
         seconds = parse_seconds(line[: line.find("]") + 1]) if "]" in line else None
         if match and seconds is not None and line.lstrip().startswith("["):
