@@ -17,7 +17,7 @@ import { Badge, Button, StatusDot } from "@/components/mono";
 import { StatusChip, statusChipToneFromDot } from "@/components/v2/StatusChip";
 import { detailPath, formatDateTime, formatHeldAt, meetingStatus, MEETING_PHASES, PHASE_LABEL, phaseText } from "@/components/v2/meeting-display";
 import { isAbortError } from "@/lib/v2/errors";
-import { listMeetings, type MeetingListItem, type MeetingListPage, type MeetingPhase } from "@/lib/v2/meetings";
+import { listMeetings, MEETING_SEARCH_MAX, type MeetingListItem, type MeetingListPage, type MeetingPhase, type MeetingSort } from "@/lib/v2/meetings";
 
 type LoadState =
   | { kind: "loading" }
@@ -142,14 +142,29 @@ export default function V2MeetingsPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const controllerRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async (target: number, targetPhase: MeetingPhase) => {
+  const [queryInput, setQueryInput] = useState(""); // 검색창에 입력 중인 값
+  const [query, setQuery] = useState(""); // 디바운스 뒤 서버에 보내는 검색어
+  const [sort, setSort] = useState<MeetingSort>("held");
+
+  // 입력이 멈춘 뒤 300ms 에 서버 검색을 실행한다(검색어가 바뀌면 1쪽부터)
+  useEffect(() => {
+    const trimmed = queryInput.trim();
+    if (trimmed === query) return;
+    const timer = window.setTimeout(() => {
+      setQuery(trimmed);
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [queryInput, query]);
+
+  const load = useCallback(async (target: number, targetPhase: MeetingPhase, q: string, order: MeetingSort) => {
     // 이전 요청이 남아 있으면 취소하고 새로 조회
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
     setState({ kind: "loading" });
     try {
-      const data = await listMeetings(target, controller.signal, targetPhase);
+      const data = await listMeetings(target, controller.signal, targetPhase, { q, sort: order });
       setAvailablePhases(data.availablePhases);
       setState({ kind: "ready", data });
     } catch (error) {
@@ -159,8 +174,8 @@ export default function V2MeetingsPage() {
   }, []);
 
   useEffect(() => {
-    void load(page, phase);
-  }, [load, page, phase]);
+    void load(page, phase, query, sort);
+  }, [load, page, phase, query, sort]);
 
   function changePhase(next: MeetingPhase) {
     if (next === phase) return;
@@ -184,6 +199,36 @@ export default function V2MeetingsPage() {
 
       <PhaseTabs phases={phases} current={phase} onChange={changePhase} />
 
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="sr-only" htmlFor="meeting-search">
+          회의록 검색
+        </label>
+        <input
+          id="meeting-search"
+          type="search"
+          value={queryInput}
+          maxLength={MEETING_SEARCH_MAX}
+          placeholder="제목·등록자·회의 일자(예: 2026-10-14)로 검색"
+          onChange={(event) => setQueryInput(event.target.value)}
+          className="mn-focus h-10 min-w-[240px] flex-1 rounded-mn-control border border-mn-control bg-mn-bg px-3 text-sm text-mn-text outline-none max-md:h-11"
+        />
+        <label className="flex items-center gap-2 text-sm text-mn-muted">
+          정렬
+          <select
+            aria-label="정렬"
+            value={sort}
+            onChange={(event) => {
+              setSort(event.target.value as MeetingSort);
+              setPage(1);
+            }}
+            className="mn-focus h-10 rounded-mn-control border border-mn-control bg-mn-bg px-2 text-sm text-mn-text max-md:h-11"
+          >
+            <option value="held">회의 일시 최신순</option>
+            <option value="registered">등록 일시 최신순</option>
+          </select>
+        </label>
+      </div>
+
       {state.kind === "loading" ? (
         <p role="status" className="text-sm text-mn-muted">
           회의록을 불러오는 중…
@@ -193,16 +238,16 @@ export default function V2MeetingsPage() {
           <span className="text-sm">
             <StatusDot tone="error" label={`회의록을 불러오지 못했습니다 · ${state.message}`} />
           </span>
-          <Button size="sm" onClick={() => void load(page, phase)}>
+          <Button size="sm" onClick={() => void load(page, phase, query, sort)}>
             다시 시도
           </Button>
         </div>
       ) : state.data.total === 0 ? (
         <>
           <div role="status" className="rounded-mn-card border border-mn-border bg-mn-surface p-6 text-sm text-mn-muted">
-            {EMPTY_TEXT[phase]}
+            {query ? "검색 결과가 없습니다" : EMPTY_TEXT[phase]}
           </div>
-          {phase === "active" ? (
+          {phase === "active" && !query ? (
             <div>
               <Link
                 href="/v2/upload"

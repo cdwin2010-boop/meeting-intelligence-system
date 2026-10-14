@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
     accounts, action_items, admin, auth, departments, item_supersession, projects, me, meeting_actions, meeting_hold, meeting_lifecycle, meeting_queries, meeting_speakers,
-    engine_test, monitoring, meeting_audio, meeting_minutes, me_processing, meeting_held_at, meeting_process_now, meeting_reprocess, meeting_update, meetings, probe, system, templates, workload,
+    engine_test, monitoring, meeting_audio, meeting_minutes, me_processing, meeting_held_at, meeting_evidence, internal, meeting_process_now, meeting_reprocess, meeting_update, meetings, probe, system, templates, workload,
 )
 from app.config import settings
 from app.db import SessionLocal
@@ -58,6 +58,8 @@ app.include_router(meeting_minutes.router)
 app.include_router(meeting_update.router)
 app.include_router(meeting_reprocess.router)
 app.include_router(meeting_process_now.router)
+app.include_router(meeting_evidence.router)
+app.include_router(internal.router)
 app.include_router(meeting_held_at.router)
 app.include_router(system.router)
 app.include_router(engine_test.router)

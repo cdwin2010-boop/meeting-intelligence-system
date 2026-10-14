@@ -57,6 +57,7 @@ import { SOURCE_KIND_LABEL, sourceKindOf } from "@/lib/v2/source-kind";
 import { HistoryDialog } from "@/components/v2/HistoryDialog";
 import { ManualItemDialog } from "@/components/v2/ManualItemDialog";
 import { HeldAtDialog } from "@/components/v2/HeldAtDialog";
+import { EvidenceRecomputeDialog } from "@/components/v2/EvidenceRecomputeDialog";
 import { ProcessingBanner, ProcessingErrorDetails, ProcessingWarnings } from "@/components/v2/ProcessingBanner";
 import { useProcessing, useProcessingFinished } from "@/components/v2/ProcessingProvider";
 import { MinutesDialog, MinutesPanel } from "@/components/v2/MinutesPanel";
@@ -205,6 +206,12 @@ function ViewTranscriptButton({ item, onView }: { item: ActionItem; onView: (sec
   const has = raw !== null && raw !== undefined && raw !== ""; // 0 초는 유효한 시각이다(없음과 구분)
   const sec = parseSeconds(raw);
   return (
+    <span className="inline-flex shrink-0 flex-wrap items-center gap-2">
+      {has && item.evidenceApprox ? (
+        <span title="인용문을 찾지 못해 가장 가까운 앞쪽 발화로 대체한 위치입니다" data-testid="evidence-approx">
+          <Badge>근사 위치</Badge>
+        </span>
+      ) : null}
     <Button
       size="sm"
       disabled={!has}
@@ -215,6 +222,7 @@ function ViewTranscriptButton({ item, onView }: { item: ActionItem; onView: (sec
     >
       근거 위치 보기
     </Button>
+    </span>
   );
 }
 
@@ -263,7 +271,7 @@ function SpeakerSummary({ speakers, notice, canEdit, onOpen }: SpeakerSummaryPro
 }
 
 function Overview({
-  meeting, speakerSummary, minutesPanel, canEditHeldAt, onEditHeldAt,
+  meeting, speakerSummary, minutesPanel, canEditHeldAt, onEditHeldAt, onRecomputeEvidence,
 }: {
   meeting: MeetingDetail;
   speakerSummary: ReactNode;
@@ -271,6 +279,8 @@ function Overview({
   /** 서버 허용 동작 edit_held_at(관리자·지시자, 작업 88-4) */
   canEditHeldAt: boolean;
   onEditHeldAt: () => void;
+  /** 근거 위치 재계산(관리자·지시자: 회의 일시 변경과 같은 허용 동작 기준, 작업 B-1c-1) */
+  onRecomputeEvidence: () => void;
 }) {
   const confirmed = meeting.status === "confirmed";
   return (
@@ -286,6 +296,13 @@ function Overview({
             ) : null}
           </span>
         </Field>
+        {canEditHeldAt ? (
+          <Field label="근거 위치">
+            <Button size="sm" onClick={onRecomputeEvidence} className="max-md:min-h-11">
+              근거 위치 재계산
+            </Button>
+          </Field>
+        ) : null}
         <Field label="등록 일시">
           <Mono muted>{formatDateTime(meeting.registeredAt ?? meeting.firstCreatedAt)}</Mono>
         </Field>
@@ -1115,6 +1132,7 @@ export default function V2MeetingDetailPage() {
   // 올리기 직후 이동해 온 경우에만 한 번 보이는 안내(작업 88-2). 새로고침하면 다시 보이지 않는다
   const [uploadNotice, setUploadNotice] = useState(false);
   const [heldAtOpen, setHeldAtOpen] = useState(false); // 회의 일시 변경 팝업(작업 88-4)
+  const [recomputeOpen, setRecomputeOpen] = useState(false); // 근거 위치 재계산 팝업(작업 B-1c-1)
   useEffect(() => {
     if (meetingId !== null && consumeUploadNotice(meetingId)) setUploadNotice(true);
   }, [meetingId]);
@@ -1324,6 +1342,7 @@ export default function V2MeetingDetailPage() {
         meeting={meeting}
         canEditHeldAt={can(meeting.allowedActions, MEETING_ACTION.editHeldAt)}
         onEditHeldAt={() => setHeldAtOpen(true)}
+        onRecomputeEvidence={() => setRecomputeOpen(true)}
         minutesPanel={
           <MinutesPanel
             minutes={meeting.minutes}
@@ -1398,6 +1417,18 @@ export default function V2MeetingDetailPage() {
         onClose={() => setHeldAtOpen(false)}
         onChanged={async () => {
           await reloadDetail();
+        }}
+      />
+      <EvidenceRecomputeDialog
+        open={recomputeOpen}
+        meetingId={meeting.id}
+        onClose={() => setRecomputeOpen(false)}
+        onDone={async (result) => {
+          await reloadDetail();
+          setActionNotice({
+            tone: "ready",
+            text: `근거 위치 재계산 완료: 변경 ${result.changed}건 · 근사 ${result.approx}건 · 미변경 ${result.unchanged}건 · 확정 제외 ${result.excluded}건`,
+          });
         }}
       />
       <SimilarItemsDialog
