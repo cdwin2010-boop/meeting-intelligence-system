@@ -31,8 +31,8 @@ DETAIL_MAX_CHARS = 500
 _BODY_READ_MAX = 4000  # 마스킹 전에 읽는 응답 본문 상한(너무 긴 본문 방어)
 _URL = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _BEARER = re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/=\-]+")
-_KEY_LIKE = re.compile(r"(?:sk-|AIza)[A-Za-z0-9_\-]{8,}")
-_IPV4 = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?")
+_KEY_LIKE = re.compile(r"\b(?:sk-|AIza)[A-Za-z0-9_\-]{8,}")
+_IPV4 = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?\b")
 
 # 400 응답 본문 분류(작업 B-1d)
 BAD_CONTEXT = "context"  # 맥락 길이·토큰 초과

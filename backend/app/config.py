@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -114,13 +115,23 @@ class Settings(BaseSettings):
     # 추출(LLM) 엔진(작업 81-1): auto = STT_PROVIDER 를 따른다(현행 동작) / gemini / local(로컬 OpenAI 호환 서버) / fake
     # 로컬 LLM: base_url 은 ".../v1" 까지 포함. 키는 보통 불필요("not-needed"). JSON 모드를 서버가 거부하면 자동으로 끄고 1회 재요청한다.
     # allow_external_host 가 false(기본)면 루프백·사설망 호스트만 허용(보안 원칙: 외부망 연동 기본 OFF, 변경은 시스템 관리자만)
-    llm_provider: Literal["auto", "gemini", "local", "fake"] = "auto"
+    llm_provider: Literal["auto", "gemini", "local", "ollama", "fake"] = "auto"
     local_llm_base_url: str = ""
     local_llm_model: str = ""
     local_llm_api_key: SecretStr = SecretStr("not-needed")
     local_llm_json_mode: bool = True
     local_llm_allow_external_host: bool = False
     local_llm_max_output_tokens: int = Field(4096, ge=1)
+    # Ollama 네이티브 API(LLM_PROVIDER=ollama, 작업 L-2): /api/chat 에 options.num_ctx 를 반드시 보낸다. 외부 주소 허용은 LOCAL_LLM_ALLOW_EXTERNAL_HOST 규칙을 따른다.
+    # 사양별 권장값은 L-3 실측 후 확정. num_gpu 는 비우면 Ollama 자동 배치(문자열로 받아 정수로 검증)
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = ""
+    ollama_num_ctx: int = Field(8192, ge=1024)
+    ollama_num_predict: int = Field(4096, ge=1)
+    ollama_num_gpu: str = ""
+    ollama_keep_alive: str = "5m"
+    ollama_timeout_sec: float = Field(300, gt=0, le=3600)
+    ollama_unload_after_extract: bool = True
     # 시스템 상태 점검(작업 A-1): 디스크 여유 공간 기준(MB). 여유 < DISK_MIN_FREE_MB 면 업로드를 거절하고, < DISK_WARN_FREE_MB 면 경고 상태.
     disk_warn_free_mb: int = Field(5120, ge=0)
     disk_min_free_mb: int = Field(1024, ge=0)
@@ -225,6 +236,36 @@ class Settings(BaseSettings):
             self.local_llm_base_url = url.rstrip("/")
         if self.effective_llm_provider == "local" and not (self.local_llm_base_url and self.local_llm_model.strip()):
             raise ValueError("LLM_PROVIDER=local 이면 LOCAL_LLM_BASE_URL 과 LOCAL_LLM_MODEL 이 필요합니다.")
+        return self
+
+    @property
+    def ollama_num_gpu_value(self) -> int | None:
+        """OLLAMA_NUM_GPU: 비어 있으면 None(options 에 넣지 않음), 아니면 0 이상 정수."""
+        value = self.ollama_num_gpu.strip()
+        return int(value) if value else None
+
+    @model_validator(mode="after")
+    def _check_ollama(self):
+        gpu = self.ollama_num_gpu.strip()
+        if gpu and not (gpu.isdigit() and int(gpu) >= 0):
+            raise ValueError("OLLAMA_NUM_GPU 는 비우거나 0 이상의 정수여야 합니다.")
+        keep = self.ollama_keep_alive.strip()
+        if keep and not re.fullmatch(r"-?\d+(?:ms|s|m|h)?", keep):
+            raise ValueError("OLLAMA_KEEP_ALIVE 는 정수 초 또는 5m·1h 같은 값이어야 합니다.")
+        if self.ollama_num_predict >= self.ollama_num_ctx:
+            raise ValueError("OLLAMA_NUM_PREDICT 는 OLLAMA_NUM_CTX 보다 작아야 합니다.")
+        if self.effective_llm_provider == "ollama":
+            if not self.ollama_model.strip():
+                raise ValueError("LLM_PROVIDER=ollama 이면 OLLAMA_MODEL 이 필요합니다.")
+            parts = urlsplit(self.ollama_base_url.strip())
+            try:
+                ok = parts.scheme in ("http", "https") and bool(parts.hostname) and not parts.query and not parts.fragment
+                parts.port  # noqa: B018
+            except ValueError:
+                ok = False
+            if not ok:
+                raise ValueError("OLLAMA_BASE_URL 은 http:// 또는 https:// 로 시작하는 올바른 주소여야 합니다.")
+            self.ollama_base_url = self.ollama_base_url.strip().rstrip("/")
         return self
 
     @model_validator(mode="after")

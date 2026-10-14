@@ -42,7 +42,10 @@ def get_engine(account: Account = Depends(get_current_account), session: Session
         engine=settings.stt_provider, is_fake=settings.stt_provider == "fake",
         processing_mode=settings.processing_mode, queue_pending=pending, queue_processing=processing,
         llm_provider=settings.effective_llm_provider,
-        llm_model=settings.local_llm_model if settings.effective_llm_provider == "local" else "",
+        llm_model=(
+            settings.local_llm_model if settings.effective_llm_provider == "local"
+            else settings.ollama_model if settings.effective_llm_provider == "ollama" else ""
+        ),
         engine_test_mode=settings.engine_test_mode, engine_test_default=settings.engine_test_default,
     )
 

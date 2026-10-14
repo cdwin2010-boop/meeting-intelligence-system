@@ -23,7 +23,7 @@ from app.auth.deps import has_rank
 
 from app.config import settings
 from app.models import Account, Event, Job
-from app.pipeline.chunked_extract import ChunkOptions, fixed_prompt_chars, safe_chunk_chars
+from app.pipeline.chunked_extract import ChunkOptions, fixed_prompt_chars, profile_chunk_options, safe_chunk_chars
 from app.pipeline.engine_profile import EngineProfile
 from app.pipeline.json_parser import MAX_RETRIES
 from app.pipeline.llm_client import LlmClient
@@ -274,24 +274,10 @@ def make_remote_extractor(meeting_type: str = "", client: LlmClient | None = Non
         raise RemoteEngineError(ERROR_REMOTE_NOT_CONFIGURED, "원격 엔진 주소·모델이 설정되지 않았습니다")
     if client is None:
         client = build_remote_client(remote, allow_external)
-    base = ChunkOptions.from_settings(meeting_type=meeting_type)
-    # 구간 글자 수: 설정(원격 청크 한도 또는 기본)과 맥락 길이 자동 계산값 중 작은 값(맥락 초과 400 방어, 작업 B-1d)
-    configured_chars = remote.chunk_max_chars or base.max_chars
-    auto_chars = safe_chunk_chars(remote_profile(), fixed_prompt_chars(meeting_type))
-    max_chars = min(configured_chars, auto_chars)
-    # 자동 계산값이 줄였을 때는 겹침도 구간의 1/4 이하로 줄인다(겹침이 구간과 비슷해지면 구간 수만 늘어난다)
-    overlap = min(base.overlap_chars, max(max_chars - 1, 1)) if max_chars == configured_chars else min(base.overlap_chars, max_chars // 4)
-    options = ChunkOptions(
-        max_chars=max_chars,
-        overlap_chars=overlap,
-        repair_max_chars=base.repair_max_chars,
-        timeout=remote.timeout_seconds,
-        retry_max=REMOTE_RETRY_CEILING,
-        minutes_max_chars=base.minutes_max_chars,
-        extra_markers=base.extra_markers,
-        participants=base.participants,
-        meeting_type=meeting_type,
-        retry_ceiling=max(REMOTE_RETRY_CEILING, MAX_RETRIES),
+    # 구간 글자 수: 설정(원격 청크 한도 또는 기본)과 맥락 길이 자동 계산값 중 작은 값(맥락 초과 400 방어, 작업 B-1d). 계산은 공용 helper
+    options = profile_chunk_options(
+        remote_profile(), meeting_type, configured_chars=remote.chunk_max_chars, timeout=remote.timeout_seconds,
+        retry_max=REMOTE_RETRY_CEILING, retry_ceiling=max(REMOTE_RETRY_CEILING, MAX_RETRIES),
     )
     return RemoteExtractor(client, remote.model, meeting_type, options=options, label=remote_label(remote.model))
 
