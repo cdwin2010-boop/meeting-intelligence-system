@@ -104,6 +104,24 @@ export function ProcessingBanner({ status, processing, canReprocess, onReprocess
   );
 }
 
+/** AI 서버가 준 오류 응답 본문 일부(관리자 이상에게만 서버가 내려준다). 없으면(필드 없음 포함) 아무것도 그리지 않는다 */
+export function ProcessingErrorDetails({ details }: { details: string[] | null | undefined }) {
+  const list = Array.isArray(details) ? details.filter((d) => typeof d === "string" && d.trim() !== "") : [];
+  if (list.length === 0) return null;
+  return (
+    <section aria-label="AI 서버 응답 내용" className="flex flex-col gap-2 rounded-mn-card border border-mn-border bg-mn-surface px-4 py-3">
+      <p className="text-sm">AI 서버 응답 내용(관리자 확인용, 앞 500자까지)</p>
+      <ul className="flex flex-col gap-1 pl-5 text-xs text-mn-muted">
+        {list.map((detail, index) => (
+          <li key={`${index}-${detail}`} className="list-disc break-all font-mn-mono">
+            {detail}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** 처리 경고(완료됐지만 일부 구간 처리가 실패한 사항). 없으면(필드 없음 포함) 아무것도 그리지 않는다 */
 export function ProcessingWarnings({ warnings }: { warnings: string[] | null | undefined }) {
   const list = Array.isArray(warnings) ? warnings.filter((w) => typeof w === "string" && w.trim() !== "") : [];

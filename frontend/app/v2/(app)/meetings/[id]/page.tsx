@@ -57,7 +57,7 @@ import { SOURCE_KIND_LABEL, sourceKindOf } from "@/lib/v2/source-kind";
 import { HistoryDialog } from "@/components/v2/HistoryDialog";
 import { ManualItemDialog } from "@/components/v2/ManualItemDialog";
 import { HeldAtDialog } from "@/components/v2/HeldAtDialog";
-import { ProcessingBanner, ProcessingWarnings } from "@/components/v2/ProcessingBanner";
+import { ProcessingBanner, ProcessingErrorDetails, ProcessingWarnings } from "@/components/v2/ProcessingBanner";
 import { useProcessing, useProcessingFinished } from "@/components/v2/ProcessingProvider";
 import { MinutesDialog, MinutesPanel } from "@/components/v2/MinutesPanel";
 import { parseSeconds, parseTranscriptBlocks, resolveEvidenceIndex, splitStamp } from "@/lib/v2/transcript-time";
@@ -1308,6 +1308,7 @@ export default function V2MeetingDetailPage() {
         }}
       />
       <ProcessingWarnings warnings={meeting.processingWarnings} />
+      <ProcessingErrorDetails details={meeting.llmErrorDetails} />
       <FakeMeetingNotice show={meeting.minutes?.engine === "fake"} />
       {actionNotice ? (
         <p role={actionNotice.tone === "error" ? "alert" : "status"} className="text-sm">

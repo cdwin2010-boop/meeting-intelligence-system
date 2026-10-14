@@ -121,6 +121,8 @@ export interface MeetingDetail {
   processing?: MeetingProcessing | null;
   /** 처리 경고(추가 필드, 작업 82-1): 완료됐지만 일부 구간 처리가 실패한 사항. 필드가 없거나 빈 목록이면 보이지 않는다 */
   processingWarnings?: string[];
+  /** LLM 서버 오류 응답 본문 앞 500자(추가 필드, 작업 B-1d). 서버가 관리자 이상에게만 내려준다(담당자·필드 없음이면 보이지 않는다) */
+  llmErrorDetails?: string[];
   actionItems: ActionItem[];
   /** reason: 처리 사유가 있는 사건(업무 종결·삭제, 회의록 보류·직권 종료·삭제)만, 그 밖에는 null */
   recentEvents: { eventType: string; actor: AccountRef | null; createdAt: string; reason?: string | null }[];

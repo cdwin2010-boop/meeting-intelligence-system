@@ -19,12 +19,13 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.config import settings
 from app.models.minutes import MINUTES_FIELDS, NO_CONTENT
-from app.pipeline.agenda_chunker import Chunk, parse_utterances, split_into_chunks
+from app.pipeline.agenda_chunker import Chunk, Utterance, parse_utterances, split_into_chunks
 from app.pipeline.evidence_time import apply_evidence_times
 from app.pipeline.extractor import (
     ActionItemCandidate, ActionItemList, ExtractedItem, ExtractionResult, MeetingMinutesDraft, postprocess,
 )
-from app.pipeline.json_parser import MAX_RETRIES, run_with_repair
+from app.pipeline.engine_profile import EngineProfile
+from app.pipeline.json_parser import MAX_RETRIES, ParseOutcome, run_with_repair
 from app.pipeline.llm_client import LlmClient
 from app.pipeline.prompts import SYSTEM_PROMPT, render_chunk_prompt
 
@@ -36,6 +37,70 @@ _NON_WORD = re.compile(r"[\W_]+")
 _TASK_SIMILAR = 0.9  # 업무명만으로 같은 업무로 보는 유사도
 _TASK_SIMILAR_WITH_QUOTE = 0.6  # 근거 인용문이 겹칠 때 같은 업무로 보는 유사도
 _QUOTE_SIMILAR = 0.9
+
+# 맥락 길이 초과 400 을 받았을 때 구간을 절반으로 나눠 다시 요청하는 상한(작업 B-1d)
+CONTEXT_SPLIT_DEPTH = 2  # 구간 하나당 나누는 깊이(최대 4조각)
+CONTEXT_SPLIT_BUDGET = 8  # 전사문 전체에서 나눔 때문에 늘어나는 추가 요청 수 상한(한 번 나눌 때마다 2회 소비)
+# 구간을 절반으로 나눠 다시 요청하는 사유(LocalLlmError.reason): 맥락 초과 400 / 사용 토큰이 맥락 한계에 도달(조용한 잘림 의심) / 출력 잘림
+SPLIT_REASONS = ("context_exceeded", "context_limit_reached", "output_truncated")
+REASON_CONTEXT = "context_exceeded"
+ERROR_DETAIL_MAX_COUNT = 5
+MIN_AUTO_CHUNK_CHARS = 300
+
+
+def output_reserve_tokens(context_tokens: int, max_output_tokens: int) -> int:
+    """(엔진 프로파일 EngineProfile.output_reserve_tokens 와 같은 계산) 설정 출력 토큰을 맥락의 1/4(최소 512) 이하로 줄인 출력 예약."""
+    return EngineProfile(context_tokens=context_tokens, max_output_tokens=max_output_tokens).output_reserve_tokens()
+
+
+def safe_chunk_chars(profile: EngineProfile, fixed_prompt_chars: int) -> int:
+    """사전 예산: (고정 지시 + 구간 + 출력 예약) 토큰이 맥락의 90% 안에 들어가는 구간 글자 수 상한(보수적 글자당 토큰, 하한 300자).
+    구간 토큰 = 맥락×0.9 − 출력 예약 − 고정 지시 토큰, 글자 수 = 구간 토큰 / 글자당 토큰."""
+    available = profile.budget_tokens - profile.output_reserve_tokens() - profile.tokens_of_chars(fixed_prompt_chars)
+    return max(MIN_AUTO_CHUNK_CHARS, int(available / profile.tokens_per_char))
+
+
+def fixed_prompt_chars(meeting_type: str = "") -> int:
+    """구간 본문을 뺀 고정 지시(시스템 + 사용자 프롬프트 틀)의 글자 수."""
+    sample = render_chunk_prompt("", datetime(2000, 1, 3, tzinfo=timezone.utc), meeting_type=meeting_type)
+    return len(SYSTEM_PROMPT) + len(sample)
+
+
+def split_chunk_in_half(chunk: Chunk) -> tuple[Chunk, Chunk] | None:
+    """구간을 글자 수 기준 절반으로 나눈다. 발언이 둘 이상이면 발언 경계에서, 하나뿐이면 그 발언 글을 가운데 근처에서 자른다.
+    더 나눌 수 없으면 None."""
+    utterances = chunk.utterances
+    if len(utterances) >= 2:
+        total = sum(len(u.text) for u in utterances)
+        running, cut = 0, 1
+        for position, u in enumerate(utterances[:-1], start=1):
+            running += len(u.text)
+            cut = position
+            if running * 2 >= total:
+                break
+        return (
+            replace(chunk, utterances=utterances[:cut], overlap_count=min(chunk.overlap_count, cut)),
+            replace(chunk, utterances=utterances[cut:], overlap_count=0),
+        )
+    if not utterances or len(utterances[0].text) < 2:
+        return None
+    only = utterances[0]
+    mid = len(only.text) // 2
+    window = only.text[max(mid - 40, 1): mid + 40]
+    offset = max(mid - 40, 1)
+    cut = mid
+    for marker in ("\n", ". ", "? ", "! ", "。", ", ", " "):  # 문장 경계 → 쉼표 → 공백 순으로 가운데에 가까운 곳
+        at = window.rfind(marker)
+        if at != -1:
+            cut = offset + at + len(marker)
+            break
+    first, second = only.text[:cut].rstrip(), only.text[cut:].lstrip()
+    if not first or not second:
+        return None
+    return (
+        replace(chunk, utterances=(replace(only, text=first, split=True),), split_utterance=True, overlap_count=0),
+        replace(chunk, utterances=(replace(only, text=second, split=True),), split_utterance=True, overlap_count=0),
+    )
 
 
 class ChunkResponse(BaseModel):
@@ -110,6 +175,8 @@ class ChunkedExtraction:
     warnings: list[str] = field(default_factory=list)
     # 청크 호출 실패의 마지막 원인 예외(응답 형식 문제로만 실패했으면 None). 전부 실패했을 때 오류 분류에 쓴다
     client_error: BaseException | None = None
+    # 서버가 준 오류 응답 본문 일부(마스킹됨, 최대 5건). 이력에 남기고 관리자 이상에게만 보여 준다
+    error_details: list[str] = field(default_factory=list)
 
     @property
     def all_failed(self) -> bool:
@@ -231,44 +298,90 @@ def extract_chunked(
     warnings: list[str] = []
     client_error: BaseException | None = None
     total = len(chunks)
-    for chunk in chunks:
+    budget = [CONTEXT_SPLIT_BUDGET]  # 맥락 초과로 나눠 다시 요청할 수 있는 남은 횟수(전사문 전체 공유)
+    error_details: list[str] = []
+
+    def call(piece: Chunk) -> ParseOutcome:
         prompt = render_chunk_prompt(
-            chunk.text, held_at, agenda_title=chunk.title, chunk_index=chunk.index + 1, chunk_total=total,
+            piece.text, held_at, agenda_title=piece.title, chunk_index=piece.index + 1, chunk_total=total,
             participants=opts.participants, meeting_type=opts.meeting_type,
         )
         messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]
-        outcome = run_with_repair(
+        return run_with_repair(
             client, messages, ChunkResponse, timeout=opts.timeout, repair_max_chars=opts.repair_max_chars, retry_max=opts.retry_max,
             retry_ceiling=opts.retry_ceiling,
         )
-        chunk_warnings: list[str] = []
+
+    def run_piece(piece: Chunk, depth: int, splits: list[int]) -> list[tuple[Chunk, ParseOutcome]]:
+        """한 조각을 호출한다. 맥락 길이 초과 400 이면 절반으로 나눠(구간당 깊이·전체 횟수 상한) 각각 다시 호출한다.
+        splits = [나눈 횟수, 이 구간에 쓴 요청 수]."""
+        outcome = call(piece)
+        splits[1] += outcome.calls
+        error = outcome.client_error
+        detail = getattr(error, "detail", "") if outcome.value is None else ""
+        if detail and len(error_details) < ERROR_DETAIL_MAX_COUNT and detail not in error_details:
+            error_details.append(detail)
+        if outcome.value is None and getattr(error, "reason", "") in SPLIT_REASONS and depth < CONTEXT_SPLIT_DEPTH and budget[0] >= 2:
+            halves = split_chunk_in_half(piece)
+            if halves is not None:
+                budget[0] -= 2  # 두 조각을 다시 요청하므로 추가 요청 2회
+                splits[0] += 1
+                return run_piece(halves[0], depth + 1, splits) + run_piece(halves[1], depth + 1, splits)
+        return [(piece, outcome)]
+
+    for chunk in chunks:
         label = f"구간 {chunk.index + 1}/{total}"
-        if outcome.value is None:
+        splits = [0, 0]
+        pieces = run_piece(chunk, 0, splits)
+        calls = splits[1]  # 실패해서 나눈 요청까지 포함
+        chunk_warnings: list[str] = []
+        succeeded = [(c, o) for c, o in pieces if o.value is not None]
+        failed = [(c, o) for c, o in pieces if o.value is None]
+        truncated = any(o.truncated_recovered for _, o in pieces)
+        for _, outcome in failed:
             if outcome.client_error is not None:
                 client_error = outcome.client_error
-            chunk_warnings.append(f"{label} 실패: {'; '.join(outcome.errors[:2]) or '응답을 읽지 못했습니다'}")
-            reports.append(ChunkReport(chunk.index, chunk.title, STATUS_FAILED, outcome.calls, 0, outcome.truncated_recovered, tuple(chunk_warnings)))
+        if splits[0]:
+            chunk_warnings.append(f"{label} 맥락 한계(초과·잘림 의심)로 구간을 나눠 다시 요청({len(pieces)}조각)")
+        if not succeeded:
+            last = failed[-1][1]
+            reason = getattr(last.client_error, "reason", "")
+            if reason == REASON_CONTEXT:
+                why = "모델 맥락 길이를 초과했습니다(구간을 나눠도 처리하지 못함)"
+            elif reason in SPLIT_REASONS:
+                why = "응답이 맥락 한계에서 잘렸을 수 있어 신뢰할 수 없습니다(구간을 나눠도 해소되지 않음)"
+            else:
+                why = "; ".join(last.errors[:2]) or "응답을 읽지 못했습니다"
+            chunk_warnings.append(f"{label} 실패: {why}")
+            reports.append(ChunkReport(chunk.index, chunk.title, STATUS_FAILED, calls, 0, truncated, tuple(chunk_warnings)))
             warnings.extend(chunk_warnings)
             continue
-        if outcome.status == "repaired":
-            chunk_warnings.append(f"{label} 교정 재시도로 복구")
-        if outcome.truncated_recovered:
-            chunk_warnings.append(f"{label} 응답이 잘려 복구")
-        if chunk.split_utterance:
-            chunk_warnings.append(f"{label} 너무 긴 발언을 문장 경계에서 나눔")
-        chunk_items, item_warnings = _items_of_chunk(chunk, outcome.value.items, held_at)
-        chunk_warnings.extend(item_warnings)
-        items.extend(chunk_items)
-        drafts.append((chunk, outcome.value.minutes))
-        status = STATUS_REPAIRED if outcome.status == "repaired" else STATUS_OK
-        reports.append(ChunkReport(chunk.index, chunk.title, status, outcome.calls, len(chunk_items), outcome.truncated_recovered, tuple(chunk_warnings)))
+        if failed:
+            chunk_warnings.append(f"{label} 일부 조각 처리 실패({len(failed)}/{len(pieces)})")
+        chunk_items_all: list[ChunkedItem] = []
+        for piece, outcome in succeeded:
+            if outcome.status == "repaired":
+                chunk_warnings.append(f"{label} 교정 재시도로 복구")
+            if outcome.truncated_recovered:
+                chunk_warnings.append(f"{label} 응답이 잘려 복구")
+            if piece.split_utterance and not splits[0]:
+                chunk_warnings.append(f"{label} 너무 긴 발언을 문장 경계에서 나눔")
+            piece_items, item_warnings = _items_of_chunk(piece, outcome.value.items, held_at)
+            chunk_warnings.extend(item_warnings)
+            chunk_items_all.extend(piece_items)
+            drafts.append((piece, outcome.value.minutes))
+        items.extend(chunk_items_all)
+        status = STATUS_REPAIRED if any(o.status == "repaired" for _, o in succeeded) else STATUS_OK
+        reports.append(ChunkReport(chunk.index, chunk.title, status, calls, len(chunk_items_all), truncated, tuple(chunk_warnings)))
         warnings.extend(chunk_warnings)
 
     merged_items, removed = dedupe_items(items)
     if removed:
         warnings.append(f"겹침 구간의 중복 업무 {removed}건 제거")
     minutes = _merge_minutes(drafts, total, opts.minutes_max_chars)
-    return ChunkedExtraction(items=merged_items, minutes=minutes, chunks=reports, warnings=warnings, client_error=client_error)
+    return ChunkedExtraction(
+        items=merged_items, minutes=minutes, chunks=reports, warnings=warnings, client_error=client_error, error_details=error_details,
+    )
 
 
 def to_extraction_result(

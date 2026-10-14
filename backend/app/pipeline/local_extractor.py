@@ -55,11 +55,11 @@ class LocalLlmExtractor:
             prompt_version=prompt_version_of(self._meeting_type),
             minutes_prompt_version=prompt_version_of(self._meeting_type),
         )
-        return _with(converted, self._label or engine_label(self._model), warnings)
+        return _with(converted, self._label or engine_label(self._model), warnings, tuple(result.error_details))
 
 
-def _with(result: ExtractionResult, label: str, warnings: tuple) -> ExtractionResult:
-    return replace(result, engine_label=label, processing_warnings=warnings)
+def _with(result: ExtractionResult, label: str, warnings: tuple, details: tuple = ()) -> ExtractionResult:
+    return replace(result, engine_label=label, processing_warnings=warnings, llm_error_details=details)
 
 
 def make_local_extractor(

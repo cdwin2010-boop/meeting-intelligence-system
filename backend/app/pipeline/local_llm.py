@@ -4,9 +4,13 @@
 - 보안 원칙: 기본은 루프백·사설망 호스트만 허용한다(LOCAL_LLM_ALLOW_EXTERNAL_HOST 가 참이면 허용). 호스트 판정은 문자열·IP 리터럴 기준이며
   이름이 사설 IP 로 해석되는지 DNS 조회는 하지 않는다(한계). https 인증서 검증은 끄지 않고 리디렉션은 따라가지 않는다.
 - 오류는 LocalLlmError(kind: transient | permanent)로 올린다. 메시지에는 주소 전체·키·요청 본문·전사 본문을 넣지 않는다.
+- HTTP 오류(4xx·5xx) 때 서버가 준 응답 본문은 앞 500자만, 키·인증 헤더·주소를 가린 뒤 LocalLlmError.detail 에만 담는다
+  (메시지·로그에는 넣지 않는다. 이력 저장·관리자 화면 표시는 호출부가 한다, 작업 B-1d).
 """
 import ipaddress
+import json
 import logging
+import re
 from urllib.parse import urlsplit
 
 import httpx
@@ -23,6 +27,20 @@ PERMANENT = "permanent"  # 4xx·응답 형식 오류·설정 오류
 NO_KEY = "not-needed"
 TEMPERATURE = 0.1
 
+DETAIL_MAX_CHARS = 500
+_BODY_READ_MAX = 4000  # 마스킹 전에 읽는 응답 본문 상한(너무 긴 본문 방어)
+_URL = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+_BEARER = re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/=\-]+")
+_KEY_LIKE = re.compile(r"(?:sk-|AIza)[A-Za-z0-9_\-]{8,}")
+_IPV4 = re.compile(r"\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?")
+
+# 400 응답 본문 분류(작업 B-1d)
+BAD_CONTEXT = "context"  # 맥락 길이·토큰 초과
+BAD_OPTION = "option"  # response_format 등 요청 옵션 미지원
+BAD_EMPTY = "empty"  # 사유를 읽을 수 없는 본문(비어 있거나 JSON 의 빈 객체)
+BAD_OTHER = "other"
+_LIMIT_WORDS = ("exceed", "too many", "too long", "greater than", "larger than", "maximum", "limit", "overflow")
+
 HOST_LOOPBACK = "loopback"
 HOST_PRIVATE = "private"
 HOST_EXTERNAL = "external"
@@ -37,10 +55,13 @@ _PRIVATE_NETWORKS = tuple(
 class LocalLlmError(LlmClientError):
     """로컬 LLM 호출 실패. kind 로 일시/영구를 구분한다."""
 
-    def __init__(self, message: str, *, kind: str, reason: str = ""):
+    def __init__(self, message: str, *, kind: str, reason: str = "", detail: str = ""):
         super().__init__(message)
         self.kind = kind
-        self.reason = reason  # timeout | connect | http_5xx | http_429 | http_4xx | format | host_blocked | config
+        # timeout | connect | http_5xx | http_429 | http_4xx | context_exceeded(맥락 초과 400) | context_limit_reached(사용 토큰이
+        # 맥락 한계 도달) | output_truncated(finish_reason=length) | format | host_blocked | config
+        self.reason = reason
+        self.detail = detail  # 서버 응답 본문 앞 500자(마스킹됨, 없으면 ""). 메시지·로그에는 넣지 않는다
 
     @property
     def job_error_code(self) -> str:
@@ -49,6 +70,10 @@ class LocalLlmError(LlmClientError):
             return "timeout"
         if self.reason == "host_blocked":
             return "llm_host_blocked"
+        if self.reason in ("context_exceeded", "context_limit_reached"):
+            return "llm_context_exceeded"
+        if self.reason == "output_truncated":
+            return "llm_output_truncated"
         return "llm_unavailable" if self.kind == TRANSIENT else "llm_error"
 
 
@@ -132,12 +157,46 @@ def log_startup_warning(provider: str, base_url: str, allow_external: bool) -> N
         log.warning(message)
 
 
-def _status_error(status: int) -> LocalLlmError:
+def mask_detail(text: str | None, *, base_url: str = "", api_key: str = "") -> str:
+    """응답 본문 일부를 이력·화면용으로 가린다: 키 값·인증 헤더 값·서버 주소(URL·호스트·IPv4)를 지우고 앞 500자만 남긴다."""
+    value = (text or "")[:_BODY_READ_MAX]
+    key = (api_key or "").strip()
+    if key and key != NO_KEY:
+        value = value.replace(key, "***")
+    host = host_of(base_url) if base_url else None
+    for literal in (base_url.strip().rstrip("/") if base_url else "", host or ""):
+        if literal:
+            value = value.replace(literal, "***")
+    value = _URL.sub("***", value)
+    value = _BEARER.sub("Bearer ***", value)
+    value = _KEY_LIKE.sub("***", value)
+    value = _IPV4.sub("***", value)
+    return " ".join(value.split())[:DETAIL_MAX_CHARS]
+
+
+def classify_bad_request(body_text: str | None) -> str:
+    """400 응답 본문 분류: context(맥락·토큰 초과) | option(response_format 등 미지원) | empty | other."""
+    low = (body_text or "").strip().lower()
+    if low in ("", "{}", "null", "[]", "{\"error\": {}}"):
+        return BAD_EMPTY
+    if "n_ctx" in low or "context" in low or ("token" in low and any(w in low for w in _LIMIT_WORDS)):
+        return BAD_CONTEXT
+    if any(word in low for word in ("response_format", "json_object", "json_schema")):
+        return BAD_OPTION
+    return BAD_OTHER
+
+
+def _status_error(status: int, detail: str = "", category: str = "") -> LocalLlmError:
     if status == 429:
-        return LocalLlmError("로컬 LLM 이 요청 한도를 초과했다고 응답했습니다(429).", kind=TRANSIENT, reason="http_429")
+        return LocalLlmError("로컬 LLM 이 요청 한도를 초과했다고 응답했습니다(429).", kind=TRANSIENT, reason="http_429", detail=detail)
     if status >= 500:
-        return LocalLlmError(f"로컬 LLM 서버 오류({status}).", kind=TRANSIENT, reason="http_5xx")
-    return LocalLlmError(f"로컬 LLM 이 요청을 거절했습니다({status}).", kind=PERMANENT, reason="http_4xx")
+        return LocalLlmError(f"로컬 LLM 서버 오류({status}).", kind=TRANSIENT, reason="http_5xx", detail=detail)
+    if status == 400 and category == BAD_CONTEXT:
+        return LocalLlmError(
+            "로컬 LLM 이 요청이 모델의 맥락 길이(토큰 한도)를 넘는다고 응답했습니다(400).",
+            kind=PERMANENT, reason="context_exceeded", detail=detail,
+        )
+    return LocalLlmError(f"로컬 LLM 이 요청을 거절했습니다({status}).", kind=PERMANENT, reason="http_4xx", detail=detail)
 
 
 def _transport_error(exc: BaseException) -> LocalLlmError:
@@ -159,7 +218,7 @@ class OpenAICompatClient:
 
     def __init__(
         self, base_url: str, model: str, api_key: str = NO_KEY, *, max_output_tokens: int = 4096,
-        allow_external: bool = False, json_mode_enabled: bool = True,
+        allow_external: bool = False, json_mode_enabled: bool = True, context_tokens: int = 0, truncation_ratio: float = 0.98,
     ):
         self._base = base_url.rstrip("/")
         self._model = model
@@ -167,6 +226,9 @@ class OpenAICompatClient:
         self._max_tokens = max_output_tokens
         self._allow_external = allow_external
         self._json_enabled = json_mode_enabled
+        self._context_tokens = context_tokens  # 0 이면 잘림 검사(사용 토큰 ≥ 맥락×비율)를 건너뛴다
+        self._truncation_ratio = truncation_ratio
+        self.usage_missing = 0  # 응답에 사용 토큰 정보가 없던 횟수(잘림 검사를 건너뛴 기록)
         self._json_rejected = False  # 서버가 response_format 을 거부한 적이 있으면 이후 요청에서 생략한다
 
     def _post(self, body: dict, timeout: float) -> httpx.Response:
@@ -183,14 +245,58 @@ class OpenAICompatClient:
         if use_json:
             body["response_format"] = {"type": "json_object"}
         response = self._post(body, timeout)
-        if use_json and response.status_code == 400:
-            # 서버가 JSON 모드를 지원하지 않는 경우: response_format 없이 1회만 다시 요청한다(프롬프트 유도에 의존)
-            self._json_rejected = True
-            body.pop("response_format")
-            response = self._post(body, timeout)
+        category = ""
+        if response.status_code == 400:
+            category = classify_bad_request(self._body_text(response))
+            # 맥락 길이 초과는 옵션 문제가 아니므로 다시 보내지 않는다(호출부가 구간을 나눠 다시 요청한다)
+            # 옵션 미지원(또는 사유를 읽을 수 없는 400)이고 JSON 모드였으면 response_format 없이 1회만 다시 요청한다(프롬프트 유도에 의존)
+            if use_json and category in (BAD_OPTION, BAD_EMPTY):
+                self._json_rejected = True
+                body.pop("response_format")
+                response = self._post(body, timeout)
+                category = classify_bad_request(self._body_text(response)) if response.status_code == 400 else ""
         if response.status_code != 200:
-            raise _status_error(response.status_code)
+            raise _status_error(response.status_code, self._detail(response), category)
+        self._check_truncation(response)
         return _content_of(response)
+
+    def _check_truncation(self, response: httpx.Response) -> None:
+        """조용한 잘림 감지: finish_reason=length 이면 출력 잘림, 사용 토큰이 맥락×비율 이상이면 맥락 한계 도달(잘림 의심).
+        사용 토큰 정보가 없으면 검사를 건너뛰고 건수만 센다. 본문 모양이 다르면(JSON 아님 등) 여기서는 아무것도 하지 않는다."""
+        try:
+            data = response.json()
+            finish = data["choices"][0].get("finish_reason")
+            usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+            return
+        used = usage.get("prompt_tokens") if isinstance(usage.get("prompt_tokens"), int) else usage.get("total_tokens")
+        info = f"finish_reason={finish}, prompt_tokens={used}, n_ctx={self._context_tokens or '미설정'}"
+        if finish == "length":
+            raise LocalLlmError("로컬 LLM 응답이 출력 길이 한도에서 잘렸습니다(finish_reason=length).", kind=PERMANENT, reason="output_truncated", detail=info)
+        if not self._context_tokens:
+            return
+        if not isinstance(used, int):
+            self.usage_missing += 1
+            log.info("response has no usage token info; truncation check skipped")
+            return
+        if used >= self._context_tokens * self._truncation_ratio:
+            raise LocalLlmError(
+                "사용 토큰이 모델 맥락 길이의 한계에 도달해 앞부분이 잘렸을 수 있습니다.", kind=PERMANENT, reason="context_limit_reached", detail=info,
+            )
+
+    @staticmethod
+    def _body_text(response: httpx.Response) -> str:
+        try:
+            raw = response.text[:_BODY_READ_MAX]
+        except Exception:  # noqa: BLE001 — 본문을 못 읽어도 오류 분류는 계속한다
+            return ""
+        try:  # JSON 이면 한글이 \uXXXX 로 읽히지 않게 다시 직렬화한다(관리자가 읽을 문구)
+            return json.dumps(json.loads(raw), ensure_ascii=False)
+        except ValueError:
+            return raw
+
+    def _detail(self, response: httpx.Response) -> str:
+        return mask_detail(self._body_text(response), base_url=self._base, api_key=self._api_key)
 
 
 def _content_of(response: httpx.Response) -> str:

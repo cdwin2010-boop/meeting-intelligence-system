@@ -138,6 +138,14 @@ class Settings(BaseSettings):
     remote_llm_timeout_seconds: float = Field(300, gt=0, le=3600)
     # 원격 엔진의 청크 한도(글자). 0 이면 EXTRACT_CHUNK_MAX_CHARS 를 쓴다
     remote_llm_chunk_max_chars: int = Field(0, ge=0)
+    # 원격 모델 서버의 맥락 길이(n_ctx, 토큰). 구간 글자 수 상한을 (맥락 - 출력 예약 - 고정 지시) 기준으로 보수적으로 자동 계산한다(작업 B-1d)
+    remote_llm_context_tokens: int = Field(8192, ge=1024)
+    # 원격 엔진 프로파일 나머지 항목(app/pipeline/engine_profile.py): JSON 응답 형식 지원·글자당 토큰(보수적, 한국어는 크게)·
+    # 서버 토크나이저 사용(옵션, 기본 꺼짐, 아직 값만)·요청에 맥락 길이 명시(향후 Ollama num_ctx, 아직 값만)
+    remote_llm_json_format: bool = True
+    remote_llm_tokens_per_char: float = Field(1.3, ge=0.5, le=4.0)
+    remote_llm_use_server_tokenizer: bool = False
+    remote_llm_send_context_option: bool = False
     # 오디오 전처리(작업 75-1 파트 B, FFmpeg 단일 체인): 기본 꺼짐. 켜면 STT 입력 직전에 16kHz 모노 wav 로 전처리한다
     # ffmpeg_path: 기본 "ffmpeg"(PATH 검색, backend/bin 에 번들 파일이 있으면 그것을 우선) / 시간 초과(초)
     audio_preprocess_enabled: bool = False

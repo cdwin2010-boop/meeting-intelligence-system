@@ -23,7 +23,8 @@ from app.auth.deps import has_rank
 
 from app.config import settings
 from app.models import Account, Event, Job
-from app.pipeline.chunked_extract import ChunkOptions
+from app.pipeline.chunked_extract import ChunkOptions, fixed_prompt_chars, safe_chunk_chars
+from app.pipeline.engine_profile import EngineProfile
 from app.pipeline.json_parser import MAX_RETRIES
 from app.pipeline.llm_client import LlmClient
 from app.pipeline.local_extractor import LocalLlmExtractor
@@ -109,7 +110,7 @@ def load_remote_settings() -> RemoteSettings:
         chunk = settings.remote_llm_chunk_max_chars
     return RemoteSettings(
         base_url=base,
-        model=str(saved.get("model", settings.remote_llm_model) or "").strip(),
+        model=str(saved.get("model", settings.remote_llm_model) or "").strip(),  # 대소문자는 그대로, 앞뒤 공백만 제거
         api_key=str(saved.get("apiKey", settings.remote_llm_api_key.get_secret_value()) or ""),
         timeout_seconds=timeout if timeout > 0 else settings.remote_llm_timeout_seconds,
         chunk_max_chars=max(0, chunk),
@@ -220,14 +221,34 @@ def remote_label(model: str) -> str:
     return REMOTE_LABEL_PREFIX + name
 
 
+def remote_profile() -> EngineProfile:
+    """원격(시험용) 엔진 프로파일: 값은 모두 설정(REMOTE_LLM_*, LOCAL_LLM_MAX_OUTPUT_TOKENS)에서 읽는다(작업 B-1d)."""
+    return EngineProfile(
+        name="remote-openai-compat",
+        context_tokens=settings.remote_llm_context_tokens,
+        max_output_tokens=settings.local_llm_max_output_tokens,
+        supports_json_format=settings.remote_llm_json_format,
+        tokens_per_char=settings.remote_llm_tokens_per_char,
+        use_server_tokenizer=settings.remote_llm_use_server_tokenizer,
+        send_context_option=settings.remote_llm_send_context_option,
+    )
+
+
+def remote_output_tokens() -> int:
+    """원격 요청의 max_tokens: 설정 출력 토큰과 맥락 길이의 1/4 중 작은 값(작업 B-1d)."""
+    return remote_profile().output_reserve_tokens()
+
+
 def build_remote_client(remote: RemoteSettings, allow_external: bool) -> LlmClient:
     return OpenAICompatClient(
         remote.base_url,
         remote.model,
         remote.api_key or NO_KEY,
-        max_output_tokens=settings.local_llm_max_output_tokens,
+        max_output_tokens=remote_output_tokens(),
         allow_external=allow_external,
-        json_mode_enabled=True,
+        json_mode_enabled=remote_profile().supports_json_format,
+        context_tokens=remote_profile().context_tokens,
+        truncation_ratio=remote_profile().truncation_ratio,
     )
 
 
@@ -254,10 +275,15 @@ def make_remote_extractor(meeting_type: str = "", client: LlmClient | None = Non
     if client is None:
         client = build_remote_client(remote, allow_external)
     base = ChunkOptions.from_settings(meeting_type=meeting_type)
-    max_chars = remote.chunk_max_chars or base.max_chars
+    # 구간 글자 수: 설정(원격 청크 한도 또는 기본)과 맥락 길이 자동 계산값 중 작은 값(맥락 초과 400 방어, 작업 B-1d)
+    configured_chars = remote.chunk_max_chars or base.max_chars
+    auto_chars = safe_chunk_chars(remote_profile(), fixed_prompt_chars(meeting_type))
+    max_chars = min(configured_chars, auto_chars)
+    # 자동 계산값이 줄였을 때는 겹침도 구간의 1/4 이하로 줄인다(겹침이 구간과 비슷해지면 구간 수만 늘어난다)
+    overlap = min(base.overlap_chars, max(max_chars - 1, 1)) if max_chars == configured_chars else min(base.overlap_chars, max_chars // 4)
     options = ChunkOptions(
         max_chars=max_chars,
-        overlap_chars=min(base.overlap_chars, max(max_chars - 1, 1)),
+        overlap_chars=overlap,
         repair_max_chars=base.repair_max_chars,
         timeout=remote.timeout_seconds,
         retry_max=REMOTE_RETRY_CEILING,

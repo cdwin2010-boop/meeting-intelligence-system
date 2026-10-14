@@ -365,6 +365,28 @@ test.describe("표시 보완", () => {
     await expect(region).toContainText("구간 2/3 실패");
   });
 
+  test("llmErrorDetails 가 있으면 AI 서버 응답 내용을 보이고, 없거나 비었으면 보이지 않는다(B-1d)", async ({ page }) => {
+    await openMeeting(
+      page,
+      meeting({
+        status: "failed",
+        processing: { status: "failed", errorCode: "llm_context_exceeded", startedAt: null, finishedAt: null },
+        llmErrorDetails: ["Requested tokens (9100) exceed context window of 8192"],
+      }),
+    );
+    await expect(page.getByRole("region", { name: "AI 서버 응답 내용" })).toContainText("exceed context window of 8192");
+    await expect(page.getByText("맥락 길이").first()).toBeVisible();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await openMeeting(
+      page,
+      meeting({ status: "failed", processing: { status: "failed", errorCode: "llm_output_truncated", startedAt: null, finishedAt: null } }),
+    );
+    await expect(page.getByText("출력 길이 한도에서 잘려").first()).toBeVisible();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await openMeeting(page, meeting({ llmErrorDetails: [] }));
+    await expect(page.getByRole("region", { name: "AI 서버 응답 내용" })).toHaveCount(0);
+  });
+
   test("processingWarnings 가 비었거나 없으면 아무것도 보이지 않는다", async ({ page }) => {
     await openMeeting(page, meeting({ processingWarnings: [] }));
     await expect(page.getByRole("region", { name: "처리 경고" })).toHaveCount(0);

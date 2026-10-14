@@ -102,6 +102,8 @@ class ExtractionResult:
     # 로컬 엔진 경로(작업 81-1): 서버가 만든 엔진 표시값("로컬 LLM(모델명)", 없으면 기존 엔진 값)과 처리 경고(일부 청크 실패 등)
     engine_label: str = ""
     processing_warnings: tuple[str, ...] = ()
+    # 서버가 준 오류 응답 본문 일부(마스킹됨, 최대 5건, 작업 B-1d). 이력에만 남기고 관리자 이상에게만 보여 준다
+    llm_error_details: tuple[str, ...] = ()
 
 
 def response_json_schema() -> dict:

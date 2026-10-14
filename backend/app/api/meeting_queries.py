@@ -24,7 +24,7 @@ from app.api.meeting_schemas import (
 )
 from app.auth.actions import available_phases, item_allowed_actions, meeting_allowed_actions, phase_allowed
 from app.auth.access import VIEW_ALL_RANKS, can_confirm_meeting, get_visible_meeting, has_assigned_item, meeting_visibility
-from app.auth.deps import get_current_account
+from app.auth.deps import get_current_account, has_rank
 from app.auth.scope import scoped
 from app.db import get_session
 from app.models import (
@@ -35,7 +35,7 @@ from app.models.minutes import MINUTES_FIELDS
 from app.models.closure import meeting_phase, phase_condition
 from app.models.common import MEETING_STATUSES
 from app.services.item_closure import closure_kinds
-from app.services.processing_warnings import WARNING_EVENT, processing_warnings_of
+from app.services.processing_warnings import DETAIL_EVENT, WARNING_EVENT, llm_error_details_of, processing_warnings_of
 from app.services.source_kind import SOURCE_AUDIO, source_kind_of_path
 from app.services.supersession import project_of_meeting, superseded_ids, supersession_refs
 from app.models.item_conditions import live_item, not_deleted_item
@@ -219,6 +219,7 @@ def _recent_events(session: Session, meeting: Meeting) -> list[EventOut]:
         .where(
             Event.tenant_id == meeting.tenant_id,
             Event.event_type != WARNING_EVENT,  # 처리 경고는 processingWarnings 로 따로 내려준다
+            Event.event_type != DETAIL_EVENT,  # 오류 응답 본문은 관리자 이상에게만 llmErrorDetails 로 따로 내려준다
             or_(
                 and_(Event.entity_type == "meeting", Event.entity_id == meeting.id),
                 and_(Event.entity_type == "job", Event.entity_id.in_(job_ids)),
@@ -337,6 +338,7 @@ def get_meeting(
         project=ProjectRef(id=linked_project.id, name=linked_project.name) if linked_project else None,
         processing=processing_out(session, meeting),
         processing_warnings=processing_warnings_of(session, meeting.id),
+        llm_error_details=llm_error_details_of(session, meeting.id) if has_rank(account, "manager") else [],
         source_kind=kind,
         has_audio=kind == SOURCE_AUDIO and bool(document is not None and document.file_path),
         allowed_actions=meeting_allowed_actions(session, account, meeting),

@@ -182,6 +182,8 @@ class MeetingDetail(CamelModel):
     processing: ProcessingOut | None = None
     # 처리 경고(추가 필드): 완료됐지만 확인이 필요한 사항(일부 구간 추출 실패 등). 없으면 빈 목록
     processing_warnings: list[str] = []
+    # LLM 서버 오류 응답 본문 앞 500자(추가 필드, 작업 B-1d). 키·주소는 가려져 있고 관리자 이상에게만 내려준다(담당자는 빈 목록)
+    llm_error_details: list[str] = []
     # 이 사용자가 이 회의록에서 지금 할 수 있는 동작(추가 필드, app/auth/actions.py). 화면 표시용이며 거부 판정은 각 API 가 한다
     allowed_actions: list[str] = []
 

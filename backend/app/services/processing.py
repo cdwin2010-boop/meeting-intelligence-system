@@ -30,7 +30,7 @@ from app.services.engine_test import job_engine
 from app.services.extraction_engine import select_extractor
 from app.services.external_policy import enforce_external_policy
 from app.services.mail import queue_immediate_new_minutes
-from app.services.processing_warnings import record_processing_warnings
+from app.services.processing_warnings import record_llm_error_details, record_processing_warnings
 from app.services.notices import create_confirm_notices
 from app.services.reprocess import recompute_auto_confirm_after_reprocess
 from app.pipeline.extractor import ActionItemCandidate, ExtractionResult, Extractor, FakeExtractor, make_gemini_extractor
@@ -196,6 +196,7 @@ def _finish_completed(
         _save_minutes(session, job, meeting, minutes, engine)
         if minutes is not None:
             record_processing_warnings(session, job, minutes.processing_warnings)  # 일부 청크 실패 등(완료로 두되 확인 필요)
+            record_llm_error_details(session, job, minutes.llm_error_details)
 
         now = utcnow()
         if registrant is not None and registrant.rank in CONFIRM_ON_REGISTRATION_RANKS:
@@ -223,7 +224,7 @@ def _finish_completed(
         session.commit()
 
 
-def _finish_failed(factory: sessionmaker, job_id: int, code: str) -> None:
+def _finish_failed(factory: sessionmaker, job_id: int, code: str, details: tuple[str, ...] = ()) -> None:
     with factory() as session:
         job = session.get(Job, job_id)
         meeting = session.get(Meeting, job.meeting_id)
@@ -231,6 +232,7 @@ def _finish_failed(factory: sessionmaker, job_id: int, code: str) -> None:
         meeting.status = "failed"
         _event(session, job, "job", job.id, "job.failed", error_code=code)
         _event(session, job, "meeting", meeting.id, "meeting.failed")
+        record_llm_error_details(session, job, details)  # 서버 오류 응답 본문 일부(마스킹됨, 관리자 이상만 열람)
         session.commit()
 
 
@@ -315,7 +317,8 @@ def process_meeting(
     except Exception as exc:  # noqa: BLE001 — 백그라운드 작업은 예외를 밖으로 던지지 않고 failed 로 기록한다
         code = error_code(exc)
         log.warning("job %s failed: %s (%s)", job_id, code, type(exc).__name__)
-        _finish_failed(factory, job_id, code)
+        detail = getattr(exc, "detail", "")
+        _finish_failed(factory, job_id, code, (detail,) if isinstance(detail, str) and detail else ())
         return "failed"
 
 
