@@ -58,7 +58,15 @@ class Settings(BaseSettings):
 
     # ---- 음성 업로드·처리 ----
     # 전사 엔진: fake(가짜 대본, 네트워크 없음) / gemini. 업무 추출기도 같은 값을 따른다
-    stt_provider: Literal["fake", "gemini"] = "fake"
+    stt_provider: Literal["fake", "gemini", "local"] = "fake"
+    # 로컬 STT(STT_PROVIDER=local, 작업 L-1): faster-whisper. 값은 시작 때 검증한다(잘못되면 시작 거부, 자동 전환 없음)
+    stt_local_model_size: str = "large-v3"
+    stt_local_device: Literal["cuda", "cpu"] = "cuda"
+    stt_local_compute_type: Literal["float16", "int8_float16", "int8"] = "float16"
+    stt_local_language: str = "ko"
+    stt_local_beam_size: int = Field(5, ge=1, le=20)
+    stt_local_default_speaker: str = "화자1"
+    stt_local_model_dir: str = ""  # 지정 시 이 폴더의 모델만 오프라인으로 불러온다(local_files_only)
     # 업로드 음성 보관 폴더(실행 위치 기준 상대 경로 가능, data/ 는 커밋 제외). 하위에 {tenant_id}/{uuid}.{ext}
     upload_dir: Path = Path("data/uploads")
     max_upload_mb: int = 200
@@ -217,6 +225,19 @@ class Settings(BaseSettings):
             self.local_llm_base_url = url.rstrip("/")
         if self.effective_llm_provider == "local" and not (self.local_llm_base_url and self.local_llm_model.strip()):
             raise ValueError("LLM_PROVIDER=local 이면 LOCAL_LLM_BASE_URL 과 LOCAL_LLM_MODEL 이 필요합니다.")
+        return self
+
+    @model_validator(mode="after")
+    def _check_local_stt(self):
+        if not self.stt_local_model_size.strip() and not self.stt_local_model_dir.strip():
+            raise ValueError("STT_LOCAL_MODEL_SIZE 가 비어 있습니다.")
+        if not self.stt_local_language.strip() or not self.stt_local_default_speaker.strip():
+            raise ValueError("STT_LOCAL_LANGUAGE·STT_LOCAL_DEFAULT_SPEAKER 는 비워 둘 수 없습니다.")
+        if self.stt_provider == "local":
+            if self.processing_mode != "queue":
+                raise ValueError("STT_PROVIDER=local 은 PROCESSING_MODE=queue(별도 워커)에서만 쓸 수 있습니다.")
+            if self.stt_local_device == "cpu" and self.stt_local_compute_type == "float16":
+                raise ValueError("STT_LOCAL_DEVICE=cpu 에서는 STT_LOCAL_COMPUTE_TYPE 으로 int8 을 쓰세요.")
         return self
 
     @model_validator(mode="after")
