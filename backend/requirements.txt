@@ -16,6 +16,8 @@ tzdata>=2024.1
 # Keep this file ASCII-only: pip < 25 on Korean Windows reads it as cp949 and fails on non-ASCII comments
 # xlsx export of a meeting (openpyxl, pure Python)
 openpyxl>=3.1
+# local STT (L-1, MIT license). torch is optional (only to free the CUDA cache); used only with STT_PROVIDER=local
+faster-whisper>=1.0
 # tests
 pytest>=8
 httpx>=0.27

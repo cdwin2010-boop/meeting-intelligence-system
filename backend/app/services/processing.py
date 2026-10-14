@@ -55,6 +55,10 @@ CONFIRM_ON_REGISTRATION_RANKS = ("manager", "executive")
 
 
 def default_stt() -> SttEngine:
+    if settings.stt_provider == "local":
+        from app.pipeline.local_stt import make_local_stt  # 지연 import: faster-whisper 는 선택 의존성
+
+        return make_local_stt(settings)
     return make_gemini_stt() if settings.stt_provider == "gemini" else FakeStt()
 
 

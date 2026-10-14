@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -58,7 +59,15 @@ class Settings(BaseSettings):
 
     # ---- 음성 업로드·처리 ----
     # 전사 엔진: fake(가짜 대본, 네트워크 없음) / gemini. 업무 추출기도 같은 값을 따른다
-    stt_provider: Literal["fake", "gemini"] = "fake"
+    stt_provider: Literal["fake", "gemini", "local"] = "fake"
+    # 로컬 STT(STT_PROVIDER=local, 작업 L-1): faster-whisper. 값은 시작 때 검증한다(잘못되면 시작 거부, 자동 전환 없음)
+    stt_local_model_size: str = "large-v3"
+    stt_local_device: Literal["cuda", "cpu"] = "cuda"
+    stt_local_compute_type: Literal["float16", "int8_float16", "int8"] = "float16"
+    stt_local_language: str = "ko"
+    stt_local_beam_size: int = Field(5, ge=1, le=20)
+    stt_local_default_speaker: str = "화자1"
+    stt_local_model_dir: str = ""  # 지정 시 이 폴더의 모델만 오프라인으로 불러온다(local_files_only)
     # 업로드 음성 보관 폴더(실행 위치 기준 상대 경로 가능, data/ 는 커밋 제외). 하위에 {tenant_id}/{uuid}.{ext}
     upload_dir: Path = Path("data/uploads")
     max_upload_mb: int = 200
@@ -106,13 +115,23 @@ class Settings(BaseSettings):
     # 추출(LLM) 엔진(작업 81-1): auto = STT_PROVIDER 를 따른다(현행 동작) / gemini / local(로컬 OpenAI 호환 서버) / fake
     # 로컬 LLM: base_url 은 ".../v1" 까지 포함. 키는 보통 불필요("not-needed"). JSON 모드를 서버가 거부하면 자동으로 끄고 1회 재요청한다.
     # allow_external_host 가 false(기본)면 루프백·사설망 호스트만 허용(보안 원칙: 외부망 연동 기본 OFF, 변경은 시스템 관리자만)
-    llm_provider: Literal["auto", "gemini", "local", "fake"] = "auto"
+    llm_provider: Literal["auto", "gemini", "local", "ollama", "fake"] = "auto"
     local_llm_base_url: str = ""
     local_llm_model: str = ""
     local_llm_api_key: SecretStr = SecretStr("not-needed")
     local_llm_json_mode: bool = True
     local_llm_allow_external_host: bool = False
     local_llm_max_output_tokens: int = Field(4096, ge=1)
+    # Ollama 네이티브 API(LLM_PROVIDER=ollama, 작업 L-2): /api/chat 에 options.num_ctx 를 반드시 보낸다. 외부 주소 허용은 LOCAL_LLM_ALLOW_EXTERNAL_HOST 규칙을 따른다.
+    # 사양별 권장값은 L-3 실측 후 확정. num_gpu 는 비우면 Ollama 자동 배치(문자열로 받아 정수로 검증)
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = ""
+    ollama_num_ctx: int = Field(8192, ge=1024)
+    ollama_num_predict: int = Field(4096, ge=1)
+    ollama_num_gpu: str = ""
+    ollama_keep_alive: str = "5m"
+    ollama_timeout_sec: float = Field(300, gt=0, le=3600)
+    ollama_unload_after_extract: bool = True
     # 시스템 상태 점검(작업 A-1): 디스크 여유 공간 기준(MB). 여유 < DISK_MIN_FREE_MB 면 업로드를 거절하고, < DISK_WARN_FREE_MB 면 경고 상태.
     disk_warn_free_mb: int = Field(5120, ge=0)
     disk_min_free_mb: int = Field(1024, ge=0)
@@ -217,6 +236,49 @@ class Settings(BaseSettings):
             self.local_llm_base_url = url.rstrip("/")
         if self.effective_llm_provider == "local" and not (self.local_llm_base_url and self.local_llm_model.strip()):
             raise ValueError("LLM_PROVIDER=local 이면 LOCAL_LLM_BASE_URL 과 LOCAL_LLM_MODEL 이 필요합니다.")
+        return self
+
+    @property
+    def ollama_num_gpu_value(self) -> int | None:
+        """OLLAMA_NUM_GPU: 비어 있으면 None(options 에 넣지 않음), 아니면 0 이상 정수."""
+        value = self.ollama_num_gpu.strip()
+        return int(value) if value else None
+
+    @model_validator(mode="after")
+    def _check_ollama(self):
+        gpu = self.ollama_num_gpu.strip()
+        if gpu and not (gpu.isdigit() and int(gpu) >= 0):
+            raise ValueError("OLLAMA_NUM_GPU 는 비우거나 0 이상의 정수여야 합니다.")
+        keep = self.ollama_keep_alive.strip()
+        if keep and not re.fullmatch(r"-?\d+(?:ms|s|m|h)?", keep):
+            raise ValueError("OLLAMA_KEEP_ALIVE 는 정수 초 또는 5m·1h 같은 값이어야 합니다.")
+        if self.ollama_num_predict >= self.ollama_num_ctx:
+            raise ValueError("OLLAMA_NUM_PREDICT 는 OLLAMA_NUM_CTX 보다 작아야 합니다.")
+        if self.effective_llm_provider == "ollama":
+            if not self.ollama_model.strip():
+                raise ValueError("LLM_PROVIDER=ollama 이면 OLLAMA_MODEL 이 필요합니다.")
+            parts = urlsplit(self.ollama_base_url.strip())
+            try:
+                ok = parts.scheme in ("http", "https") and bool(parts.hostname) and not parts.query and not parts.fragment
+                parts.port  # noqa: B018
+            except ValueError:
+                ok = False
+            if not ok:
+                raise ValueError("OLLAMA_BASE_URL 은 http:// 또는 https:// 로 시작하는 올바른 주소여야 합니다.")
+            self.ollama_base_url = self.ollama_base_url.strip().rstrip("/")
+        return self
+
+    @model_validator(mode="after")
+    def _check_local_stt(self):
+        if not self.stt_local_model_size.strip() and not self.stt_local_model_dir.strip():
+            raise ValueError("STT_LOCAL_MODEL_SIZE 가 비어 있습니다.")
+        if not self.stt_local_language.strip() or not self.stt_local_default_speaker.strip():
+            raise ValueError("STT_LOCAL_LANGUAGE·STT_LOCAL_DEFAULT_SPEAKER 는 비워 둘 수 없습니다.")
+        if self.stt_provider == "local":
+            if self.processing_mode != "queue":
+                raise ValueError("STT_PROVIDER=local 은 PROCESSING_MODE=queue(별도 워커)에서만 쓸 수 있습니다.")
+            if self.stt_local_device == "cpu" and self.stt_local_compute_type == "float16":
+                raise ValueError("STT_LOCAL_DEVICE=cpu 에서는 STT_LOCAL_COMPUTE_TYPE 으로 int8 을 쓰세요.")
         return self
 
     @model_validator(mode="after")

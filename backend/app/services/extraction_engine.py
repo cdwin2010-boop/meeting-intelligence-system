@@ -9,8 +9,35 @@ from app.config import settings
 from app.models import MeetingClassification
 from app.pipeline.extractor import Extractor
 from app.pipeline.local_extractor import make_local_extractor
+from app.pipeline.chunked_extract import profile_chunk_options
+from app.pipeline.json_parser import MAX_RETRIES
+from app.pipeline.ollama_llm import (
+    OLLAMA_RETRY_CEILING, OllamaClient, OllamaExtractor, ollama_profile, preflight,
+)
 from app.services.engine_test import ENGINE_DEFAULT, ENGINE_REMOTE, make_remote_extractor
 from app.services.external_policy import local_external_host_allowed
+
+
+def make_ollama_extractor(
+    meeting_type: str = "", client: OllamaClient | None = None, allow_external: bool | None = None, preflight_check: bool = True
+) -> OllamaExtractor:
+    """설정(OLLAMA_*)으로 Ollama 추출기를 만든다. client 는 테스트용 주입."""
+    allow = settings.local_llm_allow_external_host if allow_external is None else allow_external
+    profile = ollama_profile()
+    if client is None:
+        client = OllamaClient(
+            settings.ollama_base_url, settings.ollama_model, num_ctx=profile.context_tokens,
+            num_predict=profile.output_reserve_tokens(), num_gpu=settings.ollama_num_gpu_value,
+            keep_alive=settings.ollama_keep_alive, allow_external=allow, truncation_ratio=profile.truncation_ratio,
+        )
+    options = profile_chunk_options(
+        profile, meeting_type, configured_chars=0, timeout=settings.ollama_timeout_sec,
+        retry_max=min(settings.extract_parse_retry_max, OLLAMA_RETRY_CEILING), retry_ceiling=max(OLLAMA_RETRY_CEILING, MAX_RETRIES),
+    )
+    check = None
+    if preflight_check:
+        check = lambda: preflight(settings.ollama_base_url, settings.ollama_model, min(settings.ollama_timeout_sec, 15.0), allow)  # noqa: E731
+    return OllamaExtractor(client, settings.ollama_model, meeting_type, options=options, unload_after=settings.ollama_unload_after_extract, preflight_fn=check)
 
 
 def meeting_type_of(factory: sessionmaker, meeting_id: int) -> str:
@@ -31,6 +58,10 @@ def select_extractor(
     if engine == ENGINE_REMOTE:
         return make_remote_extractor(
             meeting_type_of(factory, meeting_id), allow_external=local_external_host_allowed(factory, meeting_id, remote=True)
+        )
+    if settings.effective_llm_provider == "ollama":
+        return make_ollama_extractor(
+            meeting_type_of(factory, meeting_id), allow_external=local_external_host_allowed(factory, meeting_id)
         )
     if settings.effective_llm_provider == "local":
         return make_local_extractor(

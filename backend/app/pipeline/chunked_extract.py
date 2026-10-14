@@ -148,6 +148,24 @@ class ChunkOptions:
         )
 
 
+def profile_chunk_options(
+    profile: "EngineProfile", meeting_type: str, *, configured_chars: int, timeout: float, retry_max: int, retry_ceiling: int,
+) -> ChunkOptions:
+    """엔진 프로파일(사전 예산 90%)로 구간 글자 수 상한을 정한 ChunkOptions. 원격(B-1d)·Ollama(L-2) 엔진이 같이 쓴다.
+    구간 글자 수 = 설정(configured_chars, 0 이면 기본 청크 한도)과 맥락 길이 자동 계산값 중 작은 값(맥락 초과 방어)."""
+    base = ChunkOptions.from_settings(meeting_type=meeting_type)
+    configured = configured_chars or base.max_chars
+    auto_chars = safe_chunk_chars(profile, fixed_prompt_chars(meeting_type))
+    max_chars = min(configured, auto_chars)
+    # 자동 계산값이 줄였을 때는 겹침도 구간의 1/4 이하로 줄인다(겹침이 구간과 비슷해지면 구간 수만 늘어난다)
+    overlap = min(base.overlap_chars, max(max_chars - 1, 1)) if max_chars == configured else min(base.overlap_chars, max_chars // 4)
+    return ChunkOptions(
+        max_chars=max_chars, overlap_chars=overlap, repair_max_chars=base.repair_max_chars, timeout=timeout, retry_max=retry_max,
+        minutes_max_chars=base.minutes_max_chars, extra_markers=base.extra_markers, participants=base.participants,
+        meeting_type=meeting_type, retry_ceiling=retry_ceiling,
+    )
+
+
 @dataclass(frozen=True)
 class ChunkedItem:
     candidate: ActionItemCandidate
