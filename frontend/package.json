@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.7.1",
   "scripts": {
+    "demo:record": "node ../demo/run_demo.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
