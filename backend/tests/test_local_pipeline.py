@@ -183,7 +183,9 @@ def test_unparseable_responses_for_all_chunks_fail_as_extraction_invalid(env, mg
     assert job_of(env, res.json()["meetingId"]).error_code == "extraction_invalid"
 
 
-def test_partial_chunk_failure_completes_with_processing_warning(env, mgr, local):
+def test_partial_chunk_failure_completes_with_processing_warning(env, mgr, local, monkeypatch):
+    monkeypatch.setattr(settings, "extract_chunk_max_chars", 130)  # 예산 초과 경로(안건 분할)를 타게 한다(C-1)
+    monkeypatch.setattr(settings, "extract_chunk_overlap_chars", 10)
     first = item("일정 공유", "화자2", "2026-10-02", "화자2", "00:00:10", "네, 개발 일정은 이번 주 금요일까지 공유하겠습니다.")
     srv = local([(200, chunk_reply([first], discussion="일정 점검"), 0), (503, {}, 0), (503, {}, 0)])
     res = post_txt(env, mgr, TWO_AGENDAS.encode("utf-8"))

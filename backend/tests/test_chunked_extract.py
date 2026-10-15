@@ -23,6 +23,9 @@ HELD = datetime(2026, 10, 12, 14, 0, tzinfo=KST)  # 월요일
 ROOT = Path(__file__).resolve().parent.parent
 OPTS = ChunkOptions(max_chars=6000, overlap_chars=500, repair_max_chars=4000, timeout=30, retry_max=1, minutes_max_chars=4000)
 
+# 안건 분할 경로(예산 초과)를 보려는 시험용: 예산 이내면 분할 없이 1회 호출한다(C-1)
+OPTS_AGENDA = ChunkOptions(max_chars=200, overlap_chars=20, repair_max_chars=4000, timeout=30, retry_max=1, minutes_max_chars=4000)
+
 TRANSCRIPT = """[00:00:01] 화자1: 오늘 회의를 시작하겠습니다.
 [00:00:10] 화자2: 첫 번째 안건은 STT 정확도 개선입니다. 개선안을 다음 주 금요일까지 정리해 주세요.
 [00:00:20] 화자3: 네, 제가 다음 주 금요일까지 정리하겠습니다.
@@ -242,7 +245,7 @@ def test_one_failed_chunk_does_not_stop_the_rest_and_statuses_are_reported():
         [item("개선안 정리", "화자3", "다음 주 금요일", "화자2", "00:00:10", "개선안을 다음 주 금요일까지 정리해 주세요.")],
         discussion="화자 분리 개선",
     )
-    result, client = run(by_title({"STT 정확도 개선": good, "디자인 시안 확정 건": "깨진 응답"}, default=reply()))
+    result, client = run(by_title({"STT 정확도 개선": good, "디자인 시안 확정 건": "깨진 응답"}, default=reply()), opts=OPTS_AGENDA)
     assert [c.status for c in result.chunks] == ["success", "success", "failed"]
     assert result.chunks[2].calls == 2 and not result.all_failed
     assert len(result.items) == 1 and result.items[0].candidate.due_date == "2026-10-23"  # 다음 주 금요일 확정
@@ -289,7 +292,7 @@ def test_dedupe_criteria():
 def test_minutes_merge_with_titles_and_no_content():
     a = reply([], purpose="STT 개선", discussion="화자 분리 오류\n개선안 논의")
     b = reply([], discussion="시안 일정", decisions="목요일 확정")
-    result, _ = run(by_title({"STT 정확도 개선": a, "디자인 시안 확정 건": b}, default=reply()))
+    result, _ = run(by_title({"STT 정확도 개선": a, "디자인 시안 확정 건": b}, default=reply()), opts=OPTS_AGENDA)
     assert set(result.minutes) == set(MINUTES_FIELDS)
     assert result.minutes["purpose"] == "[STT 정확도 개선]\nSTT 개선"
     assert result.minutes["discussion"] == "[STT 정확도 개선]\n화자 분리 오류\n개선안 논의\n[디자인 시안 확정 건]\n시안 일정"

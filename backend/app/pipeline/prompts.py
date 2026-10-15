@@ -79,16 +79,17 @@ SYSTEM_PROMPT = "당신은 한국어 회의 전사문을 분석하는 도우미�
 CHUNK_INSTRUCTIONS = """[구간 추출 지시]
 - 이 구간의 발언만 근거로 삼습니다. 다른 구간의 내용을 추측하지 않습니다.
 - 근거 인용문(quote.text)은 이 구간 전사문에서 글자 그대로 복사합니다. 고쳐 쓰거나 요약하지 않습니다.
-- 구간 앞부분이 이전 구간과 겹칠 수 있습니다. 겹친 발언에서도 규칙에 맞는 업무는 뽑습니다(중복은 서버가 합칩니다)."""
+- 구간 앞부분이 이전 구간과 겹칠 수 있습니다. 겹친 발언에서도 규칙에 맞는 업무는 뽑습니다(중복은 서버가 합칩니다).
+- 전사문의 각 줄 앞에 붙은 #번호가 줄 번호(Line ID)입니다. 근거 인용(quote)에는 그 줄 번호를 숫자만 line_id 에 쓰고, quote.text 에는 #번호·시각·화자 표기를 넣지 않고 발화 내용만 씁니다."""
 
 RESPONSE_FORMAT = """[응답 형식]
 아래 스키마의 JSON 객체 하나만 ```json 코드 블록 안에 출력합니다. 코드 블록 밖에는 아무것도 쓰지 않습니다.
-- items: 업무 배열(없으면 빈 배열). 각 항목은 task(문자열), assignee(문자열), due_date(YYYY-MM-DD 또는 빈 문자열), quote(speaker, timestamp, text).
-- minutes: 이 구간의 회의록 항목. purpose(회의 목적), discussion(주요 논의사항), decisions(결정사항), risks(리스크), next_agenda(다음 안건). 정보가 없으면 빈 문자열.
+- minutes: 이 구간의 회의록 항목. purpose(회의 목적), discussion(주요 논의사항), decisions(결정사항), risks(리스크), next_agenda(다음 안건). 각 값은 문자열 하나이고 정보가 없으면 빈 문자열. 응답이 잘려도 남도록 items 보다 먼저 씁니다.
+- items: 업무 배열(없으면 빈 배열). 각 항목은 task(문자열), assignee(문자열), due_date(YYYY-MM-DD 또는 빈 문자열), quote(speaker, timestamp, text, line_id).
 - 값을 모르면 null 이 아니라 빈 문자열("")로 둡니다.
 
 ```json
-{"items": [{"task": "", "assignee": "", "due_date": "", "quote": {"speaker": "", "timestamp": "", "text": ""}}], "minutes": {"purpose": "", "discussion": "", "decisions": "", "risks": "", "next_agenda": ""}}
+{"minutes": {"purpose": "", "discussion": "", "decisions": "", "risks": "", "next_agenda": ""}, "items": [{"task": "", "assignee": "", "due_date": "", "quote": {"speaker": "", "timestamp": "", "text": "", "line_id": ""}}]}
 ```"""
 
 

@@ -106,6 +106,11 @@ class Settings(BaseSettings):
     extract_parse_retry_max: int = Field(1, ge=1)
     extract_minutes_field_max_chars: int = Field(4000, gt=0)
     extract_agenda_markers: str = ""
+    # 긴 회의록 분할(C-1): 입력이 예산(맥락 90%) 이내면 1회 호출, 초과할 때만 이 목표 토큰 크기로 라인 단위 분할(발화 중간은 자르지 않음)
+    # / 직전 구간 말미를 다음 구간에 겹치는 비율 / 같은 사유로 구간이 연속 실패하면 나머지 구간을 중단하는 횟수
+    extract_chunk_target_tokens: int = Field(4000, gt=0)
+    extract_chunk_overlap_ratio: float = Field(0.10, ge=0, lt=0.5)
+    extract_chunk_fail_stop: int = Field(3, ge=1)
     # 하드웨어 감지·권장 모델 프로파일(작업 77-1, 도구 scripts/detect_hardware.py 에서만 사용. 현행 처리 흐름은 바꾸지 않는다)
     # llm_profile: "auto"(GPU 를 감지해 선택) 또는 프로파일 id 로 고정(고정하면 감지하지 않는다)
     # hardware_profiles_path: 프로파일 파일(backend 폴더 기준 상대 경로 가능) / hardware_min_free_ratio: 여유 VRAM 이 총량의 이 비율 미만이면 한 단계 낮춘다

@@ -284,6 +284,9 @@ def test_long_meeting_is_chunked_and_duplicates_are_merged(env, mgr, remote):
     second = item("예산안 제출", "화자3", "2026-10-05", "화자3", "00:00:30", "예산안은 다음 주 월요일까지 제출하겠습니다.")
     # 청크마다 같은 업무(first)가 다시 나와도 하나로 합쳐진다
     srv = remote([(200, chunk_reply([first], discussion="일정 점검"), 0), (200, chunk_reply([first, second], discussion="예산 검토"), 0)])
+    engine_test.save_remote_settings(
+        base_url=engine_test.load_remote_settings().base_url, model=MODEL, api_key=None, timeout_seconds=10, chunk_max_chars=130
+    )  # 예산 초과 경로(안건 분할)를 타게 한다(C-1)
     res = post_txt(env, mgr, TWO_AGENDAS.encode("utf-8"), engine="remote")
     assert run(env, res.json()["jobId"]) == "completed"
     assert len(srv.requests) == 2

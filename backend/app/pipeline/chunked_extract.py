@@ -7,6 +7,9 @@
 - 담당자: 모델 값 → 인용 발화자 → 인용문이 있는 발언의 화자 순으로 쓰고, 원문 근거로 식별할 수 없으면 빈 문자열("")로 둔다
   (현행 Gemini 경로와 같은 표준: 저장 때 담당자 미지정이 "보완 필요"가 된다. 대체 이름을 만들어 넣지 않는다).
 - 5개 항목: 안건별 내용을 안건 제목과 함께 합치고 길이 한도 안에서 자른다. 비면 "내용없음".
+- C-1: 입력이 예산(max_chars) 이내면 분할 없이 1회 호출한다. 초과할 때만 목표 크기(target_chars)로 라인 단위 분할·중첩한다.
+  전체 회의록 기준 줄 번호(Line ID, 발언 번호+1)를 프롬프트 줄 앞에 붙이고, 근거는 Line ID 로 원문과 1:1 검증한다.
+  같은 사유로 구간이 연속 fail_stop 회 실패하면 나머지 구간을 중단한다.
 - to_extraction_result 로 현행 추출 결과(ExtractionResult)와 같은 모양으로 바꾼다.
 """
 import re
@@ -22,11 +25,12 @@ from app.models.minutes import MINUTES_FIELDS, NO_CONTENT
 from app.pipeline.agenda_chunker import Chunk, Utterance, parse_utterances, split_into_chunks
 from app.pipeline.evidence_time import apply_evidence_times
 from app.pipeline.extractor import (
-    ActionItemCandidate, ActionItemList, ExtractedItem, ExtractionResult, MeetingMinutesDraft, postprocess,
+    ActionItemCandidate, ActionItemList, ExtractedItem, ExtractedQuote, ExtractionResult, MeetingMinutesDraft, postprocess,
 )
 from app.pipeline.engine_profile import EngineProfile
 from app.pipeline.json_parser import MAX_RETRIES, ParseOutcome, run_with_repair
 from app.pipeline.llm_client import LlmClient
+from app.pipeline.local_llm import PERMANENT, LocalLlmError
 from app.pipeline.prompts import SYSTEM_PROMPT, render_chunk_prompt
 
 STATUS_OK = "success"
@@ -46,6 +50,10 @@ SPLIT_REASONS = ("context_exceeded", "context_limit_reached", "output_truncated"
 REASON_CONTEXT = "context_exceeded"
 ERROR_DETAIL_MAX_COUNT = 5
 MIN_AUTO_CHUNK_CHARS = 300
+REASON_CONTEXT_TOO_SMALL = "context_too_small"
+_LINE_ID_PREFIX = re.compile(r"^\s*#\s*\d+\s*")
+_TIME_PREFIX = re.compile(r"^\s*\[\s*\d{1,3}:\d{2}(?::\d{2})?\s*\]\s*")
+_ROOM_LINES = 2  # Line ID 의 줄에서 인용문이 이어질 수 있는 뒤쪽 줄 수
 
 
 def output_reserve_tokens(context_tokens: int, max_output_tokens: int) -> int:
@@ -58,6 +66,17 @@ def safe_chunk_chars(profile: EngineProfile, fixed_prompt_chars: int) -> int:
     구간 토큰 = 맥락×0.9 − 출력 예약 − 고정 지시 토큰, 글자 수 = 구간 토큰 / 글자당 토큰."""
     available = profile.budget_tokens - profile.output_reserve_tokens() - profile.tokens_of_chars(fixed_prompt_chars)
     return max(MIN_AUTO_CHUNK_CHARS, int(available / profile.tokens_per_char))
+
+
+def check_context_sufficient(profile: EngineProfile, meeting_type: str = "") -> None:
+    """맥락 길이가 구간 처리에 부족하면(고정 지시+출력 예약만으로 예산이 차서 구간을 넣을 자리가 최소 글자 수 미만) 시작 때 오류를 낸다.
+    원격 엔진 맥락 길이가 2048 처럼 작은 설정이 대표적이다. 오류 코드는 llm_context_too_small(영구 오류, 재시도 무의미)."""
+    available = profile.budget_tokens - profile.output_reserve_tokens() - profile.tokens_of_chars(fixed_prompt_chars(meeting_type))
+    if int(available / profile.tokens_per_char) < MIN_AUTO_CHUNK_CHARS:
+        raise LocalLlmError(
+            f"모델 맥락 길이({profile.context_tokens} 토큰)가 구간 처리에 부족합니다. 맥락 길이를 늘리거나 출력 길이를 줄이는 설정이 필요합니다.",
+            kind=PERMANENT, reason=REASON_CONTEXT_TOO_SMALL,
+        )
 
 
 def fixed_prompt_chars(meeting_type: str = "") -> int:
@@ -103,11 +122,44 @@ def split_chunk_in_half(chunk: Chunk) -> tuple[Chunk, Chunk] | None:
     )
 
 
-class ChunkResponse(BaseModel):
-    """청크 응답 스키마: 업무 목록 + 이 구간의 5개 항목. 알 수 없는 필드는 무시, null 은 빈 값으로."""
+def _as_text(value: Any) -> Any:
+    """모델이 문자열 대신 목록·객체·숫자로 준 값을 글자로 바꾼다(검증 실패로 구간 전체를 잃지 않게)."""
+    if isinstance(value, (list, tuple)):
+        return "\n".join(str(_as_text(v)).strip() for v in value if _as_text(v) not in (None, ""))
+    if isinstance(value, dict):
+        return "\n".join(f"{k}: {_as_text(v)}".strip() for k, v in value.items() if _as_text(v) not in (None, ""))
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    return value
 
-    items: list[ExtractedItem] = Field(default_factory=list)
-    minutes: MeetingMinutesDraft = Field(default_factory=MeetingMinutesDraft)
+
+class ChunkMinutes(MeetingMinutesDraft):
+    """5개 항목: 값이 목록·객체여도 글자로 합쳐 받는다(C-1: 목록형 값 때문에 구간이 통째로 실패하던 결함)."""
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _coerce_text(cls, value: Any) -> Any:
+        return "" if value is None else _as_text(value)
+
+
+class ChunkQuote(ExtractedQuote):
+    line_id: str = Field("", description="근거가 시작되는 줄 번호(Line ID)")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _coerce_text(cls, value: Any) -> Any:
+        return "" if value is None else _as_text(value)
+
+
+class ChunkItem(ExtractedItem):
+    quote: ChunkQuote = Field(default_factory=ChunkQuote)
+
+
+class ChunkResponse(BaseModel):
+    """청크 응답 스키마: 이 구간의 5개 항목 + 업무 목록. 알 수 없는 필드는 무시, null 은 빈 값으로."""
+
+    minutes: ChunkMinutes = Field(default_factory=ChunkMinutes)
+    items: list[ChunkItem] = Field(default_factory=list)
 
     @field_validator("items", mode="before")
     @classmethod
@@ -132,6 +184,9 @@ class ChunkOptions:
     participants: tuple[str, ...] = ()
     meeting_type: str = ""
     retry_ceiling: int = MAX_RETRIES  # 원격 시험 엔진은 2(작업 91-1)
+    target_chars: int = 0  # 분할 때 구간 목표 글자 수(0 이면 max_chars). 입력이 max_chars 이내면 분할하지 않는다(C-1)
+    overlap_ratio: float = 0.0  # >0 이면 겹침을 목표 글자 수의 이 비율로 계산(0 이면 overlap_chars)
+    fail_stop: int = 3  # 같은 사유로 구간이 연속 실패하면 나머지를 중단하는 횟수(C-1)
 
     @classmethod
     def from_settings(cls, participants: tuple[str, ...] = (), meeting_type: str = "") -> "ChunkOptions":
@@ -145,7 +200,15 @@ class ChunkOptions:
             extra_markers=tuple(settings.extract_agenda_marker_list),
             participants=participants,
             meeting_type=meeting_type,
+            target_chars=_target_chars(settings.extract_chunk_max_chars),
+            overlap_ratio=settings.extract_chunk_overlap_ratio,
+            fail_stop=settings.extract_chunk_fail_stop,
         )
+
+
+def _target_chars(max_chars: int) -> int:
+    """목표 토큰(설정)을 보수적 글자당 토큰으로 글자 수로 바꾸되 구간 상한을 넘지 않게 한다."""
+    return max(MIN_AUTO_CHUNK_CHARS, min(max_chars, int(settings.extract_chunk_target_tokens / EngineProfile().tokens_per_char)))
 
 
 def profile_chunk_options(
@@ -154,6 +217,7 @@ def profile_chunk_options(
     """엔진 프로파일(사전 예산 90%)로 구간 글자 수 상한을 정한 ChunkOptions. 원격(B-1d)·Ollama(L-2) 엔진이 같이 쓴다.
     구간 글자 수 = 설정(configured_chars, 0 이면 기본 청크 한도)과 맥락 길이 자동 계산값 중 작은 값(맥락 초과 방어)."""
     base = ChunkOptions.from_settings(meeting_type=meeting_type)
+    check_context_sufficient(profile, meeting_type)  # 맥락이 너무 작으면 처리 전에 오류 코드와 안내로 끝낸다
     configured = configured_chars or base.max_chars
     auto_chars = safe_chunk_chars(profile, fixed_prompt_chars(meeting_type))
     max_chars = min(configured, auto_chars)
@@ -163,6 +227,7 @@ def profile_chunk_options(
         max_chars=max_chars, overlap_chars=overlap, repair_max_chars=base.repair_max_chars, timeout=timeout, retry_max=retry_max,
         minutes_max_chars=base.minutes_max_chars, extra_markers=base.extra_markers, participants=base.participants,
         meeting_type=meeting_type, retry_ceiling=retry_ceiling,
+        target_chars=_target_chars(max_chars), overlap_ratio=base.overlap_ratio, fail_stop=base.fail_stop,
     )
 
 
@@ -214,28 +279,73 @@ def _key(text: str) -> str:
 
 
 def _speaker_of_quote(chunk: Chunk, quote: str) -> str:
-    needle = _ws(quote)
+    needle = _norm(quote)
     if not needle:
         return ""
     for u in chunk.utterances:
-        if needle in _ws(u.text):
+        if needle in _norm(u.text):
             return u.speaker
     return ""
 
 
-def _items_of_chunk(chunk: Chunk, raw: list[ExtractedItem], held_at: datetime) -> tuple[list[ChunkedItem], list[str]]:
+def _norm(text: str) -> str:
+    """공백·구두점·따옴표를 지운 비교용 글자(evidence_time 의 대조 규칙과 같다)."""
+    return _NON_WORD.sub("", text or "").lower()
+
+
+def _clean_quote(text: str, speakers: set[str]) -> str:
+    """인용문 앞에 모델이 붙인 #줄번호·[시각]·화자 표기를 걷어 낸다(발화 내용만 남긴다)."""
+    cleaned = _LINE_ID_PREFIX.sub("", text or "")
+    cleaned = _TIME_PREFIX.sub("", cleaned)
+    for speaker in speakers:
+        for colon in (":", "："):
+            if speaker and cleaned.lstrip().startswith(speaker + colon):
+                return cleaned.lstrip()[len(speaker) + 1:].strip()
+    return cleaned.strip()
+
+
+def _parse_line_id(raw: str) -> int | None:
+    found = re.search(r"\d+", raw or "")
+    return int(found.group()) if found else None
+
+
+def _items_of_chunk(
+    chunk: Chunk, raw: list[ExtractedItem], held_at: datetime, lines: dict[int, list[Utterance]] | None = None,
+) -> tuple[list[ChunkedItem], list[str]]:
+    """lines: 전체 회의록 기준 줄 번호(발언 번호) → 그 번호의 발언 조각들. 있으면 Line ID 로 근거를 원문과 1:1 검증한다."""
     warnings: list[str] = []
     result: list[ChunkedItem] = []
-    chunk_text_ws = _ws(chunk.text)
+    chunk_norm = _norm(chunk.text)
+    speakers = {u.speaker for u in chunk.utterances}
     unverified = 0
-    for candidate in postprocess(ActionItemList(items=raw), held_at):  # 날짜 정규화·빈 업무 제거는 현행 규칙 그대로
-        quote = _ws(candidate.quote_text)
-        verified = bool(quote) and quote in chunk_text_ws
+    for raw_item in raw:
+        quote_obj = raw_item.quote
+        line_id = _parse_line_id(getattr(quote_obj, "line_id", ""))
+        cleaned = _clean_quote(quote_obj.text, speakers)
+        item = raw_item.model_copy(update={"quote": ExtractedQuote(speaker=quote_obj.speaker, timestamp=quote_obj.timestamp, text=cleaned)})
+        candidates = postprocess(ActionItemList(items=[item]), held_at)  # 날짜 정규화·빈 업무 제거는 현행 규칙 그대로
+        if not candidates:
+            continue
+        candidate = candidates[0]
+        needle = _norm(candidate.quote_text)
+        located: float | None = None
+        if not needle:
+            verified = False
+        elif line_id is not None and lines is not None and (line_id - 1) in lines:
+            # Line ID 검증: 그 줄(과 이어지는 뒤쪽 줄)에 인용문이 실제로 있어야 한다. 줄 번호가 틀리면 미검증
+            span = [u for n in range(line_id - 1, line_id + _ROOM_LINES) for u in lines.get(n, [])]
+            verified = needle in _norm(" ".join(u.text for u in span))
+            if verified:
+                located = lines[line_id - 1][0].start_sec
+        else:
+            verified = needle in chunk_norm  # Line ID 가 없거나 범위 밖이면 구간 안 대조(공백·기호 차이는 무시)
         assignee = candidate.assignee.strip() or candidate.quote_speaker.strip()
         if not assignee:
             assignee = _speaker_of_quote(chunk, candidate.quote_text)  # 원문 근거가 없으면 ""
         candidate = replace(candidate, assignee=assignee)
-        if verified:
+        if verified and located is not None:
+            candidate = replace(candidate, evidence_start_sec=located)
+        elif verified:
             candidate = apply_evidence_times([candidate], chunk.text, None)[0]  # 서버 대조로 근거 시각 산정
         else:
             candidate = replace(candidate, evidence_start_sec=None)  # 근거 미검증: 시각을 비운다
@@ -307,9 +417,19 @@ def extract_chunked(
 ) -> ChunkedExtraction:
     """전사문 전체를 안건 단위로 나눠 추론하고 병합한다. held_at 은 회의 현지 시각(extractor.extract 와 같다)."""
     opts = options or ChunkOptions.from_settings()
-    chunks = split_into_chunks(
-        parse_utterances(transcript), max_chars=opts.max_chars, overlap_chars=opts.overlap_chars, extra_markers=opts.extra_markers
-    )
+    utterances = parse_utterances(transcript)
+    # 전체 회의록 기준 줄 번호(Line ID = 발언 번호 + 1) → 그 발언 조각들. 근거 검증과 프롬프트 줄 번호가 이 값을 쓴다
+    lines: dict[int, list[Utterance]] = {}
+    for u in utterances:
+        lines.setdefault(u.index, []).append(u)
+    total_chars = sum(len(u.line()) + 1 for u in utterances)
+    if utterances and total_chars <= opts.max_chars:
+        # 예산 이내: 분할·안건 나눔 없이 1회 호출(지연 추가 없음)
+        chunks = [Chunk(0, "", 0, 1, 1, tuple(utterances), 0, False)]
+    else:
+        split_max = min(opts.target_chars or opts.max_chars, opts.max_chars)
+        overlap = int(split_max * opts.overlap_ratio) if opts.overlap_ratio > 0 else opts.overlap_chars
+        chunks = split_into_chunks(utterances, max_chars=split_max, overlap_chars=overlap, extra_markers=opts.extra_markers)
     reports: list[ChunkReport] = []
     items: list[ChunkedItem] = []
     drafts: list[tuple[Chunk, MeetingMinutesDraft]] = []
@@ -320,8 +440,9 @@ def extract_chunked(
     error_details: list[str] = []
 
     def call(piece: Chunk) -> ParseOutcome:
+        numbered = "\n".join(f"#{u.index + 1} {u.line()}" for u in piece.utterances)  # 줄 앞에 전체 기준 줄 번호(Line ID)
         prompt = render_chunk_prompt(
-            piece.text, held_at, agenda_title=piece.title, chunk_index=piece.index + 1, chunk_total=total,
+            numbered, held_at, agenda_title=piece.title, chunk_index=piece.index + 1, chunk_total=total,
             participants=opts.participants, meeting_type=opts.meeting_type,
         )
         messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]
@@ -347,8 +468,16 @@ def extract_chunked(
                 return run_piece(halves[0], depth + 1, splits) + run_piece(halves[1], depth + 1, splits)
         return [(piece, outcome)]
 
+    fail_streak = 0  # 같은 사유로 연속 실패한 구간 수
+    fail_reason = ""
+    stopped = False
     for chunk in chunks:
         label = f"구간 {chunk.index + 1}/{total}"
+        if stopped:
+            skipped = f"{label} 건너뜀: 같은 사유({fail_reason})로 연속 {opts.fail_stop}회 실패해 나머지 구간을 중단했습니다"
+            reports.append(ChunkReport(chunk.index, chunk.title, STATUS_FAILED, 0, 0, False, (skipped,)))
+            warnings.append(skipped)
+            continue
         splits = [0, 0]
         pieces = run_piece(chunk, 0, splits)
         calls = splits[1]  # 실패해서 나눈 요청까지 포함
@@ -373,7 +502,13 @@ def extract_chunked(
             chunk_warnings.append(f"{label} 실패: {why}")
             reports.append(ChunkReport(chunk.index, chunk.title, STATUS_FAILED, calls, 0, truncated, tuple(chunk_warnings)))
             warnings.extend(chunk_warnings)
+            reason_now = reason or "format"
+            fail_streak = fail_streak + 1 if reason_now == fail_reason else 1
+            fail_reason = reason_now
+            if fail_streak >= opts.fail_stop and chunk.index + 1 < total:
+                stopped = True
             continue
+        fail_streak, fail_reason = 0, ""
         if failed:
             chunk_warnings.append(f"{label} 일부 조각 처리 실패({len(failed)}/{len(pieces)})")
         chunk_items_all: list[ChunkedItem] = []
@@ -384,7 +519,7 @@ def extract_chunked(
                 chunk_warnings.append(f"{label} 응답이 잘려 복구")
             if piece.split_utterance and not splits[0]:
                 chunk_warnings.append(f"{label} 너무 긴 발언을 문장 경계에서 나눔")
-            piece_items, item_warnings = _items_of_chunk(piece, outcome.value.items, held_at)
+            piece_items, item_warnings = _items_of_chunk(piece, outcome.value.items, held_at, lines)
             chunk_warnings.extend(item_warnings)
             chunk_items_all.extend(piece_items)
             drafts.append((piece, outcome.value.minutes))

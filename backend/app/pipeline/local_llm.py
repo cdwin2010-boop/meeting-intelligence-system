@@ -70,6 +70,8 @@ class LocalLlmError(LlmClientError):
             return "timeout"
         if self.reason == "host_blocked":
             return "llm_host_blocked"
+        if self.reason == "context_too_small":
+            return "llm_context_too_small"
         if self.reason in ("context_exceeded", "context_limit_reached"):
             return "llm_context_exceeded"
         if self.reason == "output_truncated":
