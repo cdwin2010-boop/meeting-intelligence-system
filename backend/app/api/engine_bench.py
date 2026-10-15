@@ -17,6 +17,7 @@ from app.config import settings
 from app.db import get_session
 from app.models import Account, append_event
 from app.services import bench_runner as bench
+from app.services import engine_diag
 from app.services import engine_test as engine
 from app.services.system_settings import LOCAL_LLM_EXTERNAL_HOST_ALLOWED, effective
 from app.services.task_queue import queue_counts
@@ -71,6 +72,19 @@ def _guard_not_busy(session: Session) -> None:
         )
 
 
+def _preflight(cfg: bench.BenchConfig) -> dict:
+    """시작·이어하기 직전 연결 진단. 정상이 아니면 시작하지 않고 분류를 409 로 알린다(기존 중단 기록의 머리에도 남긴다)."""
+    diag = engine_diag.diagnose(cfg.base_url, cfg.api_key, cfg.model, cfg.allow_external)
+    result = diag.as_dict()
+    if not diag.ok:
+        bench.record_diagnosis(result)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"message": f"측정을 시작하지 않았습니다. 연결 진단 결과: {diag.hint}", **result},
+        )
+    return result
+
+
 def _record(session: Session, account: Account, event_type: str, payload: dict) -> None:
     append_event(
         session, tenant_id=account.tenant_id, entity_type="engine_test", entity_id=account.tenant_id,
@@ -86,8 +100,9 @@ def start(body: BenchStartIn, account: Account = Depends(get_current_account), s
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="측정 종류는 quick 또는 full 이어야 합니다")
     _guard_not_busy(session)
     cfg = _config(session, account)
+    diagnosis = _preflight(cfg)
     try:
-        bench.start(body.mode, cfg)
+        bench.start(body.mode, cfg, diagnosis=diagnosis)
     except bench.BenchBusy as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
     _record(session, account, "engine_test.bench_started", {"mode": body.mode})
@@ -99,8 +114,9 @@ def resume(account: Account = Depends(get_current_account), session: Session = D
     _require_admin(session, account)
     _guard_not_busy(session)
     cfg = _config(session, account)
+    diagnosis = _preflight(cfg)
     try:
-        bench.resume(cfg)
+        bench.resume(cfg, diagnosis=diagnosis)
     except bench.BenchBusy as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from None
     except bench.BenchError as exc:

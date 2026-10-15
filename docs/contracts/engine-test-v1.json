@@ -4,98 +4,316 @@
   "title": "engine-test-v1: 엔진 시험 모드·원격(OpenAI 호환, 시험용) 엔진 (작업 91-1)",
   "description": "시험 전용. ENGINE_TEST_MODE 가 꺼져 있으면(기본) 아래 요청은 모두 403 {\"detail\":\"엔진 시험 모드가 아니어서 사용할 수 없습니다\"} 로 거부된다(서버 측 거부). 권한: 관리자(manager)·지시자(executive) 또는 시스템 관리자, 담당자 403. 서버 주소·모델·키는 .env 기본값 + Git 제외 설정 파일에 저장된다. API 키는 응답에 평문으로 나오지 않는다. 원격 연결 실패는 다른 엔진으로 자동 전환되지 않고 작업이 remote_unavailable 로 실패한다. 원본 모델: backend/app/api/engine_test.py.",
   "endpoints": {
-    "GET /api/admin/engine-test/remote": {"response": {"$ref": "#/definitions/remote-settings"}},
+    "GET /api/admin/engine-test/remote": {
+      "response": {
+        "$ref": "#/definitions/remote-settings"
+      }
+    },
     "PUT /api/admin/engine-test/remote": {
-      "request": {"$ref": "#/definitions/remote-settings-input"},
-      "response": {"$ref": "#/definitions/remote-settings"},
-      "errors": {"403": "시험 모드 꺼짐 또는 권한 없음", "422": "주소 형식·모델명·타임아웃(1~3600초)·청크 한도(0 또는 500~100000) 오류, detail 한국어 사유"}
+      "request": {
+        "$ref": "#/definitions/remote-settings-input"
+      },
+      "response": {
+        "$ref": "#/definitions/remote-settings"
+      },
+      "errors": {
+        "403": "시험 모드 꺼짐 또는 권한 없음",
+        "422": "주소 형식·모델명·타임아웃(1~3600초)·청크 한도(0 또는 500~100000) 오류, detail 한국어 사유"
+      }
     },
     "POST /api/admin/engine-test/remote/load-test": {
-      "response": {"$ref": "#/definitions/load-test"},
-      "errors": {"403": "시험 모드 꺼짐 또는 권한 없음", "409": "음성 인식·업무 추출 작업이 진행 중", "422": "주소·모델이 저장되지 않음"}
+      "response": {
+        "$ref": "#/definitions/load-test"
+      },
+      "errors": {
+        "403": "시험 모드 꺼짐 또는 권한 없음",
+        "409": "음성 인식·업무 추출 작업이 진행 중",
+        "422": "주소·모델이 저장되지 않음"
+      }
     },
     "POST /api/admin/engine-test/bench/start (작업 L-3a)": {
-      "request": {"mode": "quick | full"},
-      "response": {"$ref": "#/definitions/bench-status"},
-      "errors": {"403": "시험 모드 꺼짐 또는 권한 없음", "409": "측정이 이미 진행 중이거나 음성 인식·추출 작업이 진행 중", "422": "측정 종류 오류 또는 주소·모델이 저장되지 않음"},
+      "request": {
+        "mode": "quick | full"
+      },
+      "response": {
+        "$ref": "#/definitions/bench-status"
+      },
+      "errors": {
+        "403": "시험 모드 꺼짐 또는 권한 없음",
+        "409": "측정이 이미 진행 중이거나 음성 인식·추출 작업이 진행 중",
+        "422": "측정 종류 오류 또는 주소·모델이 저장되지 않음"
+      },
       "note": "202. 서버 백그라운드로 실행(같은 시점 1개). 입력은 도구 내장 가상 전사본. 체크포인트·결과는 BENCH_DIR 아래 JSON 파일(DB 변경 없음)"
     },
     "POST /api/admin/engine-test/bench/resume (작업 L-3a)": {
-      "response": {"$ref": "#/definitions/bench-status"},
-      "errors": {"403": "시험 모드 꺼짐 또는 권한 없음", "409": "진행 중이거나 이어할 측정이 없음", "422": "주소·모델이 저장되지 않음"},
+      "response": {
+        "$ref": "#/definitions/bench-status"
+      },
+      "errors": {
+        "403": "시험 모드 꺼짐 또는 권한 없음",
+        "409": "진행 중이거나 이어할 측정이 없음",
+        "422": "주소·모델이 저장되지 않음"
+      },
       "note": "202. 완료 항목은 건너뛰고 남은 항목만 실행. 주소·키·모델은 그 시점에 저장된 값을 다시 읽는다(바뀌어도 됨)"
     },
-    "POST /api/admin/engine-test/bench/stop (작업 L-3a)": {"response": {"$ref": "#/definitions/bench-status"}, "note": "현재 요청이 끝난 뒤 stopped 로 멈춘다. 이어하기 가능"},
-    "GET /api/admin/engine-test/bench/status (작업 L-3a)": {"response": {"$ref": "#/definitions/bench-status"}},
+    "POST /api/admin/engine-test/bench/stop (작업 L-3a)": {
+      "response": {
+        "$ref": "#/definitions/bench-status"
+      },
+      "note": "현재 요청이 끝난 뒤 stopped 로 멈춘다. 이어하기 가능"
+    },
+    "GET /api/admin/engine-test/bench/status (작업 L-3a)": {
+      "response": {
+        "$ref": "#/definitions/bench-status"
+      }
+    },
     "GET /api/admin/engine-test/bench/result (작업 L-3a)": {
       "response": "application/json 첨부 파일(l3-bench-<runId>.json, summaryMarkdown 포함). 주소·키·호스트명·전사 원문·인용문 없음, 건수·시간·비율·상태만. 미측정은 사유와 함께 \"미측정\"/\"측정 불가\"",
-      "errors": {"403": "시험 모드 꺼짐 또는 권한 없음", "404": "측정 결과 없음"}
+      "errors": {
+        "403": "시험 모드 꺼짐 또는 권한 없음",
+        "404": "측정 결과 없음"
+      }
     },
-    "GET /api/system/engine (추가 필드)": {"response": {"engineTestMode": "boolean", "engineTestDefault": "default | remote"}},
-    "POST /api/meetings/upload (추가 선택 폼 필드)": {"engine": "default | remote. 시험 모드일 때 관리자 이상만. 모드가 꺼져 있거나 담당자가 값을 보내면 403, 모르는 값 422. 생략하면 설정 기본값(시험 모드가 꺼져 있으면 현행 동작)"},
-    "POST /api/meetings/{id}/reprocess (추가 선택 본문)": {"request": {"engine": "default | remote, 업로드와 같은 규칙"}}
+    "GET /api/system/engine (추가 필드)": {
+      "response": {
+        "engineTestMode": "boolean",
+        "engineTestDefault": "default | remote"
+      }
+    },
+    "POST /api/meetings/upload (추가 선택 폼 필드)": {
+      "engine": "default | remote. 시험 모드일 때 관리자 이상만. 모드가 꺼져 있거나 담당자가 값을 보내면 403, 모르는 값 422. 생략하면 설정 기본값(시험 모드가 꺼져 있으면 현행 동작)"
+    },
+    "POST /api/meetings/{id}/reprocess (추가 선택 본문)": {
+      "request": {
+        "engine": "default | remote, 업로드와 같은 규칙"
+      }
+    },
+    "POST /api/admin/engine-test/remote/diagnose (작업 L-4a)": {
+      "description": "저장된 원격 설정으로 GET {주소}/models 를 한 번만 호출해 연결 상태를 분류한다(연결 3초·전체 5초, 리다이렉트·재시도 없음). 시험 모드·관리자 이상. 응답에 주소·키는 없다.",
+      "response": {
+        "category": "OK | UNREACHABLE | PATH_MISMATCH | AUTH_FAILED | SERVER_ERROR | MODEL_MISSING",
+        "httpStatus": "number|null",
+        "elapsedMs": "number",
+        "hint": "string(한국어 한 줄)",
+        "checkedAt": "ISO 시각",
+        "candidates": "string[] (MODEL_MISSING 일 때 서버 목록에서 가장 가까운 이름, 자동 변경 없음)"
+      }
+    },
+    "bench start/resume 추가 규칙 (작업 L-4a)": {
+      "description": "시작·이어하기 직전에 연결 진단을 실행한다. 정상이 아니면 시작하지 않고 409 {detail:{message, category, httpStatus, elapsedMs, hint, checkedAt, candidates}}. 결과 파일 머리에 diagnosis(시작 직전 진단)와 interruption{reason, atUnit}(연결이 끊긴 경우)이 추가된다. 모델명 비교는 앞뒤 공백 제거·대소문자 구분·':latest' 동일 취급."
+    }
   },
   "definitions": {
     "bench-status": {
       "type": "object",
-      "required": ["status", "mode", "runId", "currentLabel", "doneUnits", "totalUnits", "elapsedSeconds", "message", "canResume", "canDownload", "retries"],
+      "required": [
+        "status",
+        "mode",
+        "runId",
+        "currentLabel",
+        "doneUnits",
+        "totalUnits",
+        "elapsedSeconds",
+        "message",
+        "canResume",
+        "canDownload",
+        "retries"
+      ],
       "additionalProperties": false,
       "properties": {
-        "status": {"type": "string", "enum": ["idle", "running", "completed", "interrupted", "stopped", "failed"], "description": "interrupted = 연결 끊김으로 중단(이어하기 가능)"},
-        "mode": {"type": "string", "enum": ["", "quick", "full"]},
-        "runId": {"type": "string"},
-        "currentLabel": {"type": "string", "description": "실행 중일 때 현재 항목 이름"},
-        "doneUnits": {"type": "integer"},
-        "totalUnits": {"type": "integer"},
-        "elapsedSeconds": {"type": "number"},
-        "message": {"type": "string", "description": "중단 사유 등. 연결 끊김이면 \"연결이 끊겼습니다. 새 주소를 입력하고 이어하기를 눌러 주세요\""},
-        "canResume": {"type": "boolean"},
-        "canDownload": {"type": "boolean"},
-        "retries": {"type": "integer"}
+        "status": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "running",
+            "completed",
+            "interrupted",
+            "stopped",
+            "failed"
+          ],
+          "description": "interrupted = 연결 끊김으로 중단(이어하기 가능)"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "",
+            "quick",
+            "full"
+          ]
+        },
+        "runId": {
+          "type": "string"
+        },
+        "currentLabel": {
+          "type": "string",
+          "description": "실행 중일 때 현재 항목 이름"
+        },
+        "doneUnits": {
+          "type": "integer"
+        },
+        "totalUnits": {
+          "type": "integer"
+        },
+        "elapsedSeconds": {
+          "type": "number"
+        },
+        "message": {
+          "type": "string",
+          "description": "중단 사유 등. 연결 끊김이면 \"연결이 끊겼습니다. 새 주소를 입력하고 이어하기를 눌러 주세요\""
+        },
+        "canResume": {
+          "type": "boolean"
+        },
+        "canDownload": {
+          "type": "boolean"
+        },
+        "retries": {
+          "type": "integer"
+        }
       }
     },
     "remote-settings": {
       "type": "object",
-      "required": ["baseUrl", "model", "apiKeySet", "apiKeyMasked", "timeoutSeconds", "chunkMaxChars", "configured", "defaultEngine", "notice"],
+      "required": [
+        "baseUrl",
+        "model",
+        "apiKeySet",
+        "apiKeyMasked",
+        "timeoutSeconds",
+        "chunkMaxChars",
+        "configured",
+        "defaultEngine",
+        "notice"
+      ],
       "additionalProperties": false,
       "properties": {
-        "baseUrl": {"type": "string", "description": "서버 주소(관리자 화면에서 바꿀 수 있어야 하므로 내려준다)"},
-        "model": {"type": "string"},
-        "apiKeySet": {"type": "boolean"},
-        "apiKeyMasked": {"type": "string", "description": "키가 있으면 고정 마스킹 문자열, 없으면 빈 문자열. 키 원문은 어떤 응답에도 없다"},
-        "timeoutSeconds": {"type": "number"},
-        "chunkMaxChars": {"type": "integer", "description": "0 = 기본 청크 한도"},
-        "configured": {"type": "boolean", "description": "주소·모델이 모두 있음"},
-        "defaultEngine": {"type": "string", "enum": ["default", "remote"]},
-        "notice": {"type": "string", "description": "\"외부 터널을 거치므로 시험용 데이터만 사용하세요\""}
+        "baseUrl": {
+          "type": "string",
+          "description": "서버 주소(관리자 화면에서 바꿀 수 있어야 하므로 내려준다)"
+        },
+        "model": {
+          "type": "string"
+        },
+        "apiKeySet": {
+          "type": "boolean"
+        },
+        "apiKeyMasked": {
+          "type": "string",
+          "description": "키가 있으면 고정 마스킹 문자열, 없으면 빈 문자열. 키 원문은 어떤 응답에도 없다"
+        },
+        "timeoutSeconds": {
+          "type": "number"
+        },
+        "chunkMaxChars": {
+          "type": "integer",
+          "description": "0 = 기본 청크 한도"
+        },
+        "configured": {
+          "type": "boolean",
+          "description": "주소·모델이 모두 있음"
+        },
+        "defaultEngine": {
+          "type": "string",
+          "enum": [
+            "default",
+            "remote"
+          ]
+        },
+        "notice": {
+          "type": "string",
+          "description": "\"외부 터널을 거치므로 시험용 데이터만 사용하세요\""
+        }
       }
     },
     "remote-settings-input": {
       "type": "object",
-      "required": ["baseUrl", "model", "timeoutSeconds"],
+      "required": [
+        "baseUrl",
+        "model",
+        "timeoutSeconds"
+      ],
       "additionalProperties": false,
       "properties": {
-        "baseUrl": {"type": "string"},
-        "model": {"type": "string"},
-        "apiKey": {"type": ["string", "null"], "description": "생략·빈 값이면 기존 키 유지"},
-        "timeoutSeconds": {"type": "number"},
-        "chunkMaxChars": {"type": "integer"}
+        "baseUrl": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "apiKey": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "생략·빈 값이면 기존 키 유지"
+        },
+        "timeoutSeconds": {
+          "type": "number"
+        },
+        "chunkMaxChars": {
+          "type": "integer"
+        }
       }
     },
     "load-test": {
       "type": "object",
-      "required": ["ok", "modelListed", "modelFound", "currentModel", "availableModels", "responseMs", "jsonParsed", "failureStage", "failureReason"],
+      "required": [
+        "ok",
+        "modelListed",
+        "modelFound",
+        "currentModel",
+        "availableModels",
+        "responseMs",
+        "jsonParsed",
+        "failureStage",
+        "failureReason"
+      ],
       "additionalProperties": false,
       "properties": {
-        "ok": {"type": "boolean", "description": "추론 응답을 JSON 으로 읽었으면 true"},
-        "modelListed": {"type": "boolean", "description": "모델 목록 조회 성공"},
-        "modelFound": {"type": "boolean", "description": "설정한 모델이 서버 목록에 있음"},
-        "currentModel": {"type": "string"},
-        "availableModels": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
-        "responseMs": {"type": ["integer", "null"], "description": "짧은 추론 1회의 응답 시간(ms)"},
-        "jsonParsed": {"type": "boolean"},
-        "failureStage": {"type": "string", "enum": ["", "models", "inference"]},
-        "failureReason": {"type": "string", "description": "한국어 사유, 주소·키·본문 없음"}
+        "ok": {
+          "type": "boolean",
+          "description": "추론 응답을 JSON 으로 읽었으면 true"
+        },
+        "modelListed": {
+          "type": "boolean",
+          "description": "모델 목록 조회 성공"
+        },
+        "modelFound": {
+          "type": "boolean",
+          "description": "설정한 모델이 서버 목록에 있음"
+        },
+        "currentModel": {
+          "type": "string"
+        },
+        "availableModels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20
+        },
+        "responseMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "짧은 추론 1회의 응답 시간(ms)"
+        },
+        "jsonParsed": {
+          "type": "boolean"
+        },
+        "failureStage": {
+          "type": "string",
+          "enum": [
+            "",
+            "models",
+            "inference"
+          ]
+        },
+        "failureReason": {
+          "type": "string",
+          "description": "한국어 사유, 주소·키·본문 없음"
+        }
       }
     },
     "job-error-codes": {

@@ -20,7 +20,7 @@ import {
   stopBench,
   type BenchStatus,
 } from "@/lib/v2/engine-bench";
-import { isAbortError } from "@/lib/v2/errors";
+import { ApiError, isAbortError } from "@/lib/v2/errors";
 
 const POLL_MS = 2000;
 const DISCONNECT_NOTICE = "연결이 끊겼습니다. 새 주소를 입력하고 이어하기를 눌러 주세요";
@@ -30,6 +30,7 @@ export function EngineBenchPanel() {
   const [status, setStatus] = useState<BenchStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [candidates, setCandidates] = useState<string[]>([]);
   const controllerRef = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async () => {
@@ -60,10 +61,16 @@ export function EngineBenchPanel() {
     if (busy) return;
     setBusy(true);
     setError(null);
+    setCandidates([]);
     try {
       setStatus(await run());
     } catch (e) {
-      if (!isAbortError(e)) setError(messageOf(e));
+      if (!isAbortError(e)) {
+        setError(messageOf(e));
+        // 시작 직전 연결 진단이 정상이 아니면 서버가 분류·후보를 함께 준다(모델명 후보는 위 설정에서 직접 고른다)
+        const detail = e instanceof ApiError && typeof e.body === "object" && e.body !== null ? (e.body as { detail?: { candidates?: unknown } }).detail : undefined;
+        if (detail && Array.isArray(detail.candidates)) setCandidates(detail.candidates.filter((c): c is string => typeof c === "string"));
+      }
     } finally {
       setBusy(false);
     }
@@ -137,6 +144,11 @@ export function EngineBenchPanel() {
       {error ? (
         <p role="alert" className="text-sm">
           <StatusDot tone="error" label={error} />
+        </p>
+      ) : null}
+      {candidates.length > 0 ? (
+        <p className="text-sm text-mn-muted">
+          가장 가까운 모델명: <span className="font-mn-mono text-[13px]">{candidates.join(", ")}</span> — 위 원격 설정에서 모델명을 바꿔 저장한 뒤 다시 시작하세요.
         </p>
       ) : null}
 

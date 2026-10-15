@@ -62,3 +62,30 @@ export function saveRemoteSettings(input: RemoteSettingsInput, signal?: AbortSig
 export function runLoadTest(signal?: AbortSignal): Promise<LoadTestResult> {
   return request<LoadTestResult>(`${BASE}/load-test`, { method: "POST", signal, timeoutMs: 150_000 });
 }
+
+/* ---------------- 연결 진단(작업 L-4a) ---------------- */
+export type DiagnoseCategory = "OK" | "UNREACHABLE" | "PATH_MISMATCH" | "AUTH_FAILED" | "SERVER_ERROR" | "MODEL_MISSING";
+
+export interface DiagnoseResult {
+  category: DiagnoseCategory;
+  httpStatus: number | null;
+  elapsedMs: number;
+  hint: string;
+  checkedAt: string;
+  /** 모델 없음일 때 서버 목록에서 가장 가까운 이름(자동으로 바꾸지 않는다) */
+  candidates: string[];
+}
+
+export const DIAGNOSE_LABEL: Record<DiagnoseCategory, string> = {
+  OK: "정상",
+  UNREACHABLE: "연결 불가",
+  PATH_MISMATCH: "경로·포트 오류",
+  AUTH_FAILED: "인증 실패",
+  SERVER_ERROR: "서버 오류",
+  MODEL_MISSING: "모델 없음",
+};
+
+/** 연결 진단: 저장된 설정으로 모델 목록을 한 번만 조회한다(서버가 5초 안에 끝낸다) */
+export function runDiagnose(signal?: AbortSignal): Promise<DiagnoseResult> {
+  return request<DiagnoseResult>(`${BASE}/diagnose`, { method: "POST", signal, timeoutMs: 15_000 });
+}

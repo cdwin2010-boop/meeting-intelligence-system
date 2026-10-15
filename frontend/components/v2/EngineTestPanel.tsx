@@ -13,10 +13,13 @@ import { useEngineTestMode } from "@/components/v2/EngineChoice";
 import { EngineBenchPanel } from "@/components/v2/EngineBenchPanel";
 import { isAbortError } from "@/lib/v2/errors";
 import {
+  DIAGNOSE_LABEL,
   ENGINE_TEST_NOTICE,
   getRemoteSettings,
+  runDiagnose,
   runLoadTest,
   saveRemoteSettings,
+  type DiagnoseResult,
   type LoadTestResult,
   type RemoteSettings,
 } from "@/lib/v2/engine-test";
@@ -38,6 +41,9 @@ export function EngineTestPanel() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [diagnosis, setDiagnosis] = useState<DiagnoseResult | null>(null);
+  const [diagnoseError, setDiagnoseError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [timeoutSeconds, setTimeoutSeconds] = useState("300");
   const [chunkMaxChars, setChunkMaxChars] = useState("0");
@@ -97,6 +103,20 @@ export function EngineTestPanel() {
       if (!isAbortError(error)) setSaveError(messageOf(error));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function diagnose() {
+    if (diagnosing) return;
+    setDiagnosing(true);
+    setDiagnosis(null);
+    setDiagnoseError(null);
+    try {
+      setDiagnosis(await runDiagnose());
+    } catch (error) {
+      if (!isAbortError(error)) setDiagnoseError(messageOf(error, "연결 진단을 하지 못했습니다."));
+    } finally {
+      setDiagnosing(false);
     }
   }
 
@@ -198,8 +218,42 @@ export function EngineTestPanel() {
           <Button onClick={() => void loadTest()} disabled={testing || saving} aria-label="로딩 테스트">
             {testing ? "테스트 중…" : "로딩 테스트"}
           </Button>
+          <Button onClick={() => void diagnose()} disabled={diagnosing || saving} aria-label="연결 진단">
+            {diagnosing ? "진단 중…" : "연결 진단"}
+          </Button>
         </div>
       </form>
+
+      {diagnoseError ? (
+        <p role="alert" className="text-sm">
+          <StatusDot tone="error" label={diagnoseError} />
+        </p>
+      ) : null}
+      {diagnosis ? (
+        <section aria-label="연결 진단 결과" className="flex flex-col gap-2 rounded-mn-card border border-mn-border bg-mn-surface p-4">
+          <p role="status" className="text-sm">
+            <StatusDot
+              tone={diagnosis.category === "OK" ? "ready" : "error"}
+              label={`${DIAGNOSE_LABEL[diagnosis.category]} · ${diagnosis.hint}`}
+            />
+          </p>
+          <p className="font-mn-mono text-[13px] text-mn-muted">
+            {diagnosis.httpStatus === null ? "HTTP —" : `HTTP ${diagnosis.httpStatus}`} · {diagnosis.elapsedMs} ms
+          </p>
+          {diagnosis.category === "MODEL_MISSING" && diagnosis.candidates.length > 0 ? (
+            <div role="group" aria-label="모델명 후보" className="flex flex-col gap-2">
+              <p className="text-sm text-mn-muted">가장 가까운 모델명입니다. 선택하면 위 모델명 칸에 채워지며, 저장해야 적용됩니다.</p>
+              <div className="flex flex-wrap gap-2">
+                {diagnosis.candidates.map((name) => (
+                  <Button key={name} type="button" size="sm" variant="secondary" onClick={() => setModel(name)} aria-label={`후보 ${name}`}>
+                    {name}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {testError ? (
         <p role="alert" className="text-sm">

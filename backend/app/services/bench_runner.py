@@ -29,6 +29,7 @@ from app.config import settings
 from app.pipeline.chunked_extract import (
     STATUS_FAILED, ChunkedExtraction, ChunkOptions, _norm, extract_chunked, profile_chunk_options,
 )
+from app.services import engine_diag
 from app.pipeline.local_llm import NO_KEY, LocalLlmError, OpenAICompatClient, check_base_url, list_models
 from app.services import bench_data
 from app.services.bench_data import BenchTranscript, GoldItem
@@ -377,7 +378,7 @@ def unit_a(ctx: _Ctx) -> dict[str, Any]:
     started = time.monotonic()
     models = list_models(ctx.cfg.base_url, ctx.cfg.api_key, ctx.cfg.item_timeout, ctx.cfg.allow_external)
     elapsed = int((time.monotonic() - started) * 1000)
-    found = ctx.cfg.model in models
+    found = engine_diag.model_in_list(ctx.cfg.model, models)  # 앞뒤 공백·':latest' 차이는 같은 이름으로 본다(L-4a)
     return {
         "ok": True, "elapsedMs": elapsed, "modelCount": len(models), "modelFound": found, "model": ctx.cfg.model,
         "note": "" if found else "설정한 모델이 서버 목록에 없습니다",
@@ -458,7 +459,7 @@ def unit_f(ctx: _Ctx) -> dict[str, Any]:
         entries = [m for m in models if isinstance(m, dict)]
     except (ValueError, AttributeError):
         return {"ok": True, "measurable": False, "reason": f"{UNMEASURABLE}: 상태 응답 형식을 읽을 수 없음"}
-    target = next((m for m in entries if cfg.model in (m.get("name"), m.get("model"))), None)
+    target = next((m for m in entries if any(engine_diag.model_matches(cfg.model, str(m.get(k) or "")) for k in ("name", "model"))), None)
     out: dict[str, Any] = {"ok": True, "measurable": True, "source": "ollama:/api/ps", "loadedModelCount": len(entries),
                            "targetLoaded": target is not None}
     if target is not None:
@@ -533,7 +534,10 @@ def _run(state: dict[str, Any], cfg: BenchConfig, sleep: Callable[[float], None]
             tick()
             _save(state)
         state["status"], state["current"], state["message"] = S_COMPLETED, "", ""
-    except _Interrupted:
+    except _Interrupted as exc:
+        # 끊김 형태(연결 거부·시간 초과·HTTP 오류 등 분류 코드)를 남긴다. 주소·본문은 남기지 않는다
+        state["interruptReason"] = str(exc.args[0]) if exc.args else ""
+        state["interruptedAt"] = key
         state["status"], state["message"] = S_INTERRUPTED, DISCONNECT_MESSAGE
     except _Stop:
         state["status"], state["message"] = S_STOPPED, "사용자가 중단했습니다. 이어하기로 남은 항목을 실행할 수 있습니다"
@@ -544,7 +548,7 @@ def _run(state: dict[str, Any], cfg: BenchConfig, sleep: Callable[[float], None]
     _save(state)
 
 
-def start(mode: str, cfg: BenchConfig, *, sleep: Callable[[float], None] = time.sleep, wait: bool = False) -> dict[str, Any]:
+def start(mode: str, cfg: BenchConfig, *, diagnosis: dict[str, Any] | None = None, sleep: Callable[[float], None] = time.sleep, wait: bool = False) -> dict[str, Any]:
     global _thread
     if mode not in (MODE_QUICK, MODE_FULL):
         raise BenchError("측정 종류는 quick 또는 full 이어야 합니다")
@@ -552,6 +556,8 @@ def start(mode: str, cfg: BenchConfig, *, sleep: Callable[[float], None] = time.
         if is_running():
             raise BenchBusy("이미 측정이 진행 중입니다")
         state = _new_state(mode, cfg)
+        if diagnosis is not None:
+            state["diagnosis"] = diagnosis  # 시작 직전 연결 진단 결과(결과 파일 머리에 기록)
         _stop.clear()
         _save(state)
         _thread = threading.Thread(target=_run, args=(state, cfg, sleep), name="bench-run", daemon=True)
@@ -561,7 +567,7 @@ def start(mode: str, cfg: BenchConfig, *, sleep: Callable[[float], None] = time.
     return state
 
 
-def resume(cfg: BenchConfig, *, sleep: Callable[[float], None] = time.sleep, wait: bool = False) -> dict[str, Any]:
+def resume(cfg: BenchConfig, *, diagnosis: dict[str, Any] | None = None, sleep: Callable[[float], None] = time.sleep, wait: bool = False) -> dict[str, Any]:
     global _thread
     with _lock:
         if is_running():
@@ -573,6 +579,8 @@ def resume(cfg: BenchConfig, *, sleep: Callable[[float], None] = time.sleep, wai
         if state.get("status") not in (*RESUMABLE, S_RUNNING, S_FAILED):
             raise BenchError("이어할 수 있는 측정이 없습니다(이미 완료되었습니다)")
         state.update(status=S_RUNNING, message="", resumeCount=int(state.get("resumeCount", 0)) + 1)
+        if diagnosis is not None:
+            state["diagnosis"] = diagnosis
         _stop.clear()
         _save(state)
         _thread = threading.Thread(target=_run, args=(state, cfg, sleep), name="bench-run", daemon=True)
@@ -580,6 +588,18 @@ def resume(cfg: BenchConfig, *, sleep: Callable[[float], None] = time.sleep, wai
     if wait:
         _thread.join()
     return state
+
+
+def record_diagnosis(diagnosis: dict[str, Any]) -> None:
+    """측정을 시작하지 못했을 때 기존 기록(중단됨 등)의 머리 diagnosis 만 갱신한다. 실행 중이거나 기록이 없으면 아무것도 하지 않는다."""
+    with _lock:
+        if is_running():
+            return
+        state = load_state()
+        if state is None:
+            return
+        state["diagnosis"] = diagnosis
+        _save(state)
 
 
 def stop() -> bool:
@@ -721,7 +741,10 @@ def build_result(state: dict[str, Any]) -> dict[str, Any]:
 
     section("G", g_build)
     result = {
-        "schema": "dots-bench-v1", "runId": state.get("runId"), "mode": state.get("mode"), "status": status_of(state),
+        "schema": "dots-bench-v1", "diagnosis": state.get("diagnosis") or {}, "runId": state.get("runId"), "mode": state.get("mode"),
+        "status": status_of(state),
+        "interruption": {"reason": state.get("interruptReason", ""), "atUnit": state.get("interruptedAt", "")}
+        if state.get("interruptReason") else {},
         "startedAt": state.get("startedAt"), "updatedAt": state.get("updatedAt"), "elapsedSeconds": state.get("elapsedSeconds"),
         "completedUnits": len(done), "totalUnits": len(state["plan"]), "resumeCount": state.get("resumeCount", 0),
         "retries": state.get("retries", 0), "config": state.get("config", {}), "sections": sections,

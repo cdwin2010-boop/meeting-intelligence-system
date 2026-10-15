@@ -18,6 +18,7 @@ from app.config import settings
 from app.db import get_session
 from app.models import Account, append_event
 from app.pipeline.local_llm import LocalLlmError, OpenAICompatClient, list_models
+from app.services import engine_diag
 from app.services import engine_test as engine
 from app.services.system_admin import is_system_admin
 from app.services.system_settings import LOCAL_LLM_EXTERNAL_HOST_ALLOWED, effective
@@ -162,7 +163,7 @@ def load_test(account: Account = Depends(get_current_account), session: Session 
         models = list_models(remote.base_url, remote.api_key, step_timeout, allow_external)
     except LocalLlmError as exc:
         return _failure("models", _REASON_TEXT.get(exc.reason, engine.UNAVAILABLE_MESSAGE), current_model=remote.model)
-    listed = dict(model_listed=True, model_found=remote.model in models, current_model=remote.model, available_models=models[:_MODELS_SHOWN])
+    listed = dict(model_listed=True, model_found=engine_diag.model_in_list(remote.model, models), current_model=remote.model, available_models=models[:_MODELS_SHOWN])
 
     client = OpenAICompatClient(
         remote.base_url, remote.model, remote.api_key or "not-needed", max_output_tokens=64, allow_external=allow_external, json_mode_enabled=True
@@ -186,3 +187,25 @@ def load_test(account: Account = Depends(get_current_account), session: Session 
         return _failure("inference", "응답을 JSON 으로 읽지 못했습니다", response_ms=elapsed_ms, **listed)
     # 설정한 모델이 목록에 없어도 추론이 성공했으면 성공으로 보되 model_found=false 로 알린다
     return LoadTestOut(ok=True, response_ms=elapsed_ms, json_parsed=True, failure_stage="", failure_reason="", **listed)
+
+
+class DiagnoseOut(CamelModel):
+    category: str  # OK | UNREACHABLE | PATH_MISMATCH | AUTH_FAILED | SERVER_ERROR | MODEL_MISSING
+    http_status: int | None
+    elapsed_ms: int
+    hint: str
+    checked_at: str
+    candidates: list[str]  # 모델 없음일 때 서버 목록에서 가장 가까운 이름(자동으로 바꾸지 않는다)
+
+
+@router.post("/remote/diagnose", response_model=DiagnoseOut, response_model_by_alias=True)
+def diagnose(account: Account = Depends(get_current_account), session: Session = Depends(get_session)) -> DiagnoseOut:
+    """저장된 원격 설정으로 모델 목록(GET /models)을 한 번만 호출해 연결 상태를 분류한다(5초 이내, 응답에 주소·키 없음)."""
+    _require_admin(session, account)
+    remote = engine.load_remote_settings()
+    if not remote.configured:
+        raise _unprocessable("서버 주소와 모델명을 먼저 저장하세요")
+    allow_external = True
+    if settings.external_policy_enforced:
+        allow_external = bool(effective(session, account.tenant_id, LOCAL_LLM_EXTERNAL_HOST_ALLOWED).value)
+    return DiagnoseOut(**engine_diag.diagnose(remote.base_url, remote.api_key, remote.model, allow_external).as_dict())
