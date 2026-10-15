@@ -14,8 +14,10 @@ import { StatusChip, type StatusChipTone } from "@/components/v2/StatusChip";
 import {
   addDays,
   addMonths,
+  CALENDAR_ICS_FILE_NAME,
   DAY_CELL_VISIBLE,
   dayLabel,
+  downloadCalendarIcs,
   getCalendar,
   groupByDate,
   monthGrid,
@@ -71,6 +73,7 @@ export function TodoCalendar({ manager }: { manager: boolean }) {
   const [state, setState] = useState<{ kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; data: CalendarResponse }>({ kind: "loading" });
   const [dayList, setDayList] = useState<string | null>(null);
   const [selected, setSelected] = useState<CalendarItem | null>(null);
+  const [icsError, setIcsError] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const today = useMemo(() => todayYmd(), []);
 
@@ -91,6 +94,24 @@ export function TodoCalendar({ manager }: { manager: boolean }) {
   }, [from, to, scope]);
 
   const byDate = useMemo(() => (state.kind === "ready" ? groupByDate(state.data.dated.items) : new Map<string, CalendarItem[]>()), [state]);
+
+  // 캘린더 파일(.ics): 지금 보는 범위(내 업무/전체 업무)의 진행 중·기한 확정 업무를 내려받는다
+  async function exportIcs() {
+    setIcsError(null);
+    try {
+      const blob = await downloadCalendarIcs(scope);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = CALENDAR_ICS_FILE_NAME;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      if (!isAbortError(error)) setIcsError(error instanceof Error && error.message ? error.message : "캘린더 파일을 내려받지 못했습니다.");
+    }
+  }
 
   function move(step: -1 | 1) {
     const next = view === "month" ? addMonths(anchor, step) : addDays(anchor, step * 7);
@@ -155,8 +176,17 @@ export function TodoCalendar({ manager }: { manager: boolean }) {
               ))}
             </div>
           ) : null}
+          <Button type="button" size="sm" variant="secondary" onClick={() => void exportIcs()}>
+            캘린더 파일(.ics) 내려받기
+          </Button>
         </div>
       </div>
+      <p className="text-xs text-mn-muted">기한이 있는 진행 중 업무만 포함됩니다.</p>
+      {icsError ? (
+        <p role="alert" className="text-sm">
+          <StatusDot tone="error" label={icsError} />
+        </p>
+      ) : null}
 
       {state.kind === "loading" ? (
         <p role="status" className="text-sm text-mn-muted">

@@ -36,6 +36,13 @@ export function getCalendar(from: string, to: string, scope: CalendarScope, sign
   return request<CalendarResponse>(`/me/calendar?${query}`, { signal });
 }
 
+/** 캘린더 파일(.ics) 내려받기(작업 E-1): 기한이 확정된 진행 중 업무만. 인증 헤더가 필요해 fetch 로 받는다 */
+export function downloadCalendarIcs(scope: CalendarScope, signal?: AbortSignal): Promise<Blob> {
+  return request<Blob>(`/me/calendar.ics?scope=${scope}`, { asBlob: true, signal });
+}
+
+export const CALENDAR_ICS_FILE_NAME = "aidots-tasks.ics";
+
 /* ---------------- 날짜 문자열 계산(UTC 기준, 시간대 변환 없음) ---------------- */
 
 const pad = (n: number) => String(n).padStart(2, "0");

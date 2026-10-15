@@ -5,7 +5,7 @@
 from datetime import date, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import Field
 from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.orm import Session, aliased
@@ -20,6 +20,7 @@ from app.models import Account, ActionItem, Event, Meeting, MeetingView, Notice
 from app.models.closure import active_meeting_condition
 from app.models.item_conditions import confirmed_item, inactive_item, live_item, not_deleted_item, open_item, pending_item
 from app.models.common import utcnow
+from app.services.ics_export import build_ics
 from app.services.system_admin import is_system_admin
 
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -402,3 +403,36 @@ def my_calendar(
         dated=build(dated, CALENDAR_ITEM_LIMIT), undetermined=build(undetermined, CALENDAR_UNDETERMINED_LIMIT),
     )
 
+
+# ---------------- 캘린더 파일(.ics) 내보내기(작업 E-1, 읽기 전용·DB 변경 없음) ----------------
+ICS_ITEM_LIMIT = 2000
+
+
+@router.get("/calendar.ics")
+def my_calendar_ics(
+    scope: str = Query("self", pattern="^(self|all)$"),
+    account: Account = Depends(get_current_account),
+    session: Session = Depends(get_session),
+) -> Response:
+    """기한이 확정된 진행 중 업무만 종일 일정으로 내보낸다. 열람 범위·scope 권한은 /calendar 와 같다.
+    기한 미확정·종결·삭제·대체된 업무는 뺀다. 회의 내용·근거·내부 주소는 담지 않는다(업무명만)."""
+    if scope == "all" and account.rank not in VIEW_ALL_RANKS:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="전체 업무는 지시자·관리자만 볼 수 있습니다.")
+    stmt = (
+        select(ActionItem.id, ActionItem.title, ActionItem.due_date)
+        .join(Meeting, Meeting.id == ActionItem.meeting_id)
+        .where(
+            and_(meeting_visibility(account), active_meeting_condition()), open_item(), not_deleted_item(),
+            ActionItem.due_date.is_not(None), ActionItem.due_undetermined.is_(False),
+        )
+        .order_by(ActionItem.due_date, ActionItem.id)
+        .limit(ICS_ITEM_LIMIT)
+    )
+    if scope == "self":
+        stmt = stmt.where(ActionItem.assignee_id == account.id)
+    rows = session.execute(stmt).all()
+    body = build_ics([(r.id, r.title, r.due_date) for r in rows], utcnow())
+    return Response(
+        content=body.encode("utf-8"), media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="aidots-tasks.ics"', "Cache-Control": "no-store"},
+    )
