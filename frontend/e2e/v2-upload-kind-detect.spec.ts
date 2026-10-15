@@ -1,7 +1,7 @@
 /*
  * 작업 85-2 E2E: 올리기 화면 자료 종류 자동 선택(확장자)과 종류 불일치 안내. 백엔드 없이 page.route 로 응답한다(데이터는 모두 가상).
  */
-import { expect, test, type Page, type Route } from "./helpers/test";
+import { expect, test, type Page, type Route, enableXlsxUpload } from "./helpers/test";
 
 const FAKE_TOKEN = "e2e-fake-token";
 const TOKEN_KEY = "mi.v2.accessToken";
@@ -19,6 +19,7 @@ async function openUpload(page: Page, uploads: string[]) {
     uploads.push(route.request().postDataBuffer()?.toString("utf-8") ?? "");
     return json(route, 202, { meetingId: 77, jobId: 5 });
   });
+  await enableXlsxUpload(page);
   await page.goto("/v2/login");
   await page.evaluate(([k, t]) => window.sessionStorage.setItem(k, t), [TOKEN_KEY, FAKE_TOKEN]);
   await page.goto("/v2/upload");

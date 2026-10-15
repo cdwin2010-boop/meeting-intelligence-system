@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     update_max_rows: int = 1000
     # 자료 파일(txt) 등록(작업 73-1): 파일 크기 상한(바이트)과 글자 수 상한. 넘으면 422
     transcript_upload_max_bytes: int = Field(default=2 * 1024 * 1024, ge=1)
+    # 업로드 화면 옵션(B-2): 엑셀 업로드·양식 내려받기 화면 노출(기본 숨김, API·코드는 그대로) / 웹 직접 입력(붙여넣기) 최대 글자 수
+    xlsx_upload_ui_enabled: bool = False
+    paste_input_max_chars: int = Field(default=200_000, ge=1)
     transcript_max_chars: int = Field(default=300000, ge=1)
     # 처리 방식(작업 75-1): inline = 서버가 BackgroundTasks 로 직접 처리(현행) / queue = task_queue 에 쌓고 단독 worker 프로세스가 처리
     processing_mode: Literal["inline", "queue"] = "inline"

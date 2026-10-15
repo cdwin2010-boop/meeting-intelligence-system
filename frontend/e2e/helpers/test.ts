@@ -73,3 +73,20 @@ export const test = base.extend({
     expect(leaked, "가로채지 않은 /api 요청이 실제 네트워크로 나갔습니다").toEqual([]);
   },
 });
+
+/**
+ * 엑셀 업로드 화면 노출(작업 B-2): 서버 옵션(xlsxUploadEnabled)이 기본 false 라 엑셀 종류가 숨겨진다.
+ * 엑셀 업로드를 시험하는 스펙은 화면을 열기 전에 이 함수로 켠 상태의 시스템 정보를 가로챈다. paste 는 붙여넣기 최대 글자 수.
+ */
+export async function enableXlsxUpload(page: import("@playwright/test").Page, options: { pasteMaxChars?: number } = {}) {
+  await page.route("**/api/system/engine", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        engine: "gemini", isFake: false, processingMode: "inline", queuePending: 0, queueProcessing: 0, llmProvider: "gemini", llmModel: "",
+        engineTestMode: false, engineTestDefault: "default", xlsxUploadEnabled: true, pasteMaxChars: options.pasteMaxChars ?? 200000,
+      }),
+    }),
+  );
+}

@@ -3,7 +3,7 @@
  * 보조창 좌우 전환(쿠키·DOM 순서·접기 버튼·모바일 고정), 375/768/1280px 가로 넘침.
  * 백엔드 없이 page.route 로 응답한다(데이터는 모두 가상).
  */
-import { expect, test, type Page, type Route } from "./helpers/test";
+import { expect, test, type Page, type Route, enableXlsxUpload } from "./helpers/test";
 import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";
@@ -64,6 +64,7 @@ async function open(page: Page, path: string, options: Options = {}) {
   if (options.cookie) {
     await page.context().addCookies([{ name: "mi_side_position", value: options.cookie, url: `http://localhost:${process.env.E2E_PORT ?? 3100}` }]);
   }
+  await enableXlsxUpload(page);
   await page.goto("/v2/login");
   await page.evaluate(([k, t]) => window.sessionStorage.setItem(k, t), [TOKEN_KEY, FAKE_TOKEN]);
   await page.goto(path);

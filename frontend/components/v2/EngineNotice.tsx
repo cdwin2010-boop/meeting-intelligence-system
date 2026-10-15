@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 
 import { StatusDot } from "@/components/mono";
 import { isAbortError } from "@/lib/v2/errors";
-import { FAKE_ENGINE_NOTICE, getEngine } from "@/lib/v2/system";
+import { DEFAULT_PASTE_MAX_CHARS, FAKE_ENGINE_NOTICE, getEngine } from "@/lib/v2/system";
 
 export function useEngineIsFake(enabled: boolean): boolean {
   const [isFake, setIsFake] = useState(false);
@@ -23,6 +23,34 @@ export function useEngineIsFake(enabled: boolean): boolean {
     return () => controller.abort();
   }, [enabled]);
   return isFake;
+}
+
+export interface UploadOptions {
+  xlsxEnabled: boolean;
+  pasteMaxChars: number;
+  /** 서버 응답을 받았는가(받기 전에는 엑셀 숨김을 되돌리지 않는다) */
+  loaded: boolean;
+}
+
+/** 업로드 화면 옵션(작업 B-2): 엑셀 노출 여부와 붙여넣기 최대 글자 수. 조회 전·실패 시 엑셀은 숨기고 기본 글자 수를 쓴다 */
+export function useUploadOptions(): UploadOptions {
+  const [options, setOptions] = useState<UploadOptions>({ xlsxEnabled: false, pasteMaxChars: DEFAULT_PASTE_MAX_CHARS, loaded: false });
+  useEffect(() => {
+    const controller = new AbortController();
+    getEngine(controller.signal)
+      .then((info) =>
+        setOptions({
+          xlsxEnabled: info.xlsxUploadEnabled === true,
+          pasteMaxChars: typeof info.pasteMaxChars === "number" && info.pasteMaxChars > 0 ? info.pasteMaxChars : DEFAULT_PASTE_MAX_CHARS,
+          loaded: true,
+        }),
+      )
+      .catch((error) => {
+        if (!isAbortError(error)) setOptions((prev) => ({ ...prev, loaded: true })); // 조회 실패: 엑셀은 숨긴 채 둔다
+      });
+    return () => controller.abort();
+  }, []);
+  return options;
 }
 
 export function FakeEngineNotice({ show, label }: { show: boolean; label?: string }) {

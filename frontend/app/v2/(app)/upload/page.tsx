@@ -19,7 +19,7 @@ import { Suspense, useEffect, useId, useRef, useState, type DragEvent, type Form
 
 import { Button, StatusDot } from "@/components/mono";
 import { EngineChoiceField, useEngineTestMode } from "@/components/v2/EngineChoice";
-import { FakeEngineNotice, useEngineIsFake } from "@/components/v2/EngineNotice";
+import { FakeEngineNotice, useEngineIsFake, useUploadOptions } from "@/components/v2/EngineNotice";
 import type { EngineChoice } from "@/lib/v2/engine-test";
 import { isManager } from "@/lib/v2/types";
 import { useAuth } from "@/components/v2/AuthProvider";
@@ -93,6 +93,7 @@ function UploadForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const engineIsFake = useEngineIsFake(true);
+  const { xlsxEnabled, pasteMaxChars, loaded: optionsLoaded } = useUploadOptions();
   const { refresh: refreshProcessing } = useProcessing();
   const { account } = useAuth();
   const accountId = account?.id ?? null;
@@ -118,6 +119,10 @@ function UploadForm() {
   const [meetingType, setMeetingType] = useState<MeetingType | "">("");
   const [projectId, setProjectId] = useState("");
   const [sourceKind, setSourceKind] = useState<SourceKind>("audio");
+  // 웹 직접 입력(붙여넣기, 작업 B-2): 자료 종류는 txt 와 같고(STT 생략) 파일 대신 입력창의 글을 txt 로 올린다
+  const [pasteMode, setPasteMode] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const pasteId = useId();
   const [participantIds, setParticipantIds] = useState<number[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -232,11 +237,17 @@ function UploadForm() {
     }
   }
 
+  // 엑셀 화면 노출이 꺼져 있으면(기본) 엑셀 종류는 목록에서 빠진다. 서버 응답 뒤 숨김 상태에서 엑셀 종류가 남아 있으면 음성으로 돌린다
+  const visibleKinds = SOURCE_KINDS.filter((code) => code !== "transcript_xlsx" || xlsxEnabled);
+  useEffect(() => {
+    if (optionsLoaded && !xlsxEnabled && sourceKind === "transcript_xlsx") setSourceKind("audio");
+  }, [optionsLoaded, xlsxEnabled, sourceKind]);
+
   function pickFile(next: File | null, source: "file" | "record" = "file") {
     if (next) suggestHeldAt(next, source);
     // 확장자로 자료 종류를 자동 선택한다(.xlsx → 엑셀, .txt → txt, 음성 확장자 → 음성). 직접 바꾼 선택은 그대로 둔다
     const detected = next ? kindForFileName(next.name) : null;
-    if (detected && detected !== sourceKind && !kindPickedByUser.current) setSourceKind(detected);
+    if (detected && detected !== sourceKind && !kindPickedByUser.current && (detected !== "transcript_xlsx" || xlsxEnabled)) setSourceKind(detected);
     setFile(next);
     setError(null);
     setFormError(null);
@@ -252,8 +263,9 @@ function UploadForm() {
 
   // 자료 종류를 바꾸면 고른 파일을 비운다(종류마다 받는 파일이 다르다)
   function pickSourceKind(next: SourceKind) {
-    if (next === sourceKind) return;
+    if (next === sourceKind && !pasteMode) return;
     kindPickedByUser.current = true;
+    setPasteMode(false);
     setSourceKind(next);
     setFile(null);
     setError(null);
@@ -283,6 +295,16 @@ function UploadForm() {
   }
 
   // 유형을 바꾸면 프로젝트 선택은 초기화한다(프로젝트 회의가 아니면 projectId 를 보내지 않는다)
+  // 텍스트 직접 입력(작업 B-2): 자료 종류는 txt 로 보내고, 파일 대신 입력창의 글을 txt 파일로 만들어 올린다
+  function pickPasteMode() {
+    kindPickedByUser.current = true;
+    setPasteMode(true);
+    setSourceKind("transcript_txt");
+    setFile(null);
+    setError(null);
+    setFormError(null);
+  }
+
   function pickType(next: MeetingType) {
     setMeetingType(next);
     setProjectId("");
@@ -291,16 +313,31 @@ function UploadForm() {
 
   async function submit() {
     if (submittingRef.current) return;
-    if (!file) {
+    let uploadFile = file;
+    if (pasteMode) {
+      // 줄바꿈 통일(CRLF·CR → LF)과 BOM 제거 후 검사한다. 빈 입력·최대 글자 수 초과는 서버를 부르지 않는다
+      const normalized = pasteText.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+      if (!normalized.trim()) {
+        setFormError("회의 내용을 입력해 주세요.");
+        return;
+      }
+      if (normalized.length > pasteMaxChars) {
+        setFormError(`입력한 글이 너무 깁니다(최대 ${pasteMaxChars.toLocaleString("ko-KR")}자, 현재 ${normalized.length.toLocaleString("ko-KR")}자).`);
+        return;
+      }
+      const base = (title.trim() || "직접 입력 회의록").replace(/[\\/:*?"<>|]/g, "_").slice(0, 80);
+      uploadFile = new File([normalized], `${base}.txt`, { type: "text/plain" });
+    }
+    if (!uploadFile) {
       setFormError(isTranscriptKind(sourceKind) ? `${SOURCE_KIND_LABEL[sourceKind]}을 선택하세요.` : "음성 파일을 선택하세요.");
       return;
     }
-    const mismatch = kindMismatchHint(sourceKind, file.name);
+    const mismatch = kindMismatchHint(sourceKind, uploadFile.name);
     if (mismatch && !isTranscriptKind(sourceKind)) {
       setFormError(mismatch); // 음성 종류에 자료 파일: 서버를 부르지 않고 원인을 알린다
       return;
     }
-    if (isTranscriptKind(sourceKind) && !matchesTranscriptExt(sourceKind, file.name)) {
+    if (isTranscriptKind(sourceKind) && !matchesTranscriptExt(sourceKind, uploadFile.name)) {
       setFormError(`자료 파일은 .${transcriptExtOf(sourceKind)} 파일만 올릴 수 있습니다.`); // 서버를 부르지 않는다
       return;
     }
@@ -329,7 +366,7 @@ function UploadForm() {
     setError(null);
     setDeferredNotice(null);
     requestUpload({
-      file,
+      file: uploadFile,
       title: title.trim(),
       heldAt,
       participantIds,
@@ -486,8 +523,8 @@ function UploadForm() {
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-2 text-sm font-medium">자료 종류</legend>
             <div className="flex flex-wrap gap-2">
-              {SOURCE_KINDS.map((code) => {
-                const checked = sourceKind === code;
+              {visibleKinds.map((code) => {
+                const checked = sourceKind === code && !pasteMode;
                 return (
                   <label
                     key={code}
@@ -513,8 +550,26 @@ function UploadForm() {
                   </label>
                 );
               })}
+              <label
+                className={[
+                  "inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-mn-control border px-3 py-1 text-[13px]",
+                  "has-[:focus-visible]:[box-shadow:var(--mn-focus-ring)] has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50",
+                  pasteMode ? "border-mn-accent bg-mn-elevated font-semibold text-mn-text" : "border-mn-control text-mn-muted hover:text-mn-text",
+                ].join(" ")}
+              >
+                <input type="radio" name="sourceKind" value="paste" checked={pasteMode} disabled={submitting} onChange={pickPasteMode} className="sr-only" />
+                <span aria-hidden="true" className="font-mn-mono">
+                  {pasteMode ? "●" : "○"}
+                </span>
+                텍스트 직접 입력
+              </label>
             </div>
-            {sourceKind === "transcript_txt" ? (
+            {pasteMode ? (
+              <p role="status" className="text-xs text-mn-text">
+                회의 내용을 붙여 넣으면 음성 인식 없이 바로 업무를 추출합니다. "[00:01:23] 화자1: 내용" 형식이면 근거 위치를 볼 수 있고, 시각 표기가 없으면 "근거 위치 보기"는 쓸 수 없습니다.
+              </p>
+            ) : null}
+            {sourceKind === "transcript_txt" && !pasteMode ? (
               <p role="status" className="text-xs text-mn-text">
                 전사문(txt)을 올리면 음성 인식 없이 바로 업무를 추출합니다. 시각 표기가 없으면 "근거 위치 보기"는 쓸 수 없습니다.
               </p>
@@ -538,7 +593,33 @@ function UploadForm() {
             ) : null}
           </fieldset>
 
+          {/* 텍스트 직접 입력(작업 B-2): 파일 대신 입력창. 최대 글자 수는 서버 옵션(PASTE_INPUT_MAX_CHARS) */}
+          {pasteMode ? (
+            <div className="flex flex-col gap-2">
+              <label htmlFor={pasteId} className="text-sm font-medium">
+                회의 내용
+              </label>
+              <textarea
+                id={pasteId}
+                value={pasteText}
+                rows={12}
+                disabled={submitting}
+                onChange={(event) => {
+                  setPasteText(event.target.value);
+                  setFormError(null);
+                }}
+                aria-describedby={`${pasteId}-count`}
+                placeholder={"[00:00:10] 화자1: 오늘 회의를 시작하겠습니다.\n[00:00:20] 화자2: 네, 안건부터 보겠습니다."}
+                className="mn-focus w-full resize-y rounded-mn-control border border-mn-control bg-mn-bg px-3 py-2 font-mn-mono text-sm text-mn-text outline-none placeholder:text-mn-muted disabled:opacity-50"
+              />
+              <p id={`${pasteId}-count`} className={`text-xs ${pasteText.length > pasteMaxChars ? "text-mn-text" : "text-mn-muted"}`}>
+                {pasteText.length.toLocaleString("ko-KR")} / {pasteMaxChars.toLocaleString("ko-KR")}자
+                {pasteText.length > pasteMaxChars ? " · 글자 수를 넘었습니다. 줄여 주세요." : ""}
+              </p>
+            </div>
+          ) : null}
           {/* 파일: 끌어다 놓기 영역 + 공용 FilePicker(버튼·상태 글자·숨긴 입력) */}
+          {!pasteMode ? (
           <div
             onDragOver={(event) => {
               event.preventDefault();
@@ -564,7 +645,9 @@ function UploadForm() {
                   ? ".txt,text/plain"
                   : sourceKind === "transcript_xlsx"
                     ? ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    : "audio/*,video/mp4,video/webm,.xlsx,.txt" // 자료 파일도 고를 수 있게 하고, 고르면 자료 종류를 자동으로 맞춘다
+                    : xlsxEnabled
+                      ? "audio/*,video/mp4,video/webm,.xlsx,.txt" // 자료 파일도 고를 수 있게 하고, 고르면 자료 종류를 자동으로 맞춘다
+                      : "audio/*,video/mp4,video/webm,.txt" // 엑셀 화면 노출이 꺼져 있으면 xlsx 는 고르는 목록에서 뺀다(작업 B-2)
               }
               describedBy={fileHintId}
               recordLabel={recordable && sourceKind === "audio" ? "녹음하기" : undefined}
@@ -582,6 +665,7 @@ function UploadForm() {
               </p>
             ) : null}
           </div>
+          ) : null}
 
           <div className="flex flex-col gap-2">
             <label htmlFor={titleId} className="text-sm font-medium">

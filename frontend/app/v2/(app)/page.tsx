@@ -10,6 +10,7 @@
  * - 수정 요청 대기·보완 필요 업무 항목은 회의록 상세로 갈 때 returnTo=/v2 를 붙여, 상세에서 "할 일로 돌아가기"를 쓸 수 있다(작업 85-1).
  *   보완 필요 업무는 item=업무 번호도 붙여 상세가 그 업무 줄로 이동·강조한다
  */
+import { TodoCalendar } from "@/components/v2/TodoCalendar";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -324,6 +325,8 @@ function TodoContent({ todos, notices, manager }: { todos: Todos; notices: Notic
 export default function V2TodoPage() {
   const { account } = useAuth();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  // 목록/캘린더 보기(작업 B-2). 캘린더는 마감일 기준 월간·주간 보기
+  const [view, setView] = useState<"list" | "calendar">("list");
   const controllerRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
@@ -351,9 +354,19 @@ export default function V2TodoPage() {
       <header>
         <h1 className="mn-page-title text-mn-text">할 일</h1>
         <p className="mt-1 text-[13px] leading-5 text-mn-muted">{todayLabel()} · 오늘 처리할 일을 먼저 보여 드립니다.</p>
+      
+        <div className="mt-3 flex items-center gap-1" role="group" aria-label="보기 전환">
+          {(["list", "calendar"] as const).map((mode) => (
+            <Button key={mode} size="sm" variant={view === mode ? "primary" : "secondary"} aria-pressed={view === mode} onClick={() => setView(mode)}>
+              {mode === "list" ? "목록" : "캘린더"}
+            </Button>
+          ))}
+        </div>
       </header>
 
-      {state.kind === "loading" ? (
+      {view === "calendar" ? (
+        <TodoCalendar manager={isManager(account?.rank)} />
+      ) : state.kind === "loading" ? (
         <p role="status" className="text-sm text-mn-muted">
           할 일을 불러오는 중…
         </p>

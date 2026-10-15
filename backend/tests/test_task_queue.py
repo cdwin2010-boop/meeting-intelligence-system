@@ -370,7 +370,7 @@ def test_engine_endpoint_exposes_queue_fields(env, mgr, queue_mode):
     tq.claim_next(env["factory"])
     body = env["client"].get("/api/system/engine", headers=auth(mgr)).json()
     assert body == {"engine": "fake", "isFake": True, "processingMode": "queue", "queuePending": 1, "queueProcessing": 1,
-                    "llmProvider": "fake", "llmModel": "", "engineTestMode": False, "engineTestDefault": "default"}
+                    "llmProvider": "fake", "llmModel": "", "engineTestMode": False, "engineTestDefault": "default", "xlsxUploadEnabled": False, "pasteMaxChars": 200000}
 
 
 def test_settings_defaults():

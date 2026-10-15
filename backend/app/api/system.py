@@ -33,6 +33,9 @@ class EngineOut(CamelModel):
     # 엔진 시험 모드(추가 필드, 작업 91-1): 꺼져 있으면(기본) 화면이 원격 엔진 선택·설정을 숨긴다. 서버도 관련 요청을 거부한다
     engine_test_mode: bool
     engine_test_default: str
+    # 업로드 화면 옵션(추가 필드, B-2): 엑셀 업로드·양식 화면 노출 여부(기본 false) / 붙여넣기 최대 글자 수
+    xlsx_upload_enabled: bool = False
+    paste_max_chars: int = 200_000
 
 
 @router.get("/engine", response_model=EngineOut, response_model_by_alias=True)
@@ -47,6 +50,7 @@ def get_engine(account: Account = Depends(get_current_account), session: Session
             else settings.ollama_model if settings.effective_llm_provider == "ollama" else ""
         ),
         engine_test_mode=settings.engine_test_mode, engine_test_default=settings.engine_test_default,
+        xlsx_upload_enabled=settings.xlsx_upload_ui_enabled, paste_max_chars=settings.paste_input_max_chars,
     )
 
 

@@ -5,7 +5,7 @@
 from datetime import date, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import Field
 from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.orm import Session, aliased
@@ -18,7 +18,7 @@ from app.auth.deps import get_current_account, has_rank
 from app.db import get_session
 from app.models import Account, ActionItem, Event, Meeting, MeetingView, Notice
 from app.models.closure import active_meeting_condition
-from app.models.item_conditions import confirmed_item, inactive_item, open_item, pending_item
+from app.models.item_conditions import confirmed_item, inactive_item, live_item, not_deleted_item, open_item, pending_item
 from app.models.common import utcnow
 from app.services.system_admin import is_system_admin
 
@@ -326,3 +326,79 @@ def _pending_change_requests(session: Session, account: Account, visible) -> Tod
             kind=payload.get("kind", "edit"), supersedes_item_id=payload.get("supersedesItemId"),
         ))
     return TodoList(total=total, items=items)
+
+
+# ---------------- 개인별 할 일 캘린더(작업 B-2, 읽기 전용·DB 변경 없음) ----------------
+CALENDAR_MAX_DAYS = 62  # 한 번에 조회할 수 있는 기간(월간 보기 + 앞뒤 주)
+CALENDAR_ITEM_LIMIT = 500
+CALENDAR_UNDETERMINED_LIMIT = 50
+
+
+class CalendarItem(CamelModel):
+    meeting_id: int
+    meeting_title: str
+    item_id: int
+    title: str
+    assignee: AccountRef | None
+    due_date: date | None  # YYYY-MM-DD 날짜 문자열 그대로(시간대 변환 없음)
+    due_undetermined: bool
+    status: str  # pending | confirmed | closed
+
+
+class CalendarList(CamelModel):
+    total: int
+    items: list[CalendarItem]
+
+
+class CalendarOut(CamelModel):
+    range_from: date = Field(alias="from")
+    range_to: date = Field(alias="to")
+    scope: str
+    dated: CalendarList
+    undetermined: CalendarList
+
+
+@router.get("/calendar", response_model=CalendarOut, response_model_by_alias=True)
+def my_calendar(
+    from_: date = Query(alias="from"),
+    to: date = Query(),
+    scope: str = Query("self", pattern="^(self|all)$"),
+    account: Account = Depends(get_current_account),
+    session: Session = Depends(get_session),
+) -> CalendarOut:
+    """기간(from~to, 양 끝 포함)의 마감일 업무와 기한 미확정 업무. 열람 범위는 할 일과 같다(회의록 열람 권한 + 진행중 회의록).
+    scope=self 는 내가 담당인 업무, scope=all 은 열람 가능한 전체 업무(지시자·관리자만, 그 밖은 403).
+    삭제·대체된 업무는 뺀다. 종결 업무는 상태 배지로 구분해 포함한다."""
+    if to < from_ or (to - from_).days > CALENDAR_MAX_DAYS:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"조회 기간은 {CALENDAR_MAX_DAYS}일 이내여야 합니다.")
+    if scope == "all" and account.rank not in VIEW_ALL_RANKS:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="전체 업무는 지시자·관리자만 볼 수 있습니다.")
+    base = (
+        select(ActionItem, Meeting.title.label("meeting_title"))
+        .join(Meeting, Meeting.id == ActionItem.meeting_id)
+        .where(and_(meeting_visibility(account), active_meeting_condition()), not_deleted_item(), live_item())
+    )
+    if scope == "self":
+        base = base.where(ActionItem.assignee_id == account.id)
+
+    def build(stmt, limit: int) -> CalendarList:
+        total = _count(session, stmt)
+        rows = session.execute(stmt.limit(limit)).all()
+        ids = {r.ActionItem.assignee_id for r in rows if r.ActionItem.assignee_id is not None}
+        names = dict(session.execute(select(Account.id, Account.name).where(Account.id.in_(ids))).all()) if ids else {}
+        return CalendarList(total=total, items=[
+            CalendarItem(
+                meeting_id=r.ActionItem.meeting_id, meeting_title=r.meeting_title, item_id=r.ActionItem.id, title=r.ActionItem.title,
+                assignee=AccountRef(id=r.ActionItem.assignee_id, name=names[r.ActionItem.assignee_id]) if r.ActionItem.assignee_id in names else None,
+                due_date=r.ActionItem.due_date, due_undetermined=r.ActionItem.due_undetermined, status=r.ActionItem.status,
+            ) for r in rows
+        ])
+
+    dated = base.where(ActionItem.due_date.is_not(None), ActionItem.due_date >= from_, ActionItem.due_date <= to).order_by(
+        ActionItem.due_date, ActionItem.id)
+    undetermined = base.where(ActionItem.due_date.is_(None), open_item()).order_by(ActionItem.id)
+    return CalendarOut(
+        range_from=from_, range_to=to, scope=scope,
+        dated=build(dated, CALENDAR_ITEM_LIMIT), undetermined=build(undetermined, CALENDAR_UNDETERMINED_LIMIT),
+    )
+

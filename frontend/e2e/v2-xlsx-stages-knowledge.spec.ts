@@ -3,7 +3,7 @@
  * 범위: 올리기 화면의 자료 종류(엑셀)·확장자 검사·제출 본문·임시 저장 복원, 상세의 자료 파일 안내, 처리 3단계(음성·자료 파일, 처리 중·실패·단계 정보 없음),
  *       시스템 설정의 지식 연동 스위치·주소(경고·사유·서버 422 문구), 375/768/1280px 가로 넘침.
  */
-import { expect, test, type Page, type Route } from "./helpers/test";
+import { expect, test, type Page, type Route, enableXlsxUpload } from "./helpers/test";
 import { withAllowed } from "./helpers/allowed-actions";
 
 const FAKE_TOKEN = "e2e-fake-token";
@@ -24,6 +24,7 @@ async function signIn(page: Page, me: Record<string, unknown>) {
   await page.route("**/api/auth/me", (route) =>
     route.request().headers()["authorization"] === `Bearer ${FAKE_TOKEN}` ? json(route, 200, me) : json(route, 401, { detail: "x" }),
   );
+  await enableXlsxUpload(page);
   await page.goto("/v2/login");
   await page.evaluate(([k, t]) => window.sessionStorage.setItem(k, t), [TOKEN_KEY, FAKE_TOKEN]);
 }

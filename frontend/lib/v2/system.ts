@@ -10,7 +10,14 @@ export interface EngineInfo {
   /** 엔진 시험 모드(추가 필드, 작업 91-1). 없거나 false 면 원격 엔진 선택·설정 화면을 숨긴다 */
   engineTestMode?: boolean;
   engineTestDefault?: "default" | "remote";
+  /** 엑셀 업로드·양식 내려받기 화면 노출(추가 필드, 작업 B-2). 없거나 false 면 숨긴다 */
+  xlsxUploadEnabled?: boolean;
+  /** 웹 직접 입력(붙여넣기) 최대 글자 수(추가 필드, 작업 B-2) */
+  pasteMaxChars?: number;
 }
+
+/** 붙여넣기 최대 글자 수 기본값(서버가 값을 주지 않을 때). 서버 설정 PASTE_INPUT_MAX_CHARS 의 기본값과 같다 */
+export const DEFAULT_PASTE_MAX_CHARS = 200_000;
 
 export function getEngine(signal?: AbortSignal): Promise<EngineInfo> {
   return request<EngineInfo>("/system/engine", { signal });
