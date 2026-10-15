@@ -38,7 +38,7 @@ async function openCalendar(page: Page, icsRequests: string[]) {
 test("캘린더 파일(.ics) 내려받기: 안내 문구가 보이고 버튼을 누르면 파일이 내려받아진다", async ({ page }) => {
   const requests: string[] = [];
   await openCalendar(page, requests);
-  await expect(page.getByText("기한이 있는 진행 중 업무만 포함됩니다.")).toBeVisible();
+  await expect(page.getByText("기한이 있는 확정된 진행 중 업무만 포함됩니다.")).toBeVisible();
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "캘린더 파일(.ics) 내려받기" }).click();
   expect((await download).suggestedFilename()).toBe("aidots-tasks.ics");

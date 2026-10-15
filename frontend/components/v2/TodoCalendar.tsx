@@ -181,7 +181,7 @@ export function TodoCalendar({ manager }: { manager: boolean }) {
           </Button>
         </div>
       </div>
-      <p className="text-xs text-mn-muted">기한이 있는 진행 중 업무만 포함됩니다.</p>
+      <p className="text-xs text-mn-muted">기한이 있는 확정된 진행 중 업무만 포함됩니다.</p>
       {icsError ? (
         <p role="alert" className="text-sm">
           <StatusDot tone="error" label={icsError} />

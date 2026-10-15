@@ -414,7 +414,7 @@ def my_calendar_ics(
     account: Account = Depends(get_current_account),
     session: Session = Depends(get_session),
 ) -> Response:
-    """기한이 확정된 진행 중 업무만 종일 일정으로 내보낸다. 열람 범위·scope 권한은 /calendar 와 같다.
+    """기한이 확정된 '확정(confirmed)' 업무만 종일 일정으로 내보낸다(승인 대기 제외, 기존 confirmed_item 정의 재사용). 열람 범위·scope 권한은 /calendar 와 같다.
     기한 미확정·종결·삭제·대체된 업무는 뺀다. 회의 내용·근거·내부 주소는 담지 않는다(업무명만)."""
     if scope == "all" and account.rank not in VIEW_ALL_RANKS:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="전체 업무는 지시자·관리자만 볼 수 있습니다.")
@@ -422,7 +422,7 @@ def my_calendar_ics(
         select(ActionItem.id, ActionItem.title, ActionItem.due_date)
         .join(Meeting, Meeting.id == ActionItem.meeting_id)
         .where(
-            and_(meeting_visibility(account), active_meeting_condition()), open_item(), not_deleted_item(),
+            and_(meeting_visibility(account), active_meeting_condition()), confirmed_item(), not_deleted_item(),
             ActionItem.due_date.is_not(None), ActionItem.due_undetermined.is_(False),
         )
         .order_by(ActionItem.due_date, ActionItem.id)

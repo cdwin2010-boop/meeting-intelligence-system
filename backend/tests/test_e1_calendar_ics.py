@@ -34,10 +34,10 @@ def test_headers_and_exclusions(env, team):
     text = res.content.decode("utf-8")
     assert text.startswith("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n") and "CALSCALE:GREGORIAN" in text and "PRODID:" in text
     assert text.endswith("END:VCALENDAR\r\n") and "\n" not in text.replace("\r\n", "")
-    assert "SUMMARY:진행 중\\, 확정" in text and "SUMMARY:승인 대기" in text
-    for excluded in ("기한 미확정", "종결됨", "삭제됨", "남의 업무"):
+    assert "SUMMARY:진행 중\\, 확정" in text
+    for excluded in ("승인 대기", "기한 미확정", "종결됨", "삭제됨", "남의 업무"):
         assert excluded not in text
-    assert text.count("BEGIN:VEVENT") == 2
+    assert text.count("BEGIN:VEVENT") == 1
     assert "DTSTART;VALUE=DATE:20261005\r\nDTEND;VALUE=DATE:20261006" in text  # 종일 일정, 날짜 그대로
     assert "DESCRIPTION:AI DOTS에서 확인" in text
 
