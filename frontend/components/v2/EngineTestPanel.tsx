@@ -10,6 +10,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Button, StatusDot } from "@/components/mono";
 import { inputClass, messageOf } from "@/components/v2/admin/AdminUi";
 import { useEngineTestMode } from "@/components/v2/EngineChoice";
+import { EngineBenchPanel } from "@/components/v2/EngineBenchPanel";
 import { isAbortError } from "@/lib/v2/errors";
 import {
   ENGINE_TEST_NOTICE,
@@ -231,6 +232,7 @@ export function EngineTestPanel() {
           </dl>
         </section>
       ) : null}
+      <EngineBenchPanel />
     </section>
   );
 }

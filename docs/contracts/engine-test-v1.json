@@ -14,11 +14,46 @@
       "response": {"$ref": "#/definitions/load-test"},
       "errors": {"403": "시험 모드 꺼짐 또는 권한 없음", "409": "음성 인식·업무 추출 작업이 진행 중", "422": "주소·모델이 저장되지 않음"}
     },
+    "POST /api/admin/engine-test/bench/start (작업 L-3a)": {
+      "request": {"mode": "quick | full"},
+      "response": {"$ref": "#/definitions/bench-status"},
+      "errors": {"403": "시험 모드 꺼짐 또는 권한 없음", "409": "측정이 이미 진행 중이거나 음성 인식·추출 작업이 진행 중", "422": "측정 종류 오류 또는 주소·모델이 저장되지 않음"},
+      "note": "202. 서버 백그라운드로 실행(같은 시점 1개). 입력은 도구 내장 가상 전사본. 체크포인트·결과는 BENCH_DIR 아래 JSON 파일(DB 변경 없음)"
+    },
+    "POST /api/admin/engine-test/bench/resume (작업 L-3a)": {
+      "response": {"$ref": "#/definitions/bench-status"},
+      "errors": {"403": "시험 모드 꺼짐 또는 권한 없음", "409": "진행 중이거나 이어할 측정이 없음", "422": "주소·모델이 저장되지 않음"},
+      "note": "202. 완료 항목은 건너뛰고 남은 항목만 실행. 주소·키·모델은 그 시점에 저장된 값을 다시 읽는다(바뀌어도 됨)"
+    },
+    "POST /api/admin/engine-test/bench/stop (작업 L-3a)": {"response": {"$ref": "#/definitions/bench-status"}, "note": "현재 요청이 끝난 뒤 stopped 로 멈춘다. 이어하기 가능"},
+    "GET /api/admin/engine-test/bench/status (작업 L-3a)": {"response": {"$ref": "#/definitions/bench-status"}},
+    "GET /api/admin/engine-test/bench/result (작업 L-3a)": {
+      "response": "application/json 첨부 파일(l3-bench-<runId>.json, summaryMarkdown 포함). 주소·키·호스트명·전사 원문·인용문 없음, 건수·시간·비율·상태만. 미측정은 사유와 함께 \"미측정\"/\"측정 불가\"",
+      "errors": {"403": "시험 모드 꺼짐 또는 권한 없음", "404": "측정 결과 없음"}
+    },
     "GET /api/system/engine (추가 필드)": {"response": {"engineTestMode": "boolean", "engineTestDefault": "default | remote"}},
     "POST /api/meetings/upload (추가 선택 폼 필드)": {"engine": "default | remote. 시험 모드일 때 관리자 이상만. 모드가 꺼져 있거나 담당자가 값을 보내면 403, 모르는 값 422. 생략하면 설정 기본값(시험 모드가 꺼져 있으면 현행 동작)"},
     "POST /api/meetings/{id}/reprocess (추가 선택 본문)": {"request": {"engine": "default | remote, 업로드와 같은 규칙"}}
   },
   "definitions": {
+    "bench-status": {
+      "type": "object",
+      "required": ["status", "mode", "runId", "currentLabel", "doneUnits", "totalUnits", "elapsedSeconds", "message", "canResume", "canDownload", "retries"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"type": "string", "enum": ["idle", "running", "completed", "interrupted", "stopped", "failed"], "description": "interrupted = 연결 끊김으로 중단(이어하기 가능)"},
+        "mode": {"type": "string", "enum": ["", "quick", "full"]},
+        "runId": {"type": "string"},
+        "currentLabel": {"type": "string", "description": "실행 중일 때 현재 항목 이름"},
+        "doneUnits": {"type": "integer"},
+        "totalUnits": {"type": "integer"},
+        "elapsedSeconds": {"type": "number"},
+        "message": {"type": "string", "description": "중단 사유 등. 연결 끊김이면 \"연결이 끊겼습니다. 새 주소를 입력하고 이어하기를 눌러 주세요\""},
+        "canResume": {"type": "boolean"},
+        "canDownload": {"type": "boolean"},
+        "retries": {"type": "integer"}
+      }
+    },
     "remote-settings": {
       "type": "object",
       "required": ["baseUrl", "model", "apiKeySet", "apiKeyMasked", "timeoutSeconds", "chunkMaxChars", "configured", "defaultEngine", "notice"],
