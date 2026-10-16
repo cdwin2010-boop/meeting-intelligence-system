@@ -48,3 +48,6 @@ backend/data/license.lic
 backend/build/
 
 *.bak
+
+# 참고 자료 폴더(ref/): 저장소에 올리지 않는다(작업 89-2b 마무리)
+ref/
