@@ -12,13 +12,14 @@
 import json
 import logging
 import os
+import re
 import statistics
 import tempfile
 import threading
 import time
 import uuid
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from dataclasses import dataclass, replace
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
@@ -29,8 +30,10 @@ from app.config import settings
 from app.pipeline.chunked_extract import (
     STATUS_FAILED, ChunkedExtraction, ChunkOptions, _norm, extract_chunked, profile_chunk_options,
 )
+from app.engine_lab import params as lab_params
 from app.services import engine_diag
 from app.pipeline.local_llm import NO_KEY, LocalLlmError, OpenAICompatClient, check_base_url, list_models
+from app.pipeline.ollama_llm import OllamaClient, list_ollama_models
 from app.services import bench_data
 from app.services.bench_data import BenchTranscript, GoldItem
 
@@ -56,6 +59,7 @@ _GUIDANCE = {
     "format": "응답 형식이 올바르지 않습니다",
     "host_blocked": "외부 주소 사용이 허용되지 않았습니다",
     "config": "서버 주소 형식이 올바르지 않습니다",
+    "model_missing": "서버에 없는 모델명이라 거절했습니다",
 }
 
 
@@ -89,6 +93,11 @@ class BenchConfig:
     repeat: int
     drift_runs: int
     long_max_chars: int
+    # 작업 L-5: 화면 변수와 연결 방식(기본값은 현행 동작과 같다)
+    context_tokens: int = 8192
+    output_reserve: int = 2048
+    chunk_chars: int = 0  # 0 = 자동
+    connection_type: str = "openai"
 
 
 # ------------------------- 단위(체크포인트 단위) 계획 -------------------------
@@ -165,16 +174,24 @@ def _save(state: dict[str, Any]) -> None:
 
 
 # ------------------------- 측정용 클라이언트(요청별 시간·토큰 기록) -------------------------
+def _estimate_input_tokens(body: dict, tokens_per_char: float) -> int:
+    """요청 본문의 메시지 글자 수로 입력 토큰을 보수적으로 추정한다(본문은 기록하지 않고 숫자만 남긴다)."""
+    chars = sum(len(str(m.get("content", ""))) for m in body.get("messages", []) if isinstance(m, dict))
+    return int(chars * tokens_per_char) + 1
+
+
 class _MeteredClient(OpenAICompatClient):
     """운영 원격 엔진과 같은 요청 경로(OpenAICompatClient)에 호출별 소요 시간·사용 토큰을 기록한다. 본문은 기록하지 않는다."""
 
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self.calls: list[dict[str, Any]] = []
+        self.tokens_per_char = 1.3
 
     def _post(self, body: dict, timeout: float) -> httpx.Response:
         started = time.monotonic()
-        entry: dict[str, Any] = {"elapsedMs": 0, "promptTokens": None, "completionTokens": None, "status": None}
+        entry: dict[str, Any] = {"elapsedMs": 0, "promptTokens": None, "completionTokens": None, "status": None,
+                                 "estInputTokens": _estimate_input_tokens(body, self.tokens_per_char)}
         try:
             response = super()._post(body, timeout)
         except LocalLlmError:
@@ -194,15 +211,66 @@ class _MeteredClient(OpenAICompatClient):
         return response
 
 
-def _client(cfg: BenchConfig, model: str | None = None) -> _MeteredClient:
+class _MeteredOllamaClient(OllamaClient):
+    """Ollama 네이티브(/api/chat) 경로에 같은 기록을 남긴다. 토큰 수는 응답의 prompt_eval_count·eval_count 에서 읽는다."""
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.calls: list[dict[str, Any]] = []
+        self.tokens_per_char = 1.3
+
+    def _post(self, path: str, body: dict, timeout: float) -> httpx.Response:
+        if "messages" not in body:  # 모델 내리기(keep_alive=0) 같은 호출은 측정 호출이 아니다
+            return super()._post(path, body, timeout)
+        started = time.monotonic()
+        entry: dict[str, Any] = {"elapsedMs": 0, "promptTokens": None, "completionTokens": None, "status": None,
+                                 "estInputTokens": _estimate_input_tokens(body, self.tokens_per_char)}
+        try:
+            response = super()._post(path, body, timeout)
+        except LocalLlmError:
+            entry["elapsedMs"] = int((time.monotonic() - started) * 1000)
+            self.calls.append(entry)
+            raise
+        entry["elapsedMs"] = int((time.monotonic() - started) * 1000)
+        entry["status"] = response.status_code
+        try:
+            data = response.json()
+            for key, src in (("promptTokens", "prompt_eval_count"), ("completionTokens", "eval_count")):
+                value = data.get(src)
+                entry[key] = value if isinstance(value, int) else None
+        except (ValueError, AttributeError, TypeError):
+            pass
+        self.calls.append(entry)
+        return response
+
+
+def _profile(cfg: BenchConfig):
+    """측정에 쓰는 엔진 프로파일: 화면 변수(맥락·출력 예약)와 연결 방식을 반영한다."""
+    from app.services import engine_test as engine
+
+    base = engine.remote_profile()
+    return replace(base, context_tokens=cfg.context_tokens, max_output_tokens=cfg.output_reserve,
+                   send_context_option=cfg.connection_type == "ollama")
+
+
+def _client(cfg: BenchConfig, model: str | None = None) -> Any:
     from app.services import engine_test as engine  # 순환 import 방지(서비스 간 지연 import)
 
-    profile = engine.remote_profile()
-    return _MeteredClient(
-        cfg.base_url, model or cfg.model, cfg.api_key or NO_KEY, max_output_tokens=engine.remote_output_tokens(),
-        allow_external=cfg.allow_external, json_mode_enabled=profile.supports_json_format, context_tokens=profile.context_tokens,
-        truncation_ratio=profile.truncation_ratio,
-    )
+    profile = _profile(cfg)
+    if cfg.connection_type == "ollama":
+        client: Any = _MeteredOllamaClient(
+            engine.ollama_base(cfg.base_url), model or cfg.model, num_ctx=profile.context_tokens,
+            num_predict=profile.output_reserve_tokens(), allow_external=cfg.allow_external,
+            json_mode_enabled=profile.supports_json_format, truncation_ratio=profile.truncation_ratio,
+        )
+    else:
+        client = _MeteredClient(
+            cfg.base_url, model or cfg.model, cfg.api_key or NO_KEY, max_output_tokens=profile.output_reserve_tokens(),
+            allow_external=cfg.allow_external, json_mode_enabled=profile.supports_json_format, context_tokens=profile.context_tokens,
+            truncation_ratio=profile.truncation_ratio,
+        )
+    client.tokens_per_char = profile.tokens_per_char
+    return client
 
 
 def _options(cfg: BenchConfig) -> ChunkOptions:
@@ -210,7 +278,7 @@ def _options(cfg: BenchConfig) -> ChunkOptions:
 
     remote = engine.load_remote_settings()
     return profile_chunk_options(
-        engine.remote_profile(), "", configured_chars=remote.chunk_max_chars, timeout=cfg.item_timeout,
+        _profile(cfg), "", configured_chars=cfg.chunk_chars or remote.chunk_max_chars, timeout=cfg.item_timeout,
         retry_max=engine.REMOTE_RETRY_CEILING, retry_ceiling=engine.REMOTE_RETRY_CEILING,
     )
 
@@ -234,10 +302,30 @@ def _sum_known(values: list[int | None]) -> int | None:
     return sum(known) if known else None
 
 
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def due_class(candidate_due: str, gold_due: str) -> tuple[str, int | None]:
+    """기한 분류: blank(빈 값) / formatError(형식 오류) / different(유효한 날짜지만 정답과 다름, 일수 차이) / match. 값 자체는 남기지 않는다."""
+    value = (candidate_due or "").strip()
+    if not value:
+        return "blank", None
+    try:
+        got = date.fromisoformat(value) if _ISO_DATE.match(value) else None
+        want = date.fromisoformat(gold_due)
+    except ValueError:
+        got, want = None, None
+    if got is None or want is None:
+        return "formatError", None
+    return ("match", 0) if got == want else ("different", (got - want).days)
+
+
 def _match(gold: tuple[GoldItem, ...], extraction: ChunkedExtraction) -> dict[str, Any]:
     """정답지와 추출 결과 비교: 누락률, 담당자·기한 일치율(찾은 업무 기준). 인용문·업무명 원문은 결과에 남기지 않는다."""
     used: set[int] = set()
     found = assignee_ok = due_ok = 0
+    due_counts = {"blank": 0, "different": 0, "formatError": 0, "match": 0}
+    day_diffs: list[int] = []
     for g in gold:
         for idx, ci in enumerate(extraction.items):
             if idx in used:
@@ -249,6 +337,10 @@ def _match(gold: tuple[GoldItem, ...], extraction: ChunkedExtraction) -> dict[st
                 found += 1
                 assignee_ok += int(g.assignee in c.assignee)
                 due_ok += int(c.due_date == g.due)
+                kind, diff = due_class(c.due_date, g.due)
+                due_counts[kind] += 1
+                if diff is not None and kind == "different":
+                    day_diffs.append(diff)
                 break
     total = len(gold)
     return {
@@ -256,6 +348,7 @@ def _match(gold: tuple[GoldItem, ...], extraction: ChunkedExtraction) -> dict[st
         "missRate": round((total - found) / total, 4) if total else None,
         "assigneeMatchRate": round(assignee_ok / found, 4) if found else None,
         "dueMatchRate": round(due_ok / found, 4) if found else None,
+        "dueClass": due_counts, "dueDayDiffs": day_diffs,
     }
 
 
@@ -276,6 +369,22 @@ def _classify_evidence(transcript: BenchTranscript, extraction: ChunkedExtractio
         "total": total, "verified": passed, "lineIdMismatch": id_mismatch, "quoteNotFound": not_found,
         "verifiedRate": rate(passed), "lineIdMismatchRate": rate(id_mismatch), "quoteNotFoundRate": rate(not_found),
     }
+
+
+def input_token_summary(calls: list[dict[str, Any]], context_tokens: int) -> dict[str, Any]:
+    """호출별 입력 토큰의 최소/중앙/최대와 입력 잘림 의심 여부(값만 남긴다).
+    의심 조건: 입력 토큰 ≥ 맥락×0.98, 또는 추정 입력이 현저히 큰데 값이 서버 기본 맥락(예: 2048)과 같음."""
+    sp = lab_params.spec()
+    ratio, margin, defaults = float(sp["truncationSuspectRatio"]), float(sp["estimateMarginRatio"]), set(sp["serverDefaultContexts"])
+    known = [(c["promptTokens"], c.get("estInputTokens")) for c in calls if isinstance(c.get("promptTokens"), int)]
+    reasons: list[str] = []
+    if any(p >= context_tokens * ratio for p, _ in known):
+        reasons.append("near_context_limit")
+    if any(p in defaults and isinstance(est, int) and est >= p * margin for p, est in known):
+        reasons.append("equals_server_default")
+    tokens = [p for p, _ in known]
+    return {"n": len(tokens), "min": min(tokens) if tokens else None, "median": statistics.median(tokens) if tokens else None,
+            "max": max(tokens) if tokens else None, "truncationSuspected": bool(reasons), "truncationReasons": reasons}
 
 
 def _chunk_rows(extraction: ChunkedExtraction, calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -303,6 +412,7 @@ class _Ctx:
         self.stop = stop
         self.sleep = sleep
         self._options: ChunkOptions | None = None
+        self.unit_retries = 0  # 현재 단위에서 실제로 다시 시도한 횟수(소진 후 중단되어도 남는다)
         self._short = bench_data.short_transcript()
         self._long: BenchTranscript | None | bool = False  # False = 아직 안 만듦
 
@@ -337,6 +447,7 @@ class _Ctx:
                         raise _Interrupted(exc.reason) from None
                     raise
                 attempts += 1
+                self.unit_retries = attempts
                 self.sleep(self.cfg.retry_delay)
 
 
@@ -366,6 +477,7 @@ def _extract(ctx: _Ctx, transcript: BenchTranscript) -> dict[str, Any]:
         "chunks": _chunk_rows(result, calls),
         "accuracy": _match(transcript.gold, result),
         "evidence": _classify_evidence(transcript, result),
+        "inputTokens": input_token_summary(calls, ctx.cfg.context_tokens),
         "_extraction": result,  # 호출부가 쓰고 버린다(저장하지 않는다)
     }
 
@@ -376,7 +488,12 @@ def _strip(result: dict[str, Any]) -> dict[str, Any]:
 
 def unit_a(ctx: _Ctx) -> dict[str, Any]:
     started = time.monotonic()
-    models = list_models(ctx.cfg.base_url, ctx.cfg.api_key, ctx.cfg.item_timeout, ctx.cfg.allow_external)
+    if ctx.cfg.connection_type == "ollama":
+        from app.services import engine_test as engine
+
+        models = list_ollama_models(engine.ollama_base(ctx.cfg.base_url), ctx.cfg.item_timeout, ctx.cfg.allow_external)
+    else:
+        models = list_models(ctx.cfg.base_url, ctx.cfg.api_key, ctx.cfg.item_timeout, ctx.cfg.allow_external)
     elapsed = int((time.monotonic() - started) * 1000)
     found = engine_diag.model_in_list(ctx.cfg.model, models)  # 앞뒤 공백·':latest' 차이는 같은 이름으로 본다(L-4a)
     return {
@@ -468,6 +585,8 @@ def unit_f(ctx: _Ctx) -> dict[str, Any]:
         out["vramBytes"] = vram if isinstance(vram, int) else None
         out["gpuOffloadRatio"] = round(vram / size, 4) if isinstance(size, int) and size and isinstance(vram, int) else None
         out["expiresAtPresent"] = bool(target.get("expires_at"))
+        length = target.get("context_length")  # 서버가 실제로 적재한 맥락 길이(있는 서버만)
+        out["contextLength"] = length if isinstance(length, int) else None
     else:
         out["note"] = "측정 직후 대상 모델이 메모리에 올라 있지 않음(이미 언로드되었거나 다른 이름으로 로드됨)"
     return out
@@ -494,8 +613,37 @@ def is_running() -> bool:
     return _thread is not None and _thread.is_alive()
 
 
-def _new_state(mode: str, cfg: BenchConfig) -> dict[str, Any]:
+def values_of(cfg: BenchConfig) -> dict[str, Any]:
+    """측정에 쓰는 변수 값(설정 기록용). 키·주소는 없다."""
+    return {"contextTokens": cfg.context_tokens, "chunkChars": cfg.chunk_chars, "outputReserveTokens": cfg.output_reserve,
+            "repeat": cfg.repeat, "driftRuns": cfg.drift_runs, "retryMax": cfg.retry_max, "retryDelaySeconds": cfg.retry_delay,
+            "itemTimeoutSeconds": cfg.item_timeout, "longMaxChars": cfg.long_max_chars}
+
+
+def make_settings(cfg: BenchConfig, preset_id: str = "") -> dict[str, Any]:
+    """측정 설정 기록(settings 블록): 프리셋·수정 여부와 항목·모든 변수값·값의 출처·연결 방식·모델명·시각. 키·주소·원문은 넣지 않는다."""
+    values = values_of(cfg)
+    info = lab_params.describe(values, preset_id)
+    effective: dict[str, Any] = {"outputReserveEffective": _profile(cfg).output_reserve_tokens()}
+    try:
+        effective["chunkCharsEffective"] = _options(cfg).max_chars
+    except LocalLlmError:
+        effective["chunkCharsEffective"] = None
+    try:
+        effective["chunkCapChars"] = lab_params.chunk_cap(values, _profile(cfg))
+    except Exception:  # noqa: BLE001 — 기록용 계산이 측정을 막지 않는다
+        effective["chunkCapChars"] = None
     return {
+        "preset": info["preset"], "presetName": info["presetName"], "modified": info["modified"], "modifiedItems": info["modifiedItems"],
+        "summary": info["summary"], "values": values, "sources": info["sources"], "connectionType": cfg.connection_type,
+        "model": cfg.model, "effective": effective, "recordedAt": _now(),
+    }
+
+
+def _new_state(mode: str, cfg: BenchConfig, settings_block: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        # settings 는 결과보다 먼저(맨 앞) 기록한다: 중간에 끊겨도 어떤 설정으로 측정했는지 남는다
+        "settings": settings_block if settings_block is not None else make_settings(cfg),
         "runId": uuid.uuid4().hex[:12], "mode": mode, "status": S_RUNNING, "startedAt": _now(), "updatedAt": _now(),
         "plan": plan_for(mode, cfg.repeat, cfg.drift_runs), "units": {}, "current": "", "elapsedSeconds": 0.0,
         "message": "", "resumeCount": 0, "retries": 0,
@@ -504,10 +652,23 @@ def _new_state(mode: str, cfg: BenchConfig) -> dict[str, Any]:
     }
 
 
+def _persist(state: dict[str, Any]) -> None:
+    """상태(체크포인트)와 결과 파일을 함께 저장한다. 결과 파일 쓰기 실패는 측정을 멈추지 않는다."""
+    _save(state)
+    try:
+        write_result_file(state)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("bench result file write failed: %s", type(exc).__name__)
+
+
+SweepBuilder = Callable[[str], "tuple[BenchConfig, dict[str, Any]]"]
+
+
 def _run(state: dict[str, Any], cfg: BenchConfig, sleep: Callable[[float], None]) -> None:
     ctx = _Ctx(cfg, _stop, sleep)
     base = float(state.get("elapsedSeconds", 0.0))
     t0 = time.monotonic()
+    key = ""
 
     def tick() -> None:
         state["elapsedSeconds"] = round(base + time.monotonic() - t0, 1)
@@ -520,54 +681,140 @@ def _run(state: dict[str, Any], cfg: BenchConfig, sleep: Callable[[float], None]
                 raise _Stop()
             state["current"] = key
             tick()
-            _save(state)
+            _persist(state)
             kind = key.partition("#")[0]
             started = time.monotonic()
+            ctx.unit_retries = 0
             try:
                 result, retries = ctx.retrying(lambda: _UNITS[kind](ctx))
             except LocalLlmError as exc:  # 영구 오류(재시도 무의미): 이 단위만 실패로 기록하고 계속한다
                 result = {"ok": False, "failedReason": exc.reason, "guidance": _GUIDANCE.get(exc.reason, "요청을 처리하지 못했습니다")}
-                retries = 0
+                retries = ctx.unit_retries  # 재시도 뒤 영구 오류가 된 경우도 시도한 횟수를 센다
             state["retries"] = int(state.get("retries", 0)) + retries
             state["units"][key] = {"state": "done", "label": label_of(key), "seconds": round(time.monotonic() - started, 2),
                                    "retries": retries, **result}
             tick()
-            _save(state)
+            _persist(state)
         state["status"], state["current"], state["message"] = S_COMPLETED, "", ""
     except _Interrupted as exc:
+        # 재시도를 소진한 중단도 retries 에 집계한다
+        state["retries"] = int(state.get("retries", 0)) + ctx.unit_retries
         # 끊김 형태(연결 거부·시간 초과·HTTP 오류 등 분류 코드)를 남긴다. 주소·본문은 남기지 않는다
         state["interruptReason"] = str(exc.args[0]) if exc.args else ""
         state["interruptedAt"] = key
         state["status"], state["message"] = S_INTERRUPTED, DISCONNECT_MESSAGE
     except _Stop:
+        state["retries"] = int(state.get("retries", 0)) + ctx.unit_retries
         state["status"], state["message"] = S_STOPPED, "사용자가 중단했습니다. 이어하기로 남은 항목을 실행할 수 있습니다"
     except Exception as exc:  # noqa: BLE001 — 예기치 못한 오류도 상태로 남긴다(주소·본문 없이 분류만)
         log.warning("bench run failed: %s", type(exc).__name__)
         state["status"], state["message"] = S_FAILED, f"측정 중 오류가 발생했습니다({type(exc).__name__})"
     tick()
-    _save(state)
+    _persist(state)
 
 
-def start(mode: str, cfg: BenchConfig, *, diagnosis: dict[str, Any] | None = None, sleep: Callable[[float], None] = time.sleep, wait: bool = False) -> dict[str, Any]:
+def _fetch_ps(cfg: BenchConfig) -> list[dict[str, Any]] | None:
+    """Ollama /api/ps 의 적재 모델 목록. 읽을 수 없으면 None."""
+    origin = _origin(cfg.base_url)
+    try:
+        check_base_url(origin, cfg.allow_external)
+        with httpx.Client(timeout=min(cfg.item_timeout, 10), follow_redirects=False, trust_env=False) as http:
+            response = http.get(f"{origin}/api/ps")
+        if response.status_code != 200:
+            return None
+        return [m for m in (response.json().get("models") or []) if isinstance(m, dict)]
+    except (httpx.HTTPError, LocalLlmError, ValueError, AttributeError):
+        return None
+
+
+def _unload_between(cfg: BenchConfig, sleep: Callable[[float], None]) -> dict[str, Any]:
+    """스윕에서 맥락이 바뀌기 전에 모델을 내린다(keep_alive=0). 내려갔는지 /api/ps 로 확인한다(최대 5회, 1초 간격)."""
+    from app.services import engine_test as engine
+
+    if cfg.connection_type != "ollama":
+        return {"done": False, "confirmed": None, "reason": "OpenAI 호환 방식은 모델을 내릴 수 없음"}
+    client = OllamaClient(engine.ollama_base(cfg.base_url), cfg.model, num_ctx=cfg.context_tokens, num_predict=1,
+                          allow_external=cfg.allow_external)
+    done = client.unload(timeout=min(cfg.item_timeout, 30))
+    confirmed: bool | None = None
+    for _ in range(5):
+        entries = _fetch_ps(cfg)
+        if entries is None:
+            break
+        confirmed = not any(
+            engine_diag.model_matches(cfg.model, str(m.get(k) or "")) for m in entries for k in ("name", "model"))
+        if confirmed:
+            break
+        sleep(1.0)
+    return {"done": done, "confirmed": confirmed}
+
+
+def _run_series(state: dict[str, Any], cfg: BenchConfig, sleep: Callable[[float], None], builder: SweepBuilder | None,
+                skip_current: bool = False) -> None:
+    """한 번 측정하고, 맥락 스윕이면 남은 프리셋을 순서대로 이어서 측정한다(맥락마다 settings·결과를 한 묶음으로 저장)."""
+    if not skip_current:
+        _run(state, cfg, sleep)
+    while True:
+        sweep = state.get("sweep")
+        if not sweep or builder is None or state.get("status") != S_COMPLETED:
+            return
+        nxt = int(sweep["index"]) + 1
+        if nxt >= len(sweep["presets"]) or _stop.is_set():
+            return
+        try:
+            next_cfg, block = builder(sweep["presets"][nxt])
+        except Exception as exc:  # noqa: BLE001
+            log.warning("bench sweep build failed: %s", type(exc).__name__)
+            state["status"], state["message"] = S_FAILED, f"스윕 준비 중 오류가 발생했습니다({type(exc).__name__})"
+            _persist(state)
+            return
+        unload = _unload_between(cfg, sleep)  # 다음 맥락으로 다시 올리기 전에 VRAM 을 비운다
+        new = _new_state(MODE_FULL, next_cfg, block)
+        new["sweep"] = {**sweep, "index": nxt, "runIds": [*sweep.get("runIds", []), state["runId"]], "unloadBefore": unload}
+        if state.get("diagnosis"):
+            new["diagnosis"] = state["diagnosis"]
+        _persist(new)
+        state, cfg = new, next_cfg
+        _run(state, cfg, sleep)
+
+
+def _sweep_info(builder_presets: list[str] | None) -> dict[str, Any] | None:
+    if not builder_presets:
+        return None
+    return {"id": uuid.uuid4().hex[:8], "presets": list(builder_presets), "index": 0, "runIds": []}
+
+
+def start(mode: str, cfg: BenchConfig, *, diagnosis: dict[str, Any] | None = None, sleep: Callable[[float], None] = time.sleep,
+          wait: bool = False, settings_block: dict[str, Any] | None = None, sweep_presets: list[str] | None = None,
+          sweep_builder: SweepBuilder | None = None) -> dict[str, Any]:
     global _thread
     if mode not in (MODE_QUICK, MODE_FULL):
         raise BenchError("측정 종류는 quick 또는 full 이어야 합니다")
     with _lock:
         if is_running():
             raise BenchBusy("이미 측정이 진행 중입니다")
-        state = _new_state(mode, cfg)
+        state = _new_state(mode, cfg, settings_block)
         if diagnosis is not None:
-            state["diagnosis"] = diagnosis  # 시작 직전 연결 진단 결과(결과 파일 머리에 기록)
+            state["diagnosis"] = diagnosis  # 시작 직전 연결 진단 결과(결과 파일 머리에 기록, 이후 막힌 시도 값으로 덮지 않는다)
+        info = _sweep_info(sweep_presets)
+        if info:
+            state["sweep"] = info
         _stop.clear()
-        _save(state)
-        _thread = threading.Thread(target=_run, args=(state, cfg, sleep), name="bench-run", daemon=True)
+        _persist(state)  # 측정 시작 직전: settings 를 결과보다 먼저 저장한다
+        _thread = threading.Thread(target=_run_series, args=(state, cfg, sleep, sweep_builder), name="bench-run", daemon=True)
         _thread.start()
     if wait:
         _thread.join()
     return state
 
 
-def resume(cfg: BenchConfig, *, diagnosis: dict[str, Any] | None = None, sleep: Callable[[float], None] = time.sleep, wait: bool = False) -> dict[str, Any]:
+def _sweep_pending(state: dict[str, Any]) -> bool:
+    sweep = state.get("sweep")
+    return bool(sweep) and int(sweep.get("index", 0)) + 1 < len(sweep.get("presets", []))
+
+
+def resume(cfg: BenchConfig, *, diagnosis: dict[str, Any] | None = None, sleep: Callable[[float], None] = time.sleep, wait: bool = False,
+           sweep_builder: SweepBuilder | None = None) -> dict[str, Any]:
     global _thread
     with _lock:
         if is_running():
@@ -576,14 +823,16 @@ def resume(cfg: BenchConfig, *, diagnosis: dict[str, Any] | None = None, sleep: 
         if state is None:
             raise BenchError("이어할 측정이 없습니다")
         # 서버가 재시작되어 running 으로 남은 기록도 이어할 수 있다(스레드가 없으므로 사실상 중단됨)
-        if state.get("status") not in (*RESUMABLE, S_RUNNING, S_FAILED):
+        completed_sweep = state.get("status") == S_COMPLETED and _sweep_pending(state)
+        if state.get("status") not in (*RESUMABLE, S_RUNNING, S_FAILED) and not completed_sweep:
             raise BenchError("이어할 수 있는 측정이 없습니다(이미 완료되었습니다)")
-        state.update(status=S_RUNNING, message="", resumeCount=int(state.get("resumeCount", 0)) + 1)
+        if not completed_sweep:
+            state.update(status=S_RUNNING, message="", resumeCount=int(state.get("resumeCount", 0)) + 1)
         if diagnosis is not None:
             state["diagnosis"] = diagnosis
         _stop.clear()
-        _save(state)
-        _thread = threading.Thread(target=_run, args=(state, cfg, sleep), name="bench-run", daemon=True)
+        _persist(state)
+        _thread = threading.Thread(target=_run_series, args=(state, cfg, sleep, sweep_builder, completed_sweep), name="bench-run", daemon=True)
         _thread.start()
     if wait:
         _thread.join()
@@ -591,15 +840,16 @@ def resume(cfg: BenchConfig, *, diagnosis: dict[str, Any] | None = None, sleep: 
 
 
 def record_diagnosis(diagnosis: dict[str, Any]) -> None:
-    """측정을 시작하지 못했을 때 기존 기록(중단됨 등)의 머리 diagnosis 만 갱신한다. 실행 중이거나 기록이 없으면 아무것도 하지 않는다."""
+    """측정을 시작하지 못했을 때 기존 기록의 blockedAttempt 필드에만 남긴다. 측정 직전 진단(diagnosis)은 덮어쓰지 않는다.
+    실행 중이거나 기록이 없으면 아무것도 하지 않는다."""
     with _lock:
         if is_running():
             return
         state = load_state()
         if state is None:
             return
-        state["diagnosis"] = diagnosis
-        _save(state)
+        state["blockedAttempt"] = {**diagnosis, "recordedAt": _now()}
+        _persist(state)
 
 
 def stop() -> bool:
@@ -614,25 +864,105 @@ def status() -> dict[str, Any]:
     state = load_state()
     if state is None:
         return {"status": S_IDLE, "mode": "", "runId": "", "currentLabel": "", "doneUnits": 0, "totalUnits": 0, "elapsedSeconds": 0,
-                "message": "", "canResume": False, "canDownload": False, "retries": 0}
+                "message": "", "canResume": False, "canDownload": False, "retries": 0, "preset": "", "settingsSummary": "",
+                "sweepIndex": 0, "sweepTotal": 0}
     st = state.get("status", S_IDLE)
     message = state.get("message", "")
     if st == S_RUNNING and not is_running():
         st, message = S_INTERRUPTED, DISCONNECT_MESSAGE
     done = sum(1 for u in state["units"].values() if u.get("state") == "done")
     current = state.get("current", "")
+    settings_block = state.get("settings") or {}
+    sweep = state.get("sweep") or {}
     return {
         "status": st, "mode": state.get("mode", ""), "runId": state.get("runId", ""),
         "currentLabel": label_of(current) if current and st == S_RUNNING else "",
         "doneUnits": done, "totalUnits": len(state["plan"]), "elapsedSeconds": state.get("elapsedSeconds", 0),
-        "message": message, "canResume": st in RESUMABLE or st == S_FAILED, "canDownload": done > 0,
-        "retries": state.get("retries", 0),
+        "message": message, "canResume": st in RESUMABLE or st == S_FAILED or (st == S_COMPLETED and _sweep_pending(state) and not is_running()),
+        "canDownload": done > 0, "retries": state.get("retries", 0), "preset": settings_block.get("preset", ""),
+        "settingsSummary": settings_block.get("summary", ""),
+        "sweepIndex": int(sweep.get("index", 0)) + 1 if sweep else 0, "sweepTotal": len(sweep.get("presets", [])) if sweep else 0,
     }
+
+
+def list_history(limit: int = 50) -> list[dict[str, Any]]:
+    """data/bench 의 이전 측정을 설정 요약과 핵심 결과로 나란히 비교할 수 있게 돌려준다(값만, 주소·키·원문 없음)."""
+    rows: list[dict[str, Any]] = []
+    for path in _dir().glob("result-*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        cfg = data.get("settings") or {}
+        sec = data.get("sections") or {}
+        rate = (sec.get("B") or {}).get("tokensPerSecond") or {}
+        rows.append({
+            "runId": data.get("runId", ""), "startedAt": data.get("startedAt", ""), "status": data.get("status", ""),
+            "preset": cfg.get("preset", ""), "presetSummary": cfg.get("summary", ""), "connectionType": cfg.get("connectionType", ""),
+            "model": cfg.get("model", ""), "contextTokens": (cfg.get("values") or {}).get("contextTokens"),
+            "completedUnits": data.get("completedUnits", 0), "totalUnits": data.get("totalUnits", 0),
+            "tokensPerSecond": rate.get("mean"), "vramBytes": (sec.get("F") or {}).get("vramBytes"),
+            "verifiedRate": (sec.get("D") or {}).get("verifiedRate"), "warningCount": len(data.get("warnings") or []),
+            "sweepId": (data.get("sweep") or {}).get("id", ""),
+        })
+    rows.sort(key=lambda r: r["startedAt"], reverse=True)
+    return rows[:limit]
+
+
+_RUN_ID = re.compile(r"^[0-9a-f]{12}$")
+
+
+def load_result_file(run_id: str) -> dict[str, Any] | None:
+    if not _RUN_ID.match(run_id or ""):
+        return None
+    try:
+        return json.loads((_dir() / f"result-{run_id}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 # ------------------------- 결과 파일 -------------------------
 def _units_of(state: dict[str, Any], kind: str) -> list[dict[str, Any]]:
     return [u for k, u in state["units"].items() if k.startswith(f"{kind}#") and u.get("state") == "done"]
+
+
+def _merge_input(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    live = [r for r in rows if r and r.get("n")]
+    if not live:
+        return {"n": 0, "min": None, "median": None, "max": None}
+    return {"n": sum(r["n"] for r in live), "min": min(r["min"] for r in live),
+            "median": statistics.median([r["median"] for r in live]), "max": max(r["max"] for r in live)}
+
+
+def _merge_due(accuracies: list[dict[str, Any]]) -> dict[str, Any]:
+    """기한 분류 건수와 정답 대비 일수 차이 분포(값·원문 없음)."""
+    counts = {"blank": 0, "different": 0, "formatError": 0, "match": 0}
+    dist: dict[str, int] = {}
+    for acc in accuracies:
+        for k in counts:
+            counts[k] += int((acc.get("dueClass") or {}).get(k, 0))
+        for d in acc.get("dueDayDiffs") or []:
+            dist[str(d)] = dist.get(str(d), 0) + 1
+    return {"dueClass": counts, "dayDiffDistribution": dict(sorted(dist.items(), key=lambda kv: int(kv[0])))}
+
+
+def _suspect_runs(rows: list[dict[str, Any]]) -> int:
+    return sum(1 for r in rows if (r.get("inputTokens") or {}).get("truncationSuspected"))
+
+
+def _warnings(state: dict[str, Any], sections: dict[str, Any]) -> list[str]:
+    out: list[str] = []
+    wanted = ((state.get("settings") or {}).get("values") or {}).get("contextTokens")
+    loaded = (sections.get("F") or {}).get("contextLength")
+    if isinstance(loaded, int) and isinstance(wanted, int) and loaded != wanted:
+        out.append(f"서버가 적재한 맥락 길이({loaded})가 설정한 맥락({wanted})과 다릅니다. 측정이 설정과 다른 조건으로 이뤄졌을 수 있습니다")
+    for kind, name in (("B", "B 단건 추출"), ("C", "C 컨텍스트 경계"), ("G", "G 연속 실행")):
+        n = (sections.get(kind) or {}).get("truncationSuspectedRuns")
+        if n:
+            out.append(f"입력 잘림 의심: {name} {n}회(입력 토큰이 맥락 한계에 가깝거나 서버 기본 맥락 값과 같음)")
+    return out
 
 
 def build_result(state: dict[str, Any]) -> dict[str, Any]:
@@ -673,6 +1003,9 @@ def build_result(state: dict[str, Any]) -> dict[str, Any]:
             "missRate": _stats([x["accuracy"]["missRate"] for x in r]),
             "assigneeMatchRate": _stats([x["accuracy"]["assigneeMatchRate"] for x in r]),
             "dueMatchRate": _stats([x["accuracy"]["dueMatchRate"] for x in r]),
+            "dueClassification": _merge_due([x["accuracy"] for x in r]),
+            "inputTokens": _merge_input([x.get("inputTokens") or {} for x in r]),
+            "truncationSuspectedRuns": _suspect_runs(r),
         }
 
     section("B", single_like)
@@ -700,6 +1033,10 @@ def build_result(state: dict[str, Any]) -> dict[str, Any]:
             }
         else:
             body["split"] = r[-1]["split"]
+        parts = [x["single"] for x in r] + splits
+        body["dueClassification"] = _merge_due([p["accuracy"] for p in parts])
+        body["inputTokens"] = _merge_input([p.get("inputTokens") or {} for p in parts])
+        body["truncationSuspectedRuns"] = _suspect_runs(parts)
         return body
 
     section("C", c_build)
@@ -726,7 +1063,8 @@ def build_result(state: dict[str, Any]) -> dict[str, Any]:
         last = measurable[-1]
         return {"measurable": True, "source": last.get("source"), "targetLoadedRuns": sum(1 for x in measurable if x.get("targetLoaded")),
                 "vramBytes": last.get("vramBytes"), "sizeBytes": last.get("sizeBytes"), "gpuOffloadRatio": last.get("gpuOffloadRatio"),
-                "loadedModelCount": last.get("loadedModelCount"), "expiresAtPresent": last.get("expiresAtPresent")}
+                "loadedModelCount": last.get("loadedModelCount"), "expiresAtPresent": last.get("expiresAtPresent"),
+                "contextLength": last.get("contextLength")}
 
     section("F", f_build)
 
@@ -737,11 +1075,19 @@ def build_result(state: dict[str, Any]) -> dict[str, Any]:
         if len(times) >= 2 and times[0] > 0:
             drift = round((times[-1] - times[0]) / times[0], 4)
         return {"elapsedMsSeries": times, "elapsedMs": _stats(times), "driftLastVsFirst": drift,
-                "failedRuns": sum(1 for x in ordered if not x.get("ok") or x.get("failedReason")), "jsonParsedRuns": sum(1 for x in ordered if x.get("jsonParsed"))}
+                "failedRuns": sum(1 for x in ordered if not x.get("ok") or x.get("failedReason")), "jsonParsedRuns": sum(1 for x in ordered if x.get("jsonParsed")),
+                "dueClassification": _merge_due([x["accuracy"] for x in ordered if x.get("accuracy")]),
+                "inputTokens": _merge_input([x.get("inputTokens") or {} for x in ordered]),
+                "truncationSuspectedRuns": _suspect_runs(ordered)}
 
     section("G", g_build)
     result = {
-        "schema": "dots-bench-v1", "diagnosis": state.get("diagnosis") or {}, "runId": state.get("runId"), "mode": state.get("mode"),
+        # 설정 기록이 맨 앞: 결과보다 먼저 저장되고, 중간에 끊겨도 남는다
+        "settings": state.get("settings") or {},
+        "schema": "dots-bench-v1", "warnings": _warnings(state, sections),
+        "diagnosis": state.get("diagnosis") or {}, "blockedAttempt": state.get("blockedAttempt") or {},
+        "sweep": state.get("sweep") or {},
+        "runId": state.get("runId"), "mode": state.get("mode"),
         "status": status_of(state),
         "interruption": {"reason": state.get("interruptReason", ""), "atUnit": state.get("interruptedAt", "")}
         if state.get("interruptReason") else {},
@@ -778,7 +1124,10 @@ def to_markdown(result: dict[str, Any]) -> str:
     lines = [
         f"# L-3 벤치마크 측정 요약 ({result['mode']}, 상태: {result['status']})", "",
         f"- 완료 단위 {result['completedUnits']}/{result['totalUnits']} · 경과 {result['elapsedSeconds']}초 · 재시도 {result['retries']}회 · 이어하기 {result['resumeCount']}회",
-        "- 입력: 도구 내장 가상 전사본. 주소·키·호스트명·원문은 포함하지 않음", "",
+        "- 입력: 도구 내장 가상 전사본. 주소·키·호스트명·원문은 포함하지 않음",
+        f"- 설정: {(result.get('settings') or {}).get('summary', '—')} · 연결 방식 {(result.get('settings') or {}).get('connectionType', '—')}"
+        f" · 모델 {(result.get('settings') or {}).get('model', '—')}",
+        *[f"- 경고: {w}" for w in result.get("warnings", [])], "",
         "| 항목 | 상태 | 핵심 수치 |", "|---|---|---|",
     ]
 

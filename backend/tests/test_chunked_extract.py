@@ -393,7 +393,8 @@ def test_new_modules_are_not_imported_by_existing_pipeline():
     new = {"prompts", "agenda_chunker", "json_parser", "llm_client", "chunked_extract"}
     # 작업 81-1: 로컬 엔진 경로 연결 모듈만 이 부품을 쓴다(현행 Gemini 경로·API 는 쓰지 않는다)
     # 작업 91-1: 원격(시험용) 엔진 연결 모듈(services/engine_test.py)도 같은 부품을 로컬 추출기와 함께 쓴다
-    wiring = {"local_extractor", "local_llm", "extraction_engine", "engine_test"}
+    # 작업 L-5: 엔진 시험 변수 검증(engine_lab/params.py)도 구간 상한 계산에 chunked_extract 를 쓴다
+    wiring = {"local_extractor", "local_llm", "extraction_engine", "engine_test", "params"}
     pattern = re.compile(r"from\s+app\.pipeline(?:\.(\w+))?\s+import\s+([^\n(]+)|import\s+app\.pipeline\.(\w+)")
     offenders = []
     for path in (ROOT / "app").rglob("*.py"):

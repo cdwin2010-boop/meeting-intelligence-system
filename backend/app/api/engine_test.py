@@ -1,6 +1,6 @@
 """엔진 시험 모드 관리 API(작업 91-1, 시험 전용): 원격(OpenAI 호환 HTTP) 엔진 설정·로딩 테스트.
 
-- 모든 요청은 ENGINE_TEST_MODE 가 켜져 있을 때만 받는다(꺼져 있으면 403, 서버가 거부한다. 화면 숨김만으로 막지 않는다).
+- 모든 요청은 ENGINE_TEST_MODE 가 켜져 있을 때만 받는다(꺼져 있으면 404, 서버가 거부한다. 화면 숨김만으로 막지 않는다).
 - 권한: 관리자 이상(중간관리자·지시자) 또는 시스템 관리자. 담당자는 403.
 - API 키는 응답·로그에 평문으로 내보내지 않는다(마스킹 표시와 설정 여부만). 서버 주소는 설정 화면에서 바꿀 수 있어야 하므로 관리자에게는 보인다.
 - 로딩 테스트: 모델 목록 조회 → 현재 모델명 확인 → 짧은 추론 1회 → 응답 시간·JSON 파싱 성공 여부·실패 사유.
@@ -18,6 +18,7 @@ from app.config import settings
 from app.db import get_session
 from app.models import Account, append_event
 from app.pipeline.local_llm import LocalLlmError, OpenAICompatClient, list_models
+from app.pipeline.ollama_llm import OllamaClient, list_ollama_models
 from app.services import engine_diag
 from app.services import engine_test as engine
 from app.services.system_admin import is_system_admin
@@ -50,6 +51,7 @@ class RemoteSettingsOut(CamelModel):
     configured: bool
     default_engine: str  # default | remote (ENGINE_TEST_DEFAULT)
     notice: str
+    connection_type: str = "openai"  # openai(OpenAI 호환 /v1) | ollama(네이티브 /api/chat, num_ctx 를 보낸다)
 
 
 class RemoteSettingsIn(CamelModel):
@@ -58,6 +60,7 @@ class RemoteSettingsIn(CamelModel):
     api_key: str | None = None  # 비우거나 생략하면 기존 키 유지
     timeout_seconds: float
     chunk_max_chars: int = 0
+    connection_type: str | None = None  # 생략하면 기존 값 유지
 
 
 class LoadTestOut(CamelModel):
@@ -76,7 +79,9 @@ NOTICE = "외부 터널을 거치므로 시험용 데이터만 사용하세요"
 
 
 def _require_admin(session: Session, account: Account) -> None:
-    engine.require_test_mode()
+    # 시험 모드가 꺼져 있으면 이 API 는 없는 것처럼 404 로 거부한다(작업 L-5: 메뉴·화면 경로·API 숨김, 권한 확인보다 먼저)
+    if not settings.engine_test_mode:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
     if not (has_rank(account, "manager") or is_system_admin(session, account.id)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="권한이 없습니다")
 
@@ -86,7 +91,7 @@ def _out() -> RemoteSettingsOut:
     return RemoteSettingsOut(
         base_url=remote.base_url, model=remote.model, api_key_set=bool(remote.api_key), api_key_masked=engine.mask_key(remote.api_key),
         timeout_seconds=remote.timeout_seconds, chunk_max_chars=remote.chunk_max_chars, configured=remote.configured,
-        default_engine=settings.engine_test_default, notice=NOTICE,
+        default_engine=settings.engine_test_default, notice=NOTICE, connection_type=remote.connection_type,
     )
 
 
@@ -116,11 +121,15 @@ def put_remote(
         raise _unprocessable("요청 타임아웃은 1~3600초여야 합니다")
     if body.chunk_max_chars != 0 and not 500 <= body.chunk_max_chars <= 100000:
         raise _unprocessable("청크 한도는 0(기본) 또는 500~100000 글자여야 합니다")
+    conn = (body.connection_type or "").strip().lower() or None
+    if conn is not None and conn not in engine.CONNECTION_TYPES:
+        raise _unprocessable("연결 방식은 openai 또는 ollama 여야 합니다")
     key = (body.api_key or "").strip()
     if len(key) > 500:
         raise _unprocessable("API 키가 너무 깁니다")
     changed = engine.save_remote_settings(
-        base_url=base_url, model=model, api_key=key or None, timeout_seconds=body.timeout_seconds, chunk_max_chars=body.chunk_max_chars
+        base_url=base_url, model=model, api_key=key or None, timeout_seconds=body.timeout_seconds, chunk_max_chars=body.chunk_max_chars,
+        connection_type=conn,
     )
     # 이력에는 바뀐 항목 이름만 남긴다(주소·키 값은 남기지 않는다)
     append_event(
@@ -160,14 +169,23 @@ def load_test(account: Account = Depends(get_current_account), session: Session 
 
     models: list[str] = []
     try:
-        models = list_models(remote.base_url, remote.api_key, step_timeout, allow_external)
+        if remote.connection_type == engine.CONN_OLLAMA:
+            models = list_ollama_models(engine.ollama_base(remote.base_url), step_timeout, allow_external)
+        else:
+            models = list_models(remote.base_url, remote.api_key, step_timeout, allow_external)
     except LocalLlmError as exc:
         return _failure("models", _REASON_TEXT.get(exc.reason, engine.UNAVAILABLE_MESSAGE), current_model=remote.model)
     listed = dict(model_listed=True, model_found=engine_diag.model_in_list(remote.model, models), current_model=remote.model, available_models=models[:_MODELS_SHOWN])
 
-    client = OpenAICompatClient(
-        remote.base_url, remote.model, remote.api_key or "not-needed", max_output_tokens=64, allow_external=allow_external, json_mode_enabled=True
-    )
+    if remote.connection_type == engine.CONN_OLLAMA:
+        client = OllamaClient(
+            engine.ollama_base(remote.base_url), remote.model, num_ctx=engine.remote_profile().context_tokens, num_predict=64,
+            allow_external=allow_external,
+        )
+    else:
+        client = OpenAICompatClient(
+            remote.base_url, remote.model, remote.api_key or "not-needed", max_output_tokens=64, allow_external=allow_external, json_mode_enabled=True
+        )
     messages = [
         {"role": "system", "content": "You answer with a single JSON object and nothing else."},
         {"role": "user", "content": 'Reply with exactly this JSON object: {"ok": true}'},
@@ -208,4 +226,4 @@ def diagnose(account: Account = Depends(get_current_account), session: Session =
     allow_external = True
     if settings.external_policy_enforced:
         allow_external = bool(effective(session, account.tenant_id, LOCAL_LLM_EXTERNAL_HOST_ALLOWED).value)
-    return DiagnoseOut(**engine_diag.diagnose(remote.base_url, remote.api_key, remote.model, allow_external).as_dict())
+    return DiagnoseOut(**engine_diag.diagnose(remote.base_url, remote.api_key, remote.model, allow_external, remote.connection_type).as_dict())

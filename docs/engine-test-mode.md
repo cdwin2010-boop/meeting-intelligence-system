@@ -52,3 +52,11 @@ API 키는 응답·로그·화면에 평문으로 나오지 않는다(저장 여
 | `extraction_invalid` | 응답을 JSON 으로 읽지 못함(재시도 2회 후) |
 
 계약: `docs/contracts/engine-test-v1.json`.
+
+
+## 작업 L-5: 벤치마크 변수·프리셋·스윕 (내부용)
+- 변수 기본값·허용 범위·프리셋 A~D·스윕 순서는 `backend/config/bench_params.json` 한 곳에서만 바꾼다(코드·화면에 값을 박지 않는다).
+- 연결 방식: `openai`(기본, /v1, 맥락을 서버에 보낼 수 없음) / `ollama`(네이티브 /api/chat, `options.num_ctx` 전송). 설정 화면의 "연결 방식"에서 저장한다.
+- 시험 모드가 꺼져 있으면 `/api/admin/engine-test/**` 는 404 로 거부한다(권한 확인보다 먼저). 화면 메뉴·경로는 `engineTestMode` 로 숨긴다.
+- 결과 파일 `data/bench/result-<runId>.json` 은 맨 앞 `settings` 블록이 측정 시작 직전에 먼저 저장되고 결과가 뒤에 붙는다. `blockedAttempt` 는 막힌 시작 시도, `diagnosis` 는 측정 직전 연결 진단이다.
+- 납품 빌드에서 빼는 파일 목록은 CHANGELOG 의 작업 L-5 항목 ⑥ 을 따른다.

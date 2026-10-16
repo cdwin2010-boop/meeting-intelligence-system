@@ -13,12 +13,14 @@ import { useEngineTestMode } from "@/components/v2/EngineChoice";
 import { EngineBenchPanel } from "@/components/v2/EngineBenchPanel";
 import { isAbortError } from "@/lib/v2/errors";
 import {
+  CONNECTION_TYPE_LABEL,
   DIAGNOSE_LABEL,
   ENGINE_TEST_NOTICE,
   getRemoteSettings,
   runDiagnose,
   runLoadTest,
   saveRemoteSettings,
+  type ConnectionType,
   type DiagnoseResult,
   type LoadTestResult,
   type RemoteSettings,
@@ -41,6 +43,7 @@ export function EngineTestPanel() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
+  const [connectionType, setConnectionType] = useState<ConnectionType>("openai");
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnosis, setDiagnosis] = useState<DiagnoseResult | null>(null);
   const [diagnoseError, setDiagnoseError] = useState<string | null>(null);
@@ -59,6 +62,7 @@ export function EngineTestPanel() {
     setLoaded(settings);
     setBaseUrl(settings.baseUrl);
     setModel(settings.model);
+    setConnectionType(settings.connectionType === "ollama" ? "ollama" : "openai");
     setTimeoutSeconds(String(settings.timeoutSeconds));
     setChunkMaxChars(String(settings.chunkMaxChars));
     setApiKey("");
@@ -94,6 +98,8 @@ export function EngineTestPanel() {
           apiKey: apiKey.trim() || undefined,
           timeoutSeconds: Number(timeoutSeconds),
           chunkMaxChars: Number(chunkMaxChars) || 0,
+          // 서버가 연결 방식을 내려주지 않은 구버전이고 값이 기본(openai)이면 보내지 않는다
+          connectionType: loaded?.connectionType === undefined && connectionType === "openai" ? undefined : connectionType,
         },
         controller.signal,
       );
@@ -164,6 +170,27 @@ export function EngineTestPanel() {
           void save();
         }}
       >
+        <Field
+          label="연결 방식"
+          hint={
+            connectionType === "ollama"
+              ? "Ollama 네이티브 API(/api/chat)로 맥락 길이(num_ctx)를 서버에 직접 보냅니다. 주소는 서버 주소만(끝의 /v1 은 자동으로 뗍니다)."
+              : "OpenAI 호환 /v1 방식은 맥락 길이를 서버에 보낼 수 없습니다."
+          }
+        >
+          <select
+            value={connectionType}
+            onChange={(event) => setConnectionType(event.target.value === "ollama" ? "ollama" : "openai")}
+            className={inputClass}
+            aria-label="연결 방식"
+          >
+            {(Object.keys(CONNECTION_TYPE_LABEL) as ConnectionType[]).map((key) => (
+              <option key={key} value={key}>
+                {CONNECTION_TYPE_LABEL[key]}
+              </option>
+            ))}
+          </select>
+        </Field>
         <Field label="서버 주소" hint="예: https://…/v1 (터널을 열 때마다 바뀌면 여기서 바꿉니다)">
           <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} className={`${inputClass} font-mn-mono`} autoComplete="off" spellCheck={false} />
         </Field>

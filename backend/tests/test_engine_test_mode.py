@@ -103,9 +103,9 @@ def test_mode_off_rejects_remote_requests_server_side(env, mgr, tmp_path, monkey
     assert settings.engine_test_mode is False  # 기본값(납품 설정)
     monkeypatch.setattr(settings, "engine_test_settings_path", tmp_path / "engine_test.json")
     client = env["client"]
-    assert client.get("/api/admin/engine-test/remote", headers=auth(mgr)).status_code == 403
-    assert put_settings(env, mgr).status_code == 403
-    assert client.post("/api/admin/engine-test/remote/load-test", headers=auth(mgr)).status_code == 403
+    assert client.get("/api/admin/engine-test/remote", headers=auth(mgr)).status_code == 404
+    assert put_settings(env, mgr).status_code == 404
+    assert client.post("/api/admin/engine-test/remote/load-test", headers=auth(mgr)).status_code == 404
     assert not (tmp_path / "engine_test.json").exists()  # 거부된 저장은 파일을 만들지 않는다
     res = post_txt(env, mgr, fake_transcript().encode("utf-8"), engine="remote")
     assert res.status_code == 403

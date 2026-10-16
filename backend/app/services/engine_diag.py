@@ -106,7 +106,7 @@ def _fetch(url: str, headers: dict[str, str]) -> tuple[str, int | None, bytes]:
         return SERVER_ERROR, None, b""
 
 
-def diagnose(base_url: str, api_key: str, model: str, allow_external: bool) -> Diagnosis:
+def diagnose(base_url: str, api_key: str, model: str, allow_external: bool, connection_type: str = "openai") -> Diagnosis:
     import json
     import time
 
@@ -116,7 +116,13 @@ def diagnose(base_url: str, api_key: str, model: str, allow_external: bool) -> D
     except LocalLlmError:
         return _result(UNREACHABLE, started, hint=_HOST_BLOCKED_HINT)
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    url = f"{base_url.rstrip('/')}/models"
+    ollama = connection_type == "ollama"
+    if ollama:  # 네이티브 API: GET {주소}/api/tags (주소 끝의 /v1 은 뗀다). 연결 3초·전체 5초, 재시도 없음은 그대로
+        base = base_url.rstrip("/")
+        base = base[: -len("/v1")] if base.endswith("/v1") else base
+        url = f"{base}/api/tags"
+    else:
+        url = f"{base_url.rstrip('/')}/models"
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     future = pool.submit(_fetch, url, headers)
     try:
@@ -135,8 +141,10 @@ def diagnose(base_url: str, api_key: str, model: str, allow_external: bool) -> D
     if status_code != 200:  # 404·405·3xx 와 그 밖의 4xx
         return _result(PATH_MISMATCH, started, status_code)
     try:
-        data = json.loads(body.decode("utf-8"))["data"]
-        models = [str(entry["id"]) for entry in data]
+        if ollama:
+            models = [str(entry["name"]) for entry in json.loads(body.decode("utf-8"))["models"]]
+        else:
+            models = [str(entry["id"]) for entry in json.loads(body.decode("utf-8"))["data"]]
     except (ValueError, KeyError, TypeError, UnicodeDecodeError):
         return _result(PATH_MISMATCH, started, status_code)  # JSON 이 아니거나(HTML 안내 페이지 등) 목록 형식이 아님
     if model_in_list(model, models):

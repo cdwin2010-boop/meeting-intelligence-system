@@ -25,7 +25,16 @@ export interface RemoteSettings {
   configured: boolean;
   defaultEngine: EngineChoice;
   notice: string;
+  /** 연결 방식(작업 L-5): openai(OpenAI 호환 /v1, 맥락을 서버에 보낼 수 없음) | ollama(네이티브 /api/chat, num_ctx 를 보낸다). 없으면 openai */
+  connectionType?: ConnectionType;
 }
+
+export type ConnectionType = "openai" | "ollama";
+
+export const CONNECTION_TYPE_LABEL: Record<ConnectionType, string> = {
+  openai: "OpenAI 호환(/v1)",
+  ollama: "Ollama 네이티브(/api/chat)",
+};
 
 export interface RemoteSettingsInput {
   baseUrl: string;
@@ -34,6 +43,8 @@ export interface RemoteSettingsInput {
   apiKey?: string;
   timeoutSeconds: number;
   chunkMaxChars: number;
+  /** 생략하면 기존 값 유지 */
+  connectionType?: ConnectionType;
 }
 
 export interface LoadTestResult {

@@ -29,12 +29,16 @@ from app.pipeline.json_parser import MAX_RETRIES
 from app.pipeline.llm_client import LlmClient
 from app.pipeline.local_extractor import LocalLlmExtractor
 from app.pipeline.local_llm import NO_KEY, LocalLlmError, OpenAICompatClient
+from app.pipeline.ollama_llm import OllamaClient
 
 log = logging.getLogger("app.engine_test")
 
 ENGINE_DEFAULT = "default"
 ENGINE_REMOTE = "remote"
 ENGINES = (ENGINE_DEFAULT, ENGINE_REMOTE)
+CONN_OPENAI = "openai"  # OpenAI 호환 /v1: 맥락 길이(num_ctx)를 서버에 보낼 수 없다
+CONN_OLLAMA = "ollama"  # Ollama 네이티브 /api/chat: options.num_ctx 를 보낸다
+CONNECTION_TYPES = (CONN_OPENAI, CONN_OLLAMA)
 REMOTE_RETRY_CEILING = 2  # 원격 시험 엔진의 JSON 오류 재시도 상한(지시: 최대 2회)
 REMOTE_LABEL_PREFIX = "원격(시험용) · "
 ENGINE_COLUMN_MAX = 30  # minutes.engine 열 길이(마이그레이션 없이 맞춘다)
@@ -63,6 +67,7 @@ class RemoteSettings:
     api_key: str
     timeout_seconds: float
     chunk_max_chars: int  # 0 = EXTRACT_CHUNK_MAX_CHARS
+    connection_type: str = CONN_OPENAI
 
     @property
     def configured(self) -> bool:
@@ -108,7 +113,9 @@ def load_remote_settings() -> RemoteSettings:
         chunk = int(saved.get("chunkMaxChars", settings.remote_llm_chunk_max_chars))
     except (TypeError, ValueError):
         chunk = settings.remote_llm_chunk_max_chars
+    conn = str(saved.get("connectionType", settings.remote_llm_connection_type) or "").strip().lower()
     return RemoteSettings(
+        connection_type=conn if conn in CONNECTION_TYPES else CONN_OPENAI,
         base_url=base,
         model=str(saved.get("model", settings.remote_llm_model) or "").strip(),  # 대소문자는 그대로, 앞뒤 공백만 제거
         api_key=str(saved.get("apiKey", settings.remote_llm_api_key.get_secret_value()) or ""),
@@ -132,7 +139,7 @@ def validate_base_url(value: str) -> str:
 
 
 def save_remote_settings(
-    *, base_url: str, model: str, api_key: str | None, timeout_seconds: float, chunk_max_chars: int
+    *, base_url: str, model: str, api_key: str | None, timeout_seconds: float, chunk_max_chars: int, connection_type: str | None = None
 ) -> list[str]:
     """화면에서 저장한 값을 파일에 쓴다(원자적 교체). api_key 가 None·빈 값이면 기존 키를 유지한다. 바뀐 항목 이름 목록을 돌려준다."""
     before = load_remote_settings()
@@ -140,6 +147,8 @@ def save_remote_settings(
     saved.update({"baseUrl": base_url, "model": model, "timeoutSeconds": timeout_seconds, "chunkMaxChars": chunk_max_chars})
     if api_key:
         saved["apiKey"] = api_key
+    if connection_type in CONNECTION_TYPES:  # None 이면 기존 값 유지
+        saved["connectionType"] = connection_type
     path = _settings_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".engine_test_", suffix=".tmp")
@@ -159,6 +168,7 @@ def save_remote_settings(
             ("apiKey", before.api_key, after.api_key),
             ("timeoutSeconds", before.timeout_seconds, after.timeout_seconds),
             ("chunkMaxChars", before.chunk_max_chars, after.chunk_max_chars),
+            ("connectionType", before.connection_type, after.connection_type),
         )
         if old != new
     ]
@@ -221,6 +231,12 @@ def remote_label(model: str) -> str:
     return REMOTE_LABEL_PREFIX + name
 
 
+def ollama_base(base_url: str) -> str:
+    """Ollama 네이티브 API 의 기준 주소: 끝의 /v1 은 떼고 쓴다(같은 서버를 openai 방식 주소로 저장했어도 방식만 바꿔 쓸 수 있게)."""
+    base = (base_url or "").rstrip("/")
+    return base[: -len("/v1")] if base.endswith("/v1") else base
+
+
 def remote_profile() -> EngineProfile:
     """원격(시험용) 엔진 프로파일: 값은 모두 설정(REMOTE_LLM_*, LOCAL_LLM_MAX_OUTPUT_TOKENS)에서 읽는다(작업 B-1d)."""
     return EngineProfile(
@@ -230,7 +246,7 @@ def remote_profile() -> EngineProfile:
         supports_json_format=settings.remote_llm_json_format,
         tokens_per_char=settings.remote_llm_tokens_per_char,
         use_server_tokenizer=settings.remote_llm_use_server_tokenizer,
-        send_context_option=settings.remote_llm_send_context_option,
+        send_context_option=settings.remote_llm_send_context_option or load_remote_settings().connection_type == CONN_OLLAMA,
     )
 
 
@@ -240,6 +256,13 @@ def remote_output_tokens() -> int:
 
 
 def build_remote_client(remote: RemoteSettings, allow_external: bool) -> LlmClient:
+    if remote.connection_type == CONN_OLLAMA:
+        # 네이티브 /api/chat: options={temperature, num_ctx, num_predict}. 맥락을 서버에 직접 보낸다
+        profile = remote_profile()
+        return OllamaClient(
+            ollama_base(remote.base_url), remote.model, num_ctx=profile.context_tokens, num_predict=profile.output_reserve_tokens(),
+            allow_external=allow_external, json_mode_enabled=profile.supports_json_format, truncation_ratio=profile.truncation_ratio,
+        )
     return OpenAICompatClient(
         remote.base_url,
         remote.model,

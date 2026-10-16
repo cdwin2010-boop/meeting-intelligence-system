@@ -291,7 +291,7 @@ def test_permissions_and_test_mode(env, mgr, staff, rig, monkeypatch):
     assert env["client"].get(f"{PREFIX}/status", headers=auth(staff)).status_code == 403
     assert env["client"].get(f"{PREFIX}/result", headers=auth(staff)).status_code == 403
     monkeypatch.setattr(settings, "engine_test_mode", False)
-    assert start(env, mgr).status_code == 403  # 시험 모드가 꺼져 있으면 서버가 거부
+    assert start(env, mgr).status_code == 404  # 시험 모드가 꺼져 있으면 없는 API 처럼 404 로 거부(L-5)
     assert not (settings.bench_dir).exists()
 
 

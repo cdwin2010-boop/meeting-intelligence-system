@@ -175,13 +175,15 @@ class Settings(BaseSettings):
     remote_llm_tokens_per_char: float = Field(1.3, ge=0.5, le=4.0)
     remote_llm_use_server_tokenizer: bool = False
     remote_llm_send_context_option: bool = False
+    # 원격 연결 방식(작업 L-5): openai = OpenAI 호환 /v1(맥락을 서버에 보낼 수 없음) | ollama = 네이티브 /api/chat(options.num_ctx 를 보낸다)
+    remote_llm_connection_type: Literal["openai", "ollama"] = "openai"
     # 원격(시험용) 엔진 연결 점검·L-3 벤치마크 측정(작업 L-3a): 체크포인트·결과 파일(JSON) 폴더와 항목별 한도. DB 는 쓰지 않는다
     bench_dir: Path = Path("data/bench")
     bench_item_timeout_seconds: float = Field(180, gt=0, le=3600)  # 측정 요청 1회의 대기 상한
     bench_retry_max: int = Field(2, ge=0, le=5)  # 연결 오류(끊김·타임아웃·5xx) 때 항목 재시도 횟수(지시: 최대 2회)
     bench_retry_delay_seconds: float = Field(3, ge=0, le=60)
-    bench_repeat: int = Field(3, ge=1, le=10)  # 전체 측정에서 항목별 반복 횟수
-    bench_drift_runs: int = Field(5, ge=2, le=20)  # G 항목(같은 입력 연속 실행) 횟수
+    bench_repeat: int = Field(5, ge=1, le=20)  # 전체 측정에서 항목별 반복 횟수(작업 L-5: 기본 5, 허용 범위는 config/bench_params.json)
+    bench_drift_runs: int = Field(5, ge=1, le=20)  # G 항목(같은 입력 연속 실행) 횟수
     bench_long_max_chars: int = Field(80000, ge=2000)  # 분할 경로를 일으킬 긴 가상 전사본의 글자 수 상한
     # 오디오 전처리(작업 75-1 파트 B, FFmpeg 단일 체인): 기본 꺼짐. 켜면 STT 입력 직전에 16kHz 모노 wav 로 전처리한다
     # ffmpeg_path: 기본 "ffmpeg"(PATH 검색, backend/bin 에 번들 파일이 있으면 그것을 우선) / 시간 초과(초)
