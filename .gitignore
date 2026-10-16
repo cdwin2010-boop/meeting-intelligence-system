@@ -46,3 +46,5 @@ Thumbs.db
 backend/data/license.lic
 # Cython 선별 빌드 산출물(작업 80-1)
 backend/build/
+
+*.bak
