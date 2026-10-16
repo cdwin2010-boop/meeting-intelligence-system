@@ -185,6 +185,20 @@ class Settings(BaseSettings):
     bench_repeat: int = Field(5, ge=1, le=20)  # 전체 측정에서 항목별 반복 횟수(작업 L-5: 기본 5, 허용 범위는 config/bench_params.json)
     bench_drift_runs: int = Field(5, ge=1, le=20)  # G 항목(같은 입력 연속 실행) 횟수
     bench_long_max_chars: int = Field(80000, ge=2000)  # 분할 경로를 일으킬 긴 가상 전사본의 글자 수 상한
+    # 회의록 질의응답(작업 89-1): 회의 1건의 정리된 요약·결정·업무(+필요할 때 발화 발췌)만 컨텍스트로 쓰는 SSE 질의 API.
+    # 공급자: auto = 추출 엔진(LLM_PROVIDER)을 따른다(local / ollama / fake). 질문·답변 내용은 저장하지 않고 로그에는 요청ID·회의록ID·상태·시간만 남긴다.
+    qa_enabled: bool = True
+    qa_llm_provider: Literal["auto", "local", "ollama", "fake"] = "auto"
+    qa_context_tokens: int = Field(1000, ge=200, le=32000)  # 컨텍스트 상한(토큰, 글자 수는 QA_TOKENS_PER_CHAR 로 환산)
+    qa_max_excerpts: int = Field(5, ge=0, le=20)  # 2차(발화 발췌) 최대 개수
+    qa_tokens_per_char: float = Field(1.3, ge=0.5, le=4.0)
+    qa_max_output_tokens: int = Field(512, ge=16, le=4096)
+    qa_timeout_seconds: float = Field(60, gt=0, le=600)  # 한 요청의 전체 제한 시간(초과하면 추론을 취소한다)
+    qa_rate_limit_per_minute: int = Field(10, ge=1, le=600)  # 계정당 분당 질의 수(초과 429)
+    qa_primary_coverage_min: float = Field(0.6, ge=0, le=1)  # 질문이 1차(요약·결정·업무)에 이 비율 이상 들어 있으면 발췌를 쓰지 않는다
+    # GPU 사용권(작업 89-1): 워커(STT·추출)가 쥐는 만료 시간(초)과, 질의가 쥐고 있을 때 워커가 기다리는 최대 시간(초)
+    gpu_lease_worker_ttl_seconds: int = Field(3600, ge=30)
+    gpu_lease_wait_seconds: float = Field(180, ge=0)
     # 오디오 전처리(작업 75-1 파트 B, FFmpeg 단일 체인): 기본 꺼짐. 켜면 STT 입력 직전에 16kHz 모노 wav 로 전처리한다
     # ffmpeg_path: 기본 "ffmpeg"(PATH 검색, backend/bin 에 번들 파일이 있으면 그것을 우선) / 시간 초과(초)
     audio_preprocess_enabled: bool = False

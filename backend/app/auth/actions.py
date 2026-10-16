@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.auth.access import VIEW_ALL_RANKS, can_confirm_meeting, can_write_item
 from app.auth.deps import has_rank
 from app.config import settings
+from app.meeting_qa.access import STATE_OK, ask_state
 from app.auth.locks import HOLDABLE_STATUSES, reject_if_locked
 from app.models import Account, ActionItem, Meeting, Project
 from app.models.closure import PHASES
@@ -37,6 +38,7 @@ RESOLVE_CHANGE_REQUEST = "resolve_change_request"  # 수정 요청 해결(수락
 REQUEST_CHANGE = "request_change"  # 수정 요청 작성(회의록 전체·업무 모두 같은 이름)
 DOWNLOAD_EXCEL = "download_excel"  # 엑셀 다운로드
 VIEW_HISTORY = "view_history"  # 변경 이력 보기
+ASK_MEETING = "ask_meeting"  # 회의록 질의응답(작업 89-1): 정리된 회의록이 있고 삭제되지 않은 열람 가능 회의록
 
 # ---------------- 업무 단위 동작(REQUEST_CHANGE 는 위와 같은 이름) ----------------
 CONFIRM_ITEM = "confirm_item"
@@ -60,7 +62,7 @@ PROJECT_ACTIONS = (CHANGE_LEAD, MANAGE_MEMBERS, APPROVE_PROJECT, REJECT_PROJECT,
 
 MEETING_ACTIONS = (
     CONFIRM_MEETING, HOLD_MEETING, RESUME_MEETING, END_MEETING, DELETE_MEETING, EDIT_MINUTES, UPLOAD_UPDATE, ADD_ITEM,
-    EDIT_SPEAKERS, REPROCESS_MEETING, PROCESS_NOW, EDIT_HELD_AT, RESOLVE_CHANGE_REQUEST, REQUEST_CHANGE, DOWNLOAD_EXCEL, VIEW_HISTORY,
+    EDIT_SPEAKERS, REPROCESS_MEETING, PROCESS_NOW, EDIT_HELD_AT, RESOLVE_CHANGE_REQUEST, REQUEST_CHANGE, DOWNLOAD_EXCEL, VIEW_HISTORY, ASK_MEETING,
 )
 ITEM_ACTIONS = (
     CONFIRM_ITEM, CLOSE_ITEM, DELETE_ITEM, SET_ASSIGNEE, SET_DUE, REQUEST_CHANGE, FIND_SIMILAR_ITEMS, REQUEST_SUPERSEDE, SUPERSEDE_ITEM,
@@ -84,6 +86,8 @@ def is_locked(meeting: Meeting, *, allow_on_hold: bool = False) -> bool:
 def meeting_allowed_actions(session: Session, account: Account, meeting: Meeting) -> list[str]:
     """회의록 단위 허용 동작(MEETING_ACTIONS 순서). 열람 판정을 통과한 회의록에만 부른다."""
     allowed = [REQUEST_CHANGE, DOWNLOAD_EXCEL, VIEW_HISTORY]
+    if settings.qa_enabled and ask_state(session, meeting) == STATE_OK:  # 질의 가능 여부는 서버가 판단한다(화면 재판단 금지)
+        allowed.append(ASK_MEETING)
     if has_rank(account, _RESOLVE_MIN_RANK):
         allowed.append(RESOLVE_CHANGE_REQUEST)
     # 회의 일시 변경(작업 88-4): 관리자 이상(직급), 잠기지 않은 회의록

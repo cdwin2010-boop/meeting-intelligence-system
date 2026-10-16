@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "meeting-chat-v1",
+  "title": "meeting-chat-v1: 회의록 질의응답(회의 1건, 작업 89-1)",
+  "description": "POST /api/meetings/{meeting_id}/chat — 회의 상세 화면의 질문 1건에 대해 그 회의의 정리된 요약·결정·업무(필요할 때만 같은 회의 발화 BM25 발췌)만 근거로 답한다. 응답은 text/event-stream(SSE). 프로젝트 화면(여러 회의 집계)은 이 계약 범위가 아니다(다음 지시 89-1b). 질문·답변 내용은 서버 어디에도 저장하지 않고(DB·이벤트·로그), 로그에는 요청ID·회의록ID·상태·소요시간만 남는다. 허용 동작 allowedActions 의 \"ask_meeting\" 은 서버가 판단하며(열람 가능·삭제되지 않음·정리된 회의록 있음) 화면은 이 값만 본다. '내 업무로 등록'은 이번 범위가 아니라 API 가 없다. 원본: backend/app/api/meeting_chat.py, backend/app/meeting_qa/. 스텁(backend-contract-stub)은 같은 계약의 가짜 응답을 돌려준다(인증이 없어 403·열람 404 는 검사하지 않는다).",
+  "request": {
+    "method": "POST",
+    "path": "/api/meetings/{meeting_id}/chat",
+    "headers": {"Authorization": "Bearer <token> (운영 백엔드)", "Content-Type": "application/json"},
+    "body": {
+      "type": "object",
+      "required": ["question"],
+      "additionalProperties": false,
+      "properties": {
+        "question": {"type": "string", "minLength": 1, "maxLength": 500, "description": "앞뒤 공백 제거 후 1~500자. 벗어나면 422"},
+        "history": {
+          "type": "array", "maxItems": 4, "default": [],
+          "description": "직전 대화(최대 4턴). 서버는 저장하지 않고 이번 요청의 맥락으로만 쓴다. 5턴 이상이면 422",
+          "items": {
+            "type": "object", "required": ["question", "answer"],
+            "properties": {"question": {"type": "string", "maxLength": 1000}, "answer": {"type": "string", "maxLength": 1000}}
+          }
+        },
+        "quickPrompt": {
+          "type": ["string", "null"], "enum": ["decisions", "my_tasks", "schedule", null], "default": null,
+          "description": "빠른 질문. decisions=결정사항 우선, my_tasks=내 업무 우선, schedule=기한 있는 업무를 기한 순. 빠른 질문은 1차(요약·업무) 자료만 쓴다"
+        }
+      }
+    }
+  },
+  "errorsBeforeStream": {
+    "description": "스트림이 시작되기 전의 오류는 일반 JSON({\"detail\": ...})이다.",
+    "401": "로그인 필요",
+    "403": "삭제된 회의록(질문 불가)",
+    "404": "회의록이 없거나 열람 권한이 없음(존재 여부를 알려 주지 않는다), 또는 질의 기능이 꺼져 있음(QA_ENABLED=false)",
+    "409": "정리된 회의록 없음(처리 중·실패·말소리 없음 등)",
+    "422": "질문 길이(1~500자)·history(최대 4턴)·quickPrompt 값 오류",
+    "429": "사용량 제한(계정당 분당 QA_RATE_LIMIT_PER_MINUTE, 기본 10). Retry-After 헤더(초)",
+    "503": "답변 엔진 없음(detail.code=llm_unavailable) 또는 GPU 사용 중(detail.code=gpu_busy, 음성 변환이 GPU 사용권을 쥐고 있음). gpu_busy 는 Retry-After 헤더(초, 최대 60)"
+  },
+  "response": {
+    "contentType": "text/event-stream",
+    "order": ["meta", "delta*", "citations", "done"],
+    "failure": "추론 중 실패·제한 시간 초과면 meta 뒤에 error 이벤트 하나로 끝난다(delta·citations·done 없음).",
+    "note": "서버는 모델의 전체 답변을 받아 근거 ID 검증·변환을 마친 뒤에만 delta 를 내보낸다(근거 없는 문장이 먼저 나가지 않는다). 연결이 끊기거나 제한 시간(QA_TIMEOUT_SECONDS)을 넘으면 추론을 취소하고 GPU 사용권을 푼다.",
+    "events": {
+      "meta": {
+        "requestId": "string(12자, 로그와 대조용)",
+        "contextMode": "summary | summary+excerpts (2차 발화 발췌를 썼는지)",
+        "model": "string(답변 엔진 표시값)",
+        "confirmedPendingIncluded": "boolean — 확정 전 업무(또는 확정 대기 회의록)의 내용이 답변 자료에 들어 있음. 화면은 '확정 전 내용 포함'을 표시한다"
+      },
+      "delta": {"text": "string — 검증·변환이 끝난 답변 조각. 근거는 \"[화자/MM:SS]\"(발화), \"[회의록·결정사항]\"·\"[업무·제목]\"(요약·업무 근거) 형태로 이미 바뀌어 있다"},
+      "citations": {
+        "items": [
+          {
+            "refId": "string (예: S1, 이번 요청의 자료 ID)",
+            "utteranceId": "integer | null (전사 발화 순번, 0부터. 요약 근거면 null)",
+            "speaker": "string (화자 표기, 없으면 \"\")",
+            "startSec": "number | null (발화 시작 초)",
+            "label": "string (예: 화자2/01:15, 회의록·결정사항)"
+          }
+        ]
+      },
+      "done": {
+        "grounded": "boolean — 유효한 근거(자료 ID)가 있는 답변",
+        "noAnswer": "boolean — 서버가 고정 답변(\"본 회의록에서 확인할 수 없는 내용입니다\")으로 바꿨거나 모델이 그렇게 답함",
+        "elapsedMs": "integer"
+      },
+      "error": {
+        "code": "llm_unavailable | llm_timeout | llm_error",
+        "message": "string(분류 문구만, 주소·키·질문·답변 없음)"
+      }
+    }
+  },
+  "fixedAnswer": "본 회의록에서 확인할 수 없는 내용입니다",
+  "settings": {
+    "QA_ENABLED": "기본 true",
+    "QA_LLM_PROVIDER": "auto(LLM_PROVIDER 를 따름) | local | ollama | fake",
+    "QA_CONTEXT_TOKENS": "컨텍스트 상한, 기본 1000",
+    "QA_MAX_EXCERPTS": "2차 발췌 최대 개수, 기본 5",
+    "QA_TIMEOUT_SECONDS": "기본 60",
+    "QA_RATE_LIMIT_PER_MINUTE": "기본 10",
+    "GPU_LEASE_WORKER_TTL_SECONDS": "워커 사용권 만료(초), 기본 3600",
+    "GPU_LEASE_WAIT_SECONDS": "워커가 질의 점유를 기다리는 최대 시간(초), 기본 180"
+  },
+  "migration": "b7d2f4a9c315_gpu_leases: gpu_leases 표(resource PK, holder, ref_id, acquired_at, expires_at) 추가. 기존 표·데이터 변경 없음"
+}

@@ -25,6 +25,7 @@ from app.models.common import utcnow
 from app.pipeline.errors import error_code
 from app.pipeline.audio_preprocess import preprocess_audio
 from app.pipeline.gpu import release_gpu_memory
+from app.services import gpu_lease
 from app.pipeline.evidence_time import apply_evidence_times
 from app.services.engine_test import job_engine
 from app.services.extraction_engine import select_extractor
@@ -254,6 +255,30 @@ def process_meeting(
     started = _start(factory, job_id)
     if started is None:
         return None
+    # GPU 사용권(작업 89-1): 처리(STT·추출) 동안 GPU 를 쥔다. 회의록 질의가 쥐고 있으면 잠시 기다린다(못 잡아도 처리는 막지 않는다)
+    leased = False
+    try:
+        leased = gpu_lease.acquire_waiting(
+            factory, gpu_lease.HOLDER_WORKER, job_id, gpu_lease.worker_ttl(), settings.gpu_lease_wait_seconds
+        )
+        if not leased:
+            log.warning("job %s: GPU 사용권을 잡지 못하고 진행합니다(질의가 점유 중)", job_id)
+    except Exception as exc:  # noqa: BLE001 — 사용권 표 문제가 처리를 막으면 안 된다
+        log.warning("job %s: GPU 사용권 확인 실패(무시): %s", job_id, type(exc).__name__)
+    try:
+        return _process_started(job_id, started, factory, stt_factory, extractor_factory, on_progress)
+    finally:
+        if leased:
+            try:
+                gpu_lease.release(factory, gpu_lease.HOLDER_WORKER, job_id)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("job %s: GPU 사용권 해제 실패(만료로 풀림): %s", job_id, type(exc).__name__)
+
+
+def _process_started(
+    job_id: int, started: dict, factory: sessionmaker, stt_factory: Callable[[], SttEngine] | None,
+    extractor_factory: Callable[[], Extractor] | None, on_progress: Callable[[int], None] | None,
+) -> str | None:
     _progress(on_progress, 10)
 
     try:

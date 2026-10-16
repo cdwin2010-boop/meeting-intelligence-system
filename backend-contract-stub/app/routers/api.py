@@ -212,6 +212,82 @@ def process_now(meeting_id: str):
     }
 
 
+# ---------------- 회의록 질의응답 (작업 89-1, docs/contracts/meeting-chat-v1.json) ----------------
+# 스텁은 같은 계약의 가짜 응답을 돌려준다: 회의의 첫 업무를 근거로 답하고, 업무가 없으면 고정 답변이다. 질문·답변은 저장하지 않는다.
+# 인증이 없는 스텁이라 열람 권한(403 삭제된 회의록·404 권한 없음)은 검사하지 않는다 → 운영 백엔드가 서버에서 검증한다.
+CHAT_QUESTION_MAX = 500
+CHAT_HISTORY_MAX = 4
+CHAT_QUICK_PROMPTS = ("decisions", "my_tasks", "schedule")
+CHAT_RATE_LIMIT = 10  # 분당(스텁 전체, 메모리)
+CHAT_NO_ANSWER = "본 회의록에서 확인할 수 없는 내용입니다"
+_chat_hits: list[float] = []
+
+
+def reset_chat_rate_limit() -> None:
+    _chat_hits.clear()
+
+
+def _sse(event: str, data: dict) -> str:
+    return "event: " + event + chr(10) + "data: " + json.dumps(data, ensure_ascii=False) + chr(10) * 2
+
+
+@router.post("/meetings/{meeting_id}/chat")
+async def meeting_chat(meeting_id: str, request: Request):
+    import time
+    import uuid
+
+    from fastapi.responses import StreamingResponse
+
+    try:
+        payload = await request.json()
+    except ValueError:
+        payload = None
+    question = payload.get("question") if isinstance(payload, dict) else None
+    history = payload.get("history", []) if isinstance(payload, dict) else None
+    quick = payload.get("quickPrompt") if isinstance(payload, dict) else None
+    if not isinstance(question, str) or not 1 <= len(question.strip()) <= CHAT_QUESTION_MAX:
+        raise HTTPException(status_code=422, detail=f"질문은 1~{CHAT_QUESTION_MAX}자여야 합니다")
+    if not isinstance(history, list) or len(history) > CHAT_HISTORY_MAX:
+        raise HTTPException(status_code=422, detail=f"history 는 최대 {CHAT_HISTORY_MAX}턴입니다")
+    if quick is not None and quick not in CHAT_QUICK_PROMPTS:
+        raise HTTPException(status_code=422, detail="quickPrompt 가 올바르지 않습니다")
+    state = store.meeting_job_queue_state(meeting_id)
+    meeting = store.get_meeting(meeting_id)
+    if meeting is None:
+        raise HTTPException(status_code=404, detail="meeting not found")
+    if state is not None and state["status"] != "completed":
+        if state["status"] == "processing":  # 변환(GPU 사용 중)이면 계약대로 503 + Retry-After
+            raise HTTPException(status_code=503, detail={"code": "gpu_busy", "message": "음성 변환 중이라 잠시 뒤 다시 질문해 주세요"},
+                                headers={"Retry-After": "10"})
+        raise HTTPException(status_code=409, detail="정리된 회의록이 없어 질문할 수 없습니다")
+    now = time.monotonic()
+    _chat_hits[:] = [t for t in _chat_hits if now - t < 60]
+    if len(_chat_hits) >= CHAT_RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="질문이 너무 잦습니다. 잠시 뒤 다시 시도해 주세요", headers={"Retry-After": "30"})
+    _chat_hits.append(now)
+
+    items = store.list_action_items(meeting_id, None, "asc")
+    request_id = uuid.uuid4().hex[:12]
+
+    def stream():
+        yield _sse("meta", {"requestId": request_id, "contextMode": "summary", "model": "stub", "confirmedPendingIncluded": False})
+        if items:
+            first = items[0]
+            who = first["quote"]["speaker"] or ""
+            stamp = first["quote"]["timestamp"] or ""
+            mark = "/".join(p for p in (who, stamp[-5:] if len(stamp) >= 5 else stamp) if p)
+            text = f"{first['task']}({first['assignee'] or '담당자 미정'}) [{mark}]" if mark else first["task"]
+            yield _sse("delta", {"text": text})
+            yield _sse("citations", {"items": [{"refId": "S1", "utteranceId": 0, "speaker": who, "startSec": None, "label": mark}]})
+            yield _sse("done", {"grounded": True, "noAnswer": False, "elapsedMs": 0})
+        else:
+            yield _sse("delta", {"text": CHAT_NO_ANSWER})
+            yield _sse("citations", {"items": []})
+            yield _sse("done", {"grounded": False, "noAnswer": True, "elapsedMs": 0})
+
+    return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-store"})
+
+
 # ---------------- 엔진 시험 모드 (작업 91-1, docs/contracts/engine-test-v1.json) ----------------
 # 스텁은 시험 모드가 항상 꺼진 서버처럼 동작한다: 원격 엔진 설정·로딩 테스트 요청은 운영 백엔드와 같은 사유로 403 이다.
 ENGINE_TEST_OFF_MESSAGE = "엔진 시험 모드가 아니어서 사용할 수 없습니다"

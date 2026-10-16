@@ -4,6 +4,7 @@ from app.models.action_item import ActionItem
 from app.models.classification import MeetingClassification
 from app.models.closure import MeetingClosure
 from app.models.event import Event, append_event
+from app.models.gpu_lease import GpuLease
 from app.models.guest import MeetingGuestParticipant
 from app.models.hold import MeetingHold
 from app.models.item_closure import ItemClosure
@@ -30,6 +31,7 @@ __all__ = [
     "ActionItem",
     "Department",
     "Event",
+    "GpuLease",
     "ItemSupersession",
     "ItemClosure",
     "Job",

@@ -304,7 +304,7 @@ def test_listed_meeting_actions_succeed_and_unlisted_are_rejected(env, team):
     assert "end_meeting" in detail(env, lead, mid)["allowedActions"]
     assert call(env, "POST", lead, f"/api/meetings/{mid}/end", json={"reason": "r"}).status_code == 200
     ended = detail(env, lead, mid)["allowedActions"]
-    assert ended == ordered(BASE + ["resolve_change_request", "delete_meeting"])
+    assert ended == ordered(BASE + ["resolve_change_request", "delete_meeting", "ask_meeting"])  # 종료된 회의록도 열람·질문은 가능
     for method, path, body in (
         ("PATCH", "minutes", {"purpose": "z"}), ("POST", "action-items", {"title": "t"}), ("PUT", "speakers", {"speakers": []}),
         ("POST", "hold", {"reason": "r"}),  # (이미 종료된 회의록의 직권 종료는 멱등 200 이라 거부 목록에서 뺀다)

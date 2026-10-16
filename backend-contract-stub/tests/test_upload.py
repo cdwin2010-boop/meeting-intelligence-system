@@ -216,3 +216,52 @@ def test_engine_test_endpoints_are_rejected_like_a_server_with_test_mode_off():
     ):
         r = call()
         assert r.status_code == 403 and r.json()["detail"] == expected
+
+
+# ---------------- 회의록 질의응답 (작업 89-1, docs/contracts/meeting-chat-v1.json) ----------------
+def _seed_id() -> str:
+    return client.get("/api/meetings").json()[0]["id"]
+
+
+def _sse_events(text: str) -> list[tuple[str, dict]]:
+    import json as _json
+
+    out = []
+    for block in text.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.splitlines())
+        out.append((lines["event"], _json.loads(lines["data"])))
+    return out
+
+
+def test_chat_stream_follows_contract_event_order_and_fields():
+    from app.routers.api import reset_chat_rate_limit
+
+    reset_chat_rate_limit()
+    mid = _seed_id()
+    r = client.post(f"/api/meetings/{mid}/chat", json={"question": "결정사항은?", "history": [], "quickPrompt": None})
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
+    evs = _sse_events(r.text)
+    names = [n for n, _ in evs]
+    assert names[0] == "meta" and names[-1] == "done" and "citations" in names and "delta" in names
+    assert set(evs[0][1]) == {"requestId", "contextMode", "model", "confirmedPendingIncluded"}
+    assert set(evs[-1][1]) == {"grounded", "noAnswer", "elapsedMs"}
+    cites = next(d for n, d in evs if n == "citations")["items"]
+    assert all(set(c) == {"refId", "utteranceId", "speaker", "startSec", "label"} for c in cites)
+
+
+def test_chat_errors_match_contract():
+    from app.routers.api import reset_chat_rate_limit
+
+    reset_chat_rate_limit()
+    mid = _seed_id()
+    url = f"/api/meetings/{mid}/chat"
+    assert client.post("/api/meetings/nope/chat", json={"question": "a"}).status_code == 404
+    assert client.post(url, json={"question": ""}).status_code == 422
+    assert client.post(url, json={"question": "가" * 501}).status_code == 422
+    assert client.post(url, json={"question": "a", "history": [{}] * 5}).status_code == 422
+    assert client.post(url, json={"question": "a", "quickPrompt": "weather"}).status_code == 422
+    for _ in range(10):
+        assert client.post(url, json={"question": "a"}).status_code == 200
+    limited = client.post(url, json={"question": "a"})
+    assert limited.status_code == 429 and int(limited.headers["retry-after"]) >= 1
+    reset_chat_rate_limit()
