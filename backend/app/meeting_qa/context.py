@@ -36,6 +36,8 @@ class Source:
     utterance_id: int | None = None
     speaker: str = ""
     start_sec: float | None = None
+    meeting_id: int | None = None  # 프로젝트 범위(작업 89-2b)에서만 채운다: 근거가 속한 회의록
+    meeting_title: str = ""
 
 
 @dataclass
@@ -112,31 +114,8 @@ def _item_line(item: ActionItem, names: dict[int, str]) -> str:
     return f"업무: {sanitize(item.title) or '(제목 없음)'} / 담당 {who} / {due} / 상태 {state}"
 
 
-def build_context(session: Session, meeting: Meeting, account: Account, question: str, quick_prompt: str | None) -> QaContext:
-    budget = int(settings.qa_context_tokens / settings.qa_tokens_per_char)
-    ctx = QaContext(budget_chars=budget)
-    utterances = _utterances(session, meeting)
-    minutes = session.get(MeetingMinutes, meeting.id)
-
-    # ---- 1차 후보 ----
-    primary: list[dict] = []
-    if minutes is not None:
-        for field_name, title in MINUTES_FIELDS.items():
-            value = (getattr(minutes, field_name) or "").strip()
-            if value and value != NO_CONTENT:
-                primary.append({"kind": "minutes", "text": f"{title}: {sanitize(value)}", "label": f"회의록·{title}", "field": field_name})
-    # 삭제·대체된 업무는 뺀다(업무 상태 판정은 item_conditions 한 곳)
-    items = session.scalars(select(ActionItem).where(ActionItem.meeting_id == meeting.id, live_item(), not_deleted_item()).order_by(ActionItem.id)).all()
-    names: dict[int, str] = {}
-    ids = {i.assignee_id for i in items if i.assignee_id}
-    if ids:
-        names = {a.id: a.name for a in session.scalars(select(Account).where(Account.id.in_(ids)))}
-    for item in items:
-        uid = _nearest_utterance(utterances, item.evidence_start_sec)
-        primary.append(
-            {"kind": "item", "text": _item_line(item, names), "label": f"업무·{sanitize(item.title)[:20]}", "item": item, "utterance": uid}
-        )
-
+def rank_and_choose(primary: list[dict], question: str, quick_prompt: str | None, account: Account, budget: int) -> tuple[list[dict], int]:
+    """1차 후보를 정렬하고 글자 예산 안에서 고른다. 회의 1건(build_context)과 프로젝트(project_context)가 같은 규칙을 쓴다."""
     # ---- 순서: 빠른 질문은 해당 종류를 앞에, 그 밖은 BM25 관련도 순(같으면 원래 순서) ----
     if quick_prompt == "decisions":
         key = [(0 if p.get("field") == "decisions" else 1 if p["kind"] == "minutes" else 2, 0.0) for p in primary]
@@ -168,6 +147,36 @@ def build_context(session: Session, meeting: Meeting, account: Account, question
             text = text[: room - 1] + "…"
         chosen.append({**p, "text": text})
         used += len(text)
+
+    return chosen, used
+
+
+def build_context(session: Session, meeting: Meeting, account: Account, question: str, quick_prompt: str | None) -> QaContext:
+    budget = int(settings.qa_context_tokens / settings.qa_tokens_per_char)
+    ctx = QaContext(budget_chars=budget)
+    utterances = _utterances(session, meeting)
+    minutes = session.get(MeetingMinutes, meeting.id)
+
+    # ---- 1차 후보 ----
+    primary: list[dict] = []
+    if minutes is not None:
+        for field_name, title in MINUTES_FIELDS.items():
+            value = (getattr(minutes, field_name) or "").strip()
+            if value and value != NO_CONTENT:
+                primary.append({"kind": "minutes", "text": f"{title}: {sanitize(value)}", "label": f"회의록·{title}", "field": field_name})
+    # 삭제·대체된 업무는 뺀다(업무 상태 판정은 item_conditions 한 곳)
+    items = session.scalars(select(ActionItem).where(ActionItem.meeting_id == meeting.id, live_item(), not_deleted_item()).order_by(ActionItem.id)).all()
+    names: dict[int, str] = {}
+    ids = {i.assignee_id for i in items if i.assignee_id}
+    if ids:
+        names = {a.id: a.name for a in session.scalars(select(Account).where(Account.id.in_(ids)))}
+    for item in items:
+        uid = _nearest_utterance(utterances, item.evidence_start_sec)
+        primary.append(
+            {"kind": "item", "text": _item_line(item, names), "label": f"업무·{sanitize(item.title)[:20]}", "item": item, "utterance": uid}
+        )
+
+    chosen, used = rank_and_choose(primary, question, quick_prompt, account, budget)
 
     # ---- 2차: 필요할 때만(빠른 질문이 아니고, 질문이 1차 자료에 충분히 들어 있지 않을 때) ----
     excerpts: list[dict] = []

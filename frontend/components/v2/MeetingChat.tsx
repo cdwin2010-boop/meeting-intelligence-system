@@ -1,20 +1,23 @@
 "use client";
 
 /*
- * 회의록 질의응답 서랍 (작업 89-2a, 계약 docs/contracts/meeting-chat-v1.json)
- * - 열기 버튼은 서버가 준 허용 동작 ask_meeting 이 있을 때만 그린다(직급을 다시 판단하지 않는다).
+ * 회의록 질의응답 서랍 (작업 89-2a, 계약 docs/contracts/meeting-chat-v1.json) · 프로젝트 질의응답(작업 89-2b, project-chat-v1.json)에도 같은 창을 쓴다.
+ * - 열기 버튼은 서버가 준 허용 동작(회의록 ask_meeting / 프로젝트 ask_project)이 있을 때만 그린다(직급을 다시 판단하지 않는다).
+ * - scope="project" 이면 범위 표시는 프로젝트명, 근거는 회의록 제목과 함께 그 회의록으로 이동하는 링크다(같은 탭, 대화는 화면 메모리에만 있어 이동하면 사라진다).
  * - PC: 오른쪽 서랍, 모바일: 바텀시트. 뒤 화면(전사문)을 계속 누를 수 있는 비모달 창이다(근거를 눌러 전사문으로 이동하려고).
  * - 답변은 서버가 검증을 마친 뒤 한 번에 오므로 "근거 확인 중" 다음에 완성된 답변을 보인다.
  * - 질문·답변은 이 컴포넌트의 메모리에만 있다(최대 4턴). 저장소·콘솔 로그에 남기지 않고 새로고침하면 사라진다.
  * - 서랍을 닫으면 진행 중 요청을 중단하고, 같은 회의록 안에서는 대화를 유지한다. 회의록이 바뀌면(key) 통째로 사라진다.
  */
+import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { Badge, Button } from "@/components/mono";
-import { can, MEETING_ACTION } from "@/lib/v2/actions";
+import { can, MEETING_ACTION, PROJECT_ACTION } from "@/lib/v2/actions";
 import { isAbortError } from "@/lib/v2/errors";
 import {
   askMeeting,
+  askProject,
   chatErrorText,
   ChatError,
   HISTORY_MAX_TURNS,
@@ -23,6 +26,7 @@ import {
   type ChatAnswer,
   type ChatCitation,
   type ChatErrorText,
+  type ChatScope,
   type QuickPrompt,
 } from "@/lib/v2/meeting-chat";
 
@@ -40,14 +44,22 @@ interface Turn {
 }
 
 interface MeetingChatProps {
+  /** 회의록 ID(scope="meeting") 또는 프로젝트 ID(scope="project") */
   meetingId: number;
-  /** 서버가 내려준 회의록 단위 허용 동작 */
+  /** 질의 범위. 기본은 회의록 1건 */
+  scope?: ChatScope;
+  /** 범위 표시에 쓰는 프로젝트명(scope="project") */
+  scopeName?: string;
+  /** 서버가 내려준 허용 동작(회의록 상세 또는 프로젝트 상세 응답) */
   allowed: readonly string[] | undefined;
-  /** 근거(발화) 클릭: 전사문 위치 이동과 음성 이동은 부모가 한다 */
-  onCitation: (citation: ChatCitation, trigger: HTMLElement) => void;
+  /** 근거(발화) 클릭: 전사문 위치 이동과 음성 이동은 부모가 한다(회의 1건 범위에서만 쓴다) */
+  onCitation?: (citation: ChatCitation, trigger: HTMLElement) => void;
 }
 
-function CitationList({ citations, onCitation }: { citations: ChatCitation[]; onCitation: MeetingChatProps["onCitation"] }) {
+/** 프로젝트 질의의 근거가 가리키는 회의록 주소(시각이 있으면 전사문의 그 위치로 열린다) */
+const citationHref = (c: ChatCitation) => `/v2/meetings/${c.meetingId}${c.startSec !== null ? `?evidence=${Math.floor(c.startSec)}` : ""}`;
+
+function CitationList({ citations, onCitation }: { citations: ChatCitation[]; onCitation: (citation: ChatCitation, trigger: HTMLElement) => void }) {
   if (citations.length === 0) return null;
   return (
     <div className="mt-3 flex flex-col gap-2">
@@ -55,7 +67,17 @@ function CitationList({ citations, onCitation }: { citations: ChatCitation[]; on
       <ul aria-label="근거 목록" className="flex flex-wrap gap-2">
         {citations.map((c, index) => (
           <li key={`${c.refId}-${index}`}>
-            {c.startSec !== null ? (
+            {c.meetingId != null ? (
+              // 프로젝트 질의: 해당 회의록으로 이동한다(로그인 토큰이 탭 단위 sessionStorage 라 새 탭이 아니라 같은 탭에서 연다. 대화는 화면 메모리에만 있어 돌아오면 사라진다)
+              <Link
+                href={citationHref(c)}
+                data-testid="chat-citation"
+                title="해당 회의록으로 이동합니다(이 대화는 사라집니다)"
+                className="mn-focus inline-block rounded-mn-control border border-mn-control px-2 py-1 text-[13px] text-mn-text hover:bg-mn-elevated"
+              >
+                {c.label}
+              </Link>
+            ) : c.startSec !== null ? (
               <button
                 type="button"
                 data-testid="chat-citation"
@@ -76,7 +98,8 @@ function CitationList({ citations, onCitation }: { citations: ChatCitation[]; on
   );
 }
 
-export function MeetingChat({ meetingId, allowed, onCitation }: MeetingChatProps) {
+export function MeetingChat({ meetingId, scope = "meeting", scopeName = "", allowed, onCitation }: MeetingChatProps) {
+  const project = scope === "project";
   const panelId = useId();
   const [open, setOpen] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -129,7 +152,8 @@ export function MeetingChat({ meetingId, allowed, onCitation }: MeetingChatProps
       setNotice(null);
       try {
         const history = turnsRef.current.slice(-HISTORY_MAX_TURNS).map((t) => ({ question: t.question.slice(0, 1000), answer: t.answer.text.slice(0, 1000) }));
-        const answer = await askMeeting(meetingId, { question, history, quickPrompt }, controller.signal);
+        const ask = project ? askProject : askMeeting;
+        const answer = await ask(meetingId, { question, history, quickPrompt }, controller.signal);
         const turn: Turn = { id: nextId.current++, question, answer };
         setTurns((prev) => [...prev, turn].slice(-HISTORY_MAX_TURNS));
         setInput("");
@@ -137,7 +161,7 @@ export function MeetingChat({ meetingId, allowed, onCitation }: MeetingChatProps
         if (isAbortError(e)) {
           setNotice("질문을 취소했습니다.");
         } else {
-          setError(chatErrorText(e instanceof ChatError ? e : new ChatError("status", "질문을 처리하지 못했습니다.")));
+          setError(chatErrorText(e instanceof ChatError ? e : new ChatError("status", "질문을 처리하지 못했습니다."), scope));
         }
         setInput(question); // 다시 시도할 수 있게 입력을 돌려놓는다
       } finally {
@@ -145,7 +169,7 @@ export function MeetingChat({ meetingId, allowed, onCitation }: MeetingChatProps
         setPending(false);
       }
     },
-    [meetingId],
+    [meetingId, project, scope],
   );
 
   const close = useCallback(() => {
@@ -154,13 +178,13 @@ export function MeetingChat({ meetingId, allowed, onCitation }: MeetingChatProps
     openerRef.current?.focus(); // 닫으면 여는 버튼으로 포커스 복귀
   }, [cancel]);
 
-  if (!can(allowed, MEETING_ACTION.askMeeting)) return null;
+  if (!can(allowed, project ? PROJECT_ACTION.askProject : MEETING_ACTION.askMeeting)) return null;
 
   const length = questionLength(input);
   const tooLong = length > QUESTION_MAX;
 
   function handleCitation(citation: ChatCitation, trigger: HTMLElement) {
-    onCitation(citation, trigger);
+    onCitation?.(citation, trigger);
     // 좁은 화면에서는 시트가 전사문을 가리므로 접는다(대화는 유지)
     if (window.matchMedia("(max-width: 767px)").matches) {
       cancel();
@@ -183,7 +207,7 @@ export function MeetingChat({ meetingId, allowed, onCitation }: MeetingChatProps
         <section
           id={panelId}
           role="dialog"
-          aria-label="회의록 질의응답"
+          aria-label={project ? "프로젝트 질의응답" : "회의록 질의응답"}
           data-testid="chat-panel"
           onKeyDown={(event) => {
             if (event.key === "Escape") {
@@ -195,8 +219,8 @@ export function MeetingChat({ meetingId, allowed, onCitation }: MeetingChatProps
         >
           <header className="flex items-center justify-between gap-3 border-b border-mn-border px-4 py-3">
             <div className="flex flex-col gap-1">
-              <h2 className="text-base font-semibold tracking-tight text-mn-text">회의록 질문</h2>
-              <Badge>범위: 이 회의록</Badge>
+              <h2 className="text-base font-semibold tracking-tight text-mn-text">{project ? "프로젝트 질문" : "회의록 질문"}</h2>
+              <Badge>{project ? `범위: 프로젝트 ${scopeName || "(이름 없음)"}` : "범위: 이 회의록"}</Badge>
             </div>
             <Button size="sm" onClick={close} className="max-md:min-h-11">
               닫기
@@ -205,7 +229,11 @@ export function MeetingChat({ meetingId, allowed, onCitation }: MeetingChatProps
 
           <div ref={listRef} className="flex min-h-[160px] flex-1 flex-col gap-4 overflow-y-auto px-4 py-4" aria-live="polite">
             {turns.length === 0 && !pending && !error ? (
-              <p className="text-sm text-mn-muted">이 회의록의 요약·결정·업무를 근거로 답합니다. 아래 추천 질문을 누르거나 직접 질문해 보세요.</p>
+              <p className="text-sm text-mn-muted">
+                {project
+                  ? "이 프로젝트에 속한 회의록의 요약·결정·업무를 근거로 답합니다. 아래 추천 질문을 누르거나 직접 질문해 보세요."
+                  : "이 회의록의 요약·결정·업무를 근거로 답합니다. 아래 추천 질문을 누르거나 직접 질문해 보세요."}
+              </p>
             ) : null}
             {turns.map((turn) => (
               <div key={turn.id} className="flex flex-col gap-2" data-testid="chat-turn">
@@ -257,7 +285,11 @@ export function MeetingChat({ meetingId, allowed, onCitation }: MeetingChatProps
                 </li>
               ))}
             </ul>
-            <p className="text-[13px] text-mn-muted">이 회의록 안의 내용만 답변합니다. 다른 회의나 프로젝트 전체에 대한 질문은 답하지 않습니다.</p>
+            <p className="text-[13px] text-mn-muted">
+              {project
+                ? "이 프로젝트에 속한 회의록 안의 내용만 답변합니다. 다른 프로젝트나 회의록 밖의 내용은 답하지 않습니다."
+                : "이 회의록 안의 내용만 답변합니다. 다른 회의나 프로젝트 전체에 대한 질문은 답하지 않습니다."}
+            </p>
             <form
               className="flex flex-col gap-2"
               onSubmit={(event) => {
@@ -283,7 +315,7 @@ export function MeetingChat({ meetingId, allowed, onCitation }: MeetingChatProps
                     void send(input, null);
                   }
                 }}
-                placeholder="이 회의록에 대해 질문하세요"
+                placeholder={project ? "이 프로젝트에 대해 질문하세요" : "이 회의록에 대해 질문하세요"}
                 className="mn-focus w-full resize-none rounded-mn-control border border-mn-control bg-mn-bg px-3 py-2 text-sm text-mn-text outline-none placeholder:text-mn-muted disabled:opacity-50"
               />
               <div className="flex items-center justify-between gap-3">

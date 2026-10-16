@@ -5,6 +5,7 @@
 - 질문·답변 내용은 어디에도 저장하지 않는다(DB·이벤트·로그). 로그에는 요청ID·회의록ID·상태·소요시간만 남긴다.
 - 연결이 끊기거나 제한 시간을 넘으면 제너레이터를 닫아 추론(HTTP 스트림)을 취소하고 GPU 사용권을 푼다.
 """
+import asyncio
 import logging
 import time
 import uuid
@@ -99,7 +100,7 @@ _END = object()
 
 
 async def _event_stream(
-    *, request_id: str, meeting_id: int, llm: QaLlm, messages, ctx, factory: sessionmaker | None, lease_ref: int, started: float,
+    *, request_id: str, meeting_id: int, scope: str = "meeting", llm: QaLlm, messages, ctx, factory: sessionmaker | None, lease_ref: int, started: float,
     disconnected: Callable[[], Awaitable[bool]] | None = None,
 ) -> AsyncIterator[str]:
     """SSE 이벤트 생성. 추론은 스레드풀에서 조각 단위로 받고, 조각 사이마다 연결 끊김·제한 시간을 확인해 닫는다(추론 취소)."""
@@ -154,7 +155,7 @@ async def _event_stream(
                 gpu_lease.release(factory, gpu_lease.HOLDER_QA, lease_ref)
             except Exception as exc:  # noqa: BLE001 — 만료로 풀린다
                 log.warning("qa request=%s lease release failed: %s", request_id, type(exc).__name__)
-        log.info("qa request=%s meeting=%s status=%s elapsed_ms=%d", request_id, meeting_id, state, int((time.monotonic() - started) * 1000))
+        log.info("qa request=%s %s=%s status=%s elapsed_ms=%d", request_id, scope, meeting_id, state, int((time.monotonic() - started) * 1000))
 
 
 @router.post("/{meeting_id}/chat")

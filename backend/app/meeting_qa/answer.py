@@ -18,6 +18,9 @@ SYSTEM_PROMPT = (
     f"- 자료에서 답을 찾을 수 없으면 정확히 '{NO_ANSWER}' 라고만 답하세요. 추측하지 마세요.\n"
     "- 확정 전(상태 '확정 전') 업무는 확정되지 않았다고 밝혀 주세요."
 )
+PROJECT_SYSTEM_PROMPT = SYSTEM_PROMPT + (
+    "\n- <자료>는 한 프로젝트에 속한 여러 회의록의 내용입니다. 각 자료 앞의 [회의록 제목]으로 어느 회의의 내용인지 구분하고, 답에서 회의를 밝혀 주세요."
+)
 _REF = re.compile(r"\[\s*(S\d+(?:\s*[,，]\s*S\d+)*)\s*\]")
 _ONE = re.compile(r"S\d+")
 HISTORY_CHARS = 600
@@ -36,7 +39,16 @@ def mmss(sec: float) -> str:
 
 
 def display(src: Source) -> str:
-    """근거 표시: 발화는 "[화자/MM:SS]", 요약·업무 근거는 라벨."""
+    """근거 표시: 발화는 "[화자/MM:SS]", 요약·업무 근거는 라벨. 프로젝트 범위(회의록 제목이 있는 근거)는 "[회의록 제목·…]" 로 어느 회의인지 밝힌다."""
+    inner = _display_inner(src)
+    if not inner:
+        return ""
+    if src.meeting_title:
+        return f"[{src.meeting_title}·{inner[1:-1]}]"
+    return inner
+
+
+def _display_inner(src: Source) -> str:
     if src.kind == "utterance" or (src.kind == "item" and src.utterance_id is not None):
         parts = [p for p in (src.speaker, mmss(src.start_sec) if src.start_sec is not None else "") if p]
         if parts:
@@ -44,8 +56,8 @@ def display(src: Source) -> str:
     return f"[{src.label}]" if src.label else ""
 
 
-def build_messages(ctx: QaContext, question: str, history: list[tuple[str, str]]) -> list[dict[str, str]]:
-    messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+def build_messages(ctx: QaContext, question: str, history: list[tuple[str, str]], system: str = SYSTEM_PROMPT) -> list[dict[str, str]]:
+    messages: list[dict[str, str]] = [{"role": "system", "content": system}]
     for q, a in history[-4:]:
         messages.append({"role": "user", "content": sanitize(q)[:HISTORY_CHARS]})
         messages.append({"role": "assistant", "content": sanitize(a)[:HISTORY_CHARS]})
@@ -83,7 +95,11 @@ def sse(event: str, data: dict) -> str:
 
 
 def citation_item(src: Source) -> dict:
-    return {
+    item = {
         "refId": src.ref_id, "utteranceId": src.utterance_id, "speaker": src.speaker,
         "startSec": src.start_sec, "label": display(src).strip("[]") or src.label,
     }
+    if src.meeting_id is not None:  # 프로젝트 범위: 화면이 그 회의록으로 이동할 수 있게(회의 1건 응답은 그대로)
+        item["meetingId"] = src.meeting_id
+        item["meetingTitle"] = src.meeting_title
+    return item

@@ -20,6 +20,7 @@ import { AddMemberDialog, ChangeLeadDialog } from "@/components/v2/ProjectDialog
 import { ReasonDialog, type ReasonAction } from "@/components/v2/ReasonDialog";
 import { detailPath, formatDateTime, meetingStatus, phaseText } from "@/components/v2/meeting-display";
 import { can, PROJECT_ACTION } from "@/lib/v2/actions";
+import { MeetingChat } from "@/components/v2/MeetingChat";
 import { ApiError, isAbortError } from "@/lib/v2/errors";
 import type { MeetingListPage } from "@/lib/v2/meetings";
 import {
@@ -302,6 +303,8 @@ export default function V2ProjectDetailPage() {
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {/* 프로젝트 질의(작업 89-2b): 서버가 준 허용 동작 ask_project 일 때만 보인다 */}
+            <MeetingChat key={`chat-${project.id}`} scope="project" meetingId={project.id} scopeName={project.name} allowed={project.allowedActions ?? undefined} />
             {canApprove ? (
               <Button size="sm" variant="primary" disabled={approving} onClick={() => void onApprove()}>
                 승인

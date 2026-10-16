@@ -366,6 +366,25 @@ def test_disconnect_cancels_inference_and_releases_lease(env, team, meeting_id):
     assert gpu_lease.current(f) is None
 
 
+def test_closing_the_stream_midway_releases_lease_without_name_error(env, team, meeting_id):
+    """스트림을 도중에 닫으면(GeneratorExit) 취소 처리 분기가 NameError 없이 끝나고 사용권을 푼다(작업 89-2b: asyncio import 누락 수정)."""
+    llm = GpuFake(delay=0.0, chunk=2, responder=lambda m: "가" * 400)
+    f = env["factory"]
+    ok, _ = gpu_lease.acquire(f, gpu_lease.HOLDER_QA, 6, 60)
+    assert ok
+    with f() as s:
+        ctx = build_context(s, s.get(Meeting, meeting_id), team["staff"], "견적서", None)
+
+    async def drive() -> None:
+        gen = _event_stream(request_id="r2", meeting_id=meeting_id, llm=llm, messages=[{"role": "user", "content": "x"}],
+                            ctx=ctx, factory=f, lease_ref=6, started=time.monotonic())
+        assert (await gen.__anext__()).startswith("event: meta")
+        await gen.aclose()  # 연결이 끊겨 서버가 제너레이터를 닫는 상황
+
+    asyncio.run(drive())  # 수정 전에는 여기서 NameError: name 'asyncio' is not defined
+    assert gpu_lease.current(f) is None
+
+
 def test_timeout_emits_error_and_cancels(env, team, meeting_id, monkeypatch):
     monkeypatch.setattr(settings, "qa_timeout_seconds", 0.05)
     llm = use_llm(FakeQaLlm(delay=0.03, chunk=1, responder=lambda m: "느린 답변 " * 20))

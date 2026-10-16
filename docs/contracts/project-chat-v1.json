@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "project-chat-v1",
+  "title": "project-chat-v1: 프로젝트 질의응답(프로젝트 1건, 작업 89-2b)",
+  "description": "POST /api/projects/{project_id}/chat — 프로젝트 상세 화면의 질문 1건에 대해 그 프로젝트에 연결된 회의록(요청자가 열람 가능·삭제되지 않음·정리된 회의록 있음, 최근 QA_PROJECT_MAX_MEETINGS 건)의 요약·결정·업무만 근거로 답한다. 요청·응답(SSE: meta → delta* → citations → done | error)·사용량 제한·GPU 사용권·'저장 안 함' 정책은 meeting-chat-v1 과 같다. 범위(어느 회의록을 자료로 쓰는가)는 서버가 프로젝트 ID 로 정하며 요청 본문으로 바꿀 수 없다(알 수 없는 필드는 무시). 발화 발췌(2차)는 쓰지 않는다. '내 업무로 등록'은 이번 범위가 아니라 API 가 없다. Gemini 등 질의를 지원하지 않는 엔진은 503 llm_unavailable. 원본: backend/app/api/project_chat.py, backend/app/meeting_qa/project_context.py.",
+  "request": {"method": "POST", "path": "/api/projects/{project_id}/chat", "body": "meeting-chat-v1 의 request.body 와 같다(question 1~500자, history 최대 4턴, quickPrompt decisions|my_tasks|schedule|null)"},
+  "errorsBeforeStream": {
+    "401": "로그인 필요",
+    "404": "프로젝트가 없거나 열람 권한이 없음(존재 여부를 알려 주지 않는다), 또는 질의 기능이 꺼져 있음(QA_ENABLED=false)",
+    "409": "질문할 수 있는(정리된) 회의록이 이 프로젝트에 아직 없음",
+    "422": "질문 길이·history·quickPrompt 값 오류",
+    "429": "사용량 제한(계정당 분당, 회의 질의와 같은 한도를 함께 쓴다). Retry-After 헤더(초)",
+    "503": "답변 엔진 없음(detail.code=llm_unavailable) 또는 GPU 사용 중(detail.code=gpu_busy, Retry-After). Retry-After 는 CORS 로 노출된다"
+  },
+  "responseDifferences": {
+    "citations.items[]": "meeting-chat-v1 의 필드에 meetingId(integer)·meetingTitle(string)이 더해진다. 화면은 meetingId 로 해당 회의록 상세로 이동한다. label 은 '회의록 제목·화자/MM:SS' 또는 '회의록 제목·회의록·결정사항' 형태",
+    "delta.text": "근거 표기는 '[회의록 제목·화자/MM:SS]' 처럼 어느 회의인지 포함",
+    "meta.confirmedPendingIncluded": "확정 전 업무 또는 확정 대기 회의록의 내용이 자료에 들어 있으면 true",
+    "meta.contextMode": "항상 summary"
+  },
+  "allowedActions": {
+    "ask_project": "프로젝트 상세 응답(GET /api/projects/{id})의 allowedActions 에 서버가 넣는다(열람 가능·질문 가능한 회의록이 1건 이상·QA_ENABLED). 화면은 이 값만 보고 질문 버튼을 그린다"
+  },
+  "fixedAnswer": "본 회의록에서 확인할 수 없는 내용입니다",
+  "settings": {"QA_PROJECT_MAX_MEETINGS": "자료로 쓰는 최근 회의록 수 상한, 기본 30", "그 밖": "meeting-chat-v1 의 QA_* 설정을 그대로 쓴다"},
+  "migration": "없음"
+}

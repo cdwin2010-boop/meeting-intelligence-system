@@ -47,6 +47,8 @@ export const PROJECT_ACTION = {
   rejectProject: "reject_project",
   /** 반려 되돌리기(작업 A-1): 반려된 프로젝트를 승인 대기로. 등록 부서의 부서장만 */
   revertRejection: "revert_rejection",
+  /** 프로젝트 질의응답(작업 89-2b): 질문 버튼. 서버가 판단하며 화면은 이 값만 본다 */
+  askProject: "ask_project",
 } as const;
 
 export type ProjectActionName = (typeof PROJECT_ACTION)[keyof typeof PROJECT_ACTION];

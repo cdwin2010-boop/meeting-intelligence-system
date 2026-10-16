@@ -30,7 +30,7 @@
  * - 다른 회의록으로 바뀌거나 화면을 떠나면 이전 요청은 AbortController 로 취소한다
  */
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { meetingTypeLabel } from "@/lib/v2/meeting-types";
 import { isManager } from "@/lib/v2/types";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
@@ -995,6 +995,15 @@ export default function V2MeetingDetailPage() {
   }, []);
   const controllerRef = useRef<AbortController | null>(null);
   const changeRequests = useChangeRequests(meetingId);
+  // 프로젝트 질의의 근거 링크(?evidence=초): 회의록을 연 뒤 한 번만 전사문을 펼쳐 그 위치로 이동한다(작업 89-2b)
+  const evidenceSec = parseSeconds(useSearchParams()?.get("evidence"));
+  const evidenceHandled = useRef(false);
+  const meetingReady = state.kind === "ready";
+  useEffect(() => {
+    if (evidenceHandled.current || !meetingReady || evidenceSec === null) return;
+    evidenceHandled.current = true;
+    setDeepLink((prev) => ({ sec: evidenceSec, quote: "", nonce: (prev?.nonce ?? 0) + 1 }));
+  }, [meetingReady, evidenceSec]);
 
   const load = useCallback(async () => {
     controllerRef.current?.abort();

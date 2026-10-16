@@ -4,20 +4,22 @@
  * - manage_members: 진행 중이고 lead 역할 참여자
  * - approve_project / reject_project: 승인 대기이고 등록 부서의 부서장(승인자)
  * - revert_rejection: 반려됐고 등록 부서의 부서장(승인자, 작업 A-1)
+ * - ask_project: 질문할 수 있는(정리된) 회의록이 1건 이상(작업 89-2b). 가짜 서버는 회의록을 세지 않으므로 askable 로 알려 준다(기본 false)
  */
 interface Member { accountId: number; role: string }
 interface ProjectLike { status: string; lead?: { id: number } | null; members: Member[] }
 
-export function projectActions(project: ProjectLike, account: { id: number; rank: string }, approverId: number | null = null): string[] {
+export function projectActions(project: ProjectLike, account: { id: number; rank: string }, approverId: number | null = null, askable = false): string[] {
   const out: string[] = [];
   if (project.status === "active" && (account.rank === "executive" || project.lead?.id === account.id)) out.push("change_lead");
   if (project.status === "active" && project.members.some((m) => m.accountId === account.id && m.role === "lead")) out.push("manage_members");
   if (project.status === "pending_approval" && approverId === account.id) out.push("approve_project", "reject_project");
   if (project.status === "rejected" && approverId === account.id) out.push("revert_rejection");
+  if (askable) out.push("ask_project");
   return out;
 }
 
 /** 상세 응답에 허용 동작을 붙인 복사본 */
-export function withProjectActions<T extends ProjectLike>(project: T, account: { id: number; rank: string }, approverId: number | null = null): T & { allowedActions: string[] } {
-  return { ...project, allowedActions: projectActions(project, account, approverId) };
+export function withProjectActions<T extends ProjectLike>(project: T, account: { id: number; rank: string }, approverId: number | null = null, askable = false): T & { allowedActions: string[] } {
+  return { ...project, allowedActions: projectActions(project, account, approverId, askable) };
 }

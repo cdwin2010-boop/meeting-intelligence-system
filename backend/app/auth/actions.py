@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.auth.access import VIEW_ALL_RANKS, can_confirm_meeting, can_write_item
 from app.auth.deps import has_rank
 from app.config import settings
-from app.meeting_qa.access import STATE_OK, ask_state
+from app.meeting_qa.access import STATE_OK, ask_state, project_askable_meetings
 from app.auth.locks import HOLDABLE_STATUSES, reject_if_locked
 from app.models import Account, ActionItem, Meeting, Project
 from app.models.closure import PHASES
@@ -58,7 +58,8 @@ MANAGE_MEMBERS = "manage_members"  # 참여자 추가·역할 변경·제거
 APPROVE_PROJECT = "approve_project"  # 프로젝트 승인(대기 중일 때)
 REJECT_PROJECT = "reject_project"  # 프로젝트 반려(대기 중일 때)
 REVERT_REJECTION = "revert_rejection"  # 반려 되돌리기(반려된 프로젝트, 등록 부서의 부서장·작업 A-1)
-PROJECT_ACTIONS = (CHANGE_LEAD, MANAGE_MEMBERS, APPROVE_PROJECT, REJECT_PROJECT, REVERT_REJECTION)
+ASK_PROJECT = "ask_project"  # 프로젝트 질의응답(작업 89-2b): 열람 가능한 프로젝트에 질문 가능한(정리된) 회의록이 있음
+PROJECT_ACTIONS = (CHANGE_LEAD, MANAGE_MEMBERS, APPROVE_PROJECT, REJECT_PROJECT, REVERT_REJECTION, ASK_PROJECT)
 
 MEETING_ACTIONS = (
     CONFIRM_MEETING, HOLD_MEETING, RESUME_MEETING, END_MEETING, DELETE_MEETING, EDIT_MINUTES, UPLOAD_UPDATE, ADD_ITEM,
@@ -158,6 +159,8 @@ def project_allowed_actions(session: Session, account: Account, project: Project
         allowed += [APPROVE_PROJECT, REJECT_PROJECT]
     if project.status == "rejected" and is_approver(session, account, project):
         allowed.append(REVERT_REJECTION)
+    if settings.qa_enabled and project_askable_meetings(session, account, project, limit=1):  # 질의 가능 여부는 서버가 판단한다(화면 재판단 금지)
+        allowed.append(ASK_PROJECT)
     return [name for name in PROJECT_ACTIONS if name in allowed]
 
 

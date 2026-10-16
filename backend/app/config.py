@@ -195,6 +195,7 @@ class Settings(BaseSettings):
     qa_max_output_tokens: int = Field(512, ge=16, le=4096)
     qa_timeout_seconds: float = Field(60, gt=0, le=600)  # 한 요청의 전체 제한 시간(초과하면 추론을 취소한다)
     qa_rate_limit_per_minute: int = Field(10, ge=1, le=600)  # 계정당 분당 질의 수(초과 429)
+    qa_project_max_meetings: int = Field(30, ge=1, le=200)  # 프로젝트 질의(작업 89-2b)에서 자료로 쓰는 최근 회의록 수 상한
     qa_primary_coverage_min: float = Field(0.6, ge=0, le=1)  # 질문이 1차(요약·결정·업무)에 이 비율 이상 들어 있으면 발췌를 쓰지 않는다
     # GPU 사용권(작업 89-1): 워커(STT·추출)가 쥐는 만료 시간(초)과, 질의가 쥐고 있을 때 워커가 기다리는 최대 시간(초)
     gpu_lease_worker_ttl_seconds: int = Field(3600, ge=30)

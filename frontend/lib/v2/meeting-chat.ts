@@ -25,8 +25,11 @@ export interface ChatCitation {
   speaker: string;
   /** 발화 시작 초. null 이면 전사문으로 이동할 수 없는 근거(요약·업무) */
   startSec: number | null;
-  /** 예: "화자2/01:15", "회의록·결정사항" */
+  /** 예: "화자2/01:15", "회의록·결정사항". 프로젝트 질의는 앞에 회의록 제목이 붙는다 */
   label: string;
+  /** 프로젝트 질의(작업 89-2b)에서만: 근거가 속한 회의록. 회의 1건 질의에는 없다 */
+  meetingId?: number | null;
+  meetingTitle?: string;
 }
 
 export interface ChatAnswer {
@@ -94,6 +97,8 @@ function readCitations(value: unknown): ChatCitation[] {
     speaker: typeof it.speaker === "string" ? it.speaker : "",
     startSec: typeof it.startSec === "number" && Number.isFinite(it.startSec) && it.startSec >= 0 ? it.startSec : null,
     label: typeof it.label === "string" ? it.label : "",
+    meetingId: typeof it.meetingId === "number" ? it.meetingId : null,
+    meetingTitle: typeof it.meetingTitle === "string" ? it.meetingTitle : "",
   }));
 }
 
@@ -143,10 +148,23 @@ async function errorFromResponse(response: Response): Promise<ChatError> {
   return new ChatError("status", message, response.status, retryAfterSec);
 }
 
-/** 질문 1건. 대화 이력은 호출자가 화면 메모리에서 넘긴다(최대 4턴, 서버는 저장하지 않는다) */
-export async function askMeeting(
-  meetingId: number,
-  input: { question: string; history: ChatHistoryTurn[]; quickPrompt: QuickPrompt | null },
+export type ChatScope = "meeting" | "project";
+
+/** 질문 1건(회의 1건 범위) */
+export const askMeeting = (meetingId: number, input: ChatInput, signal?: AbortSignal) => askChat(`/meetings/${meetingId}/chat`, input, signal);
+/** 질문 1건(프로젝트 범위, 작업 89-2b): 답변 근거는 서버가 프로젝트 ID 로 정한 그 프로젝트의 회의록뿐이다 */
+export const askProject = (projectId: number, input: ChatInput, signal?: AbortSignal) => askChat(`/projects/${projectId}/chat`, input, signal);
+
+export interface ChatInput {
+  question: string;
+  history: ChatHistoryTurn[];
+  quickPrompt: QuickPrompt | null;
+}
+
+/** 대화 이력은 호출자가 화면 메모리에서 넘긴다(최대 4턴, 서버는 저장하지 않는다) */
+async function askChat(
+  path: string,
+  input: ChatInput,
   signal?: AbortSignal,
 ): Promise<ChatAnswer> {
   const controller = new AbortController();
@@ -163,7 +181,7 @@ export async function askMeeting(
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
   try {
-    const response = await fetch(`${API_V2_BASE_URL}/meetings/${meetingId}/chat`, {
+    const response = await fetch(`${API_V2_BASE_URL}${path}`, {
       method: "POST",
       headers,
       cache: "no-store",
@@ -191,7 +209,7 @@ export interface ChatErrorText {
 }
 
 /** 실패 → 안내 문구(원인 한 줄 + 조치 한 줄). 질문·답변 원문은 들어가지 않는다 */
-export function chatErrorText(error: ChatError): ChatErrorText {
+export function chatErrorText(error: ChatError, scope: ChatScope = "meeting"): ChatErrorText {
   switch (error.kind) {
     case "gpu_busy":
       return {
@@ -214,7 +232,7 @@ export function chatErrorText(error: ChatError): ChatErrorText {
     case 403:
       return { cause: error.message, action: "삭제된 회의록에는 질문할 수 없습니다." };
     case 404:
-      return { cause: error.message, action: "회의록 목록에서 다시 열어 주세요." };
+      return { cause: error.message, action: scope === "project" ? "프로젝트 목록에서 다시 열어 주세요." : "회의록 목록에서 다시 열어 주세요." };
     case 422:
       return { cause: error.message, action: "질문을 확인한 뒤 다시 보내 주세요." };
     default:
