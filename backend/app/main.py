@@ -48,6 +48,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "PUT", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
     allow_credentials=False,
+    expose_headers=["Retry-After"],  # 질의 503 gpu_busy·429 의 남은 대기 초를 브라우저 코드가 읽게 한다(작업 89-2a)
 )
 app.include_router(auth.router)
 app.include_router(meetings.router)

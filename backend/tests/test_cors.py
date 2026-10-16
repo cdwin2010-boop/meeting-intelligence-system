@@ -32,6 +32,13 @@ def test_simple_request_from_allowed_origin_gets_header():
     assert res.status_code == 200 and res.headers["access-control-allow-origin"] == ALLOWED
 
 
+def test_retry_after_header_is_exposed_to_allowed_origin():
+    # 브라우저 코드가 Retry-After(질의 503 gpu_busy·429)를 읽으려면 서버가 노출해야 한다
+    res = TestClient(app).get("/api/health", headers={"Origin": ALLOWED})
+    exposed = {h.strip().lower() for h in res.headers["access-control-expose-headers"].split(",")}
+    assert "retry-after" in exposed
+
+
 @pytest.mark.parametrize("origin", ["http://evil.example.com", "http://localhost:3001"])
 def test_disallowed_origin_gets_no_allow_origin(origin):
     assert "access-control-allow-origin" not in preflight(origin).headers

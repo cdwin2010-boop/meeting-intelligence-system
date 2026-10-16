@@ -208,14 +208,14 @@ def test_registered_at_is_recorded_by_server_and_returned_in_list_and_detail():
 
 # ---------------- 엔진 시험 모드 (작업 91-1, docs/contracts/engine-test-v1.json) ----------------
 def test_engine_test_endpoints_are_rejected_like_a_server_with_test_mode_off():
-    expected = "엔진 시험 모드가 아니어서 사용할 수 없습니다"
+    expected = "Not Found"  # 운영 백엔드와 같은 404(작업 89-2a: 403→404 정렬, 사용자 승인)
     for call in (
         lambda: client.get("/api/admin/engine-test/remote"),
         lambda: client.put("/api/admin/engine-test/remote", json={"baseUrl": "http://x.test/v1", "model": "m", "timeoutSeconds": 30}),
         lambda: client.post("/api/admin/engine-test/remote/load-test"),
     ):
         r = call()
-        assert r.status_code == 403 and r.json()["detail"] == expected
+        assert r.status_code == 404 and r.json()["detail"] == expected
 
 
 # ---------------- 회의록 질의응답 (작업 89-1, docs/contracts/meeting-chat-v1.json) ----------------

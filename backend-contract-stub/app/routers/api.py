@@ -289,15 +289,15 @@ async def meeting_chat(meeting_id: str, request: Request):
 
 
 # ---------------- 엔진 시험 모드 (작업 91-1, docs/contracts/engine-test-v1.json) ----------------
-# 스텁은 시험 모드가 항상 꺼진 서버처럼 동작한다: 원격 엔진 설정·로딩 테스트 요청은 운영 백엔드와 같은 사유로 403 이다.
-ENGINE_TEST_OFF_MESSAGE = "엔진 시험 모드가 아니어서 사용할 수 없습니다"
+# 스텁은 시험 모드가 항상 꺼진 서버처럼 동작한다: 원격 엔진 설정·로딩 테스트 요청은 운영 백엔드와 같이 없는 API 처럼 404 로 거부한다(작업 L-5·89-2a 정렬).
+ENGINE_TEST_OFF_MESSAGE = "Not Found"
 
 
 @router.get("/admin/engine-test/remote")
 @router.put("/admin/engine-test/remote")
 @router.post("/admin/engine-test/remote/load-test")
 def engine_test_disabled():
-    raise HTTPException(status_code=403, detail=ENGINE_TEST_OFF_MESSAGE)
+    raise HTTPException(status_code=404, detail=ENGINE_TEST_OFF_MESSAGE)
 
 
 # ---------------- 관리자 API (v1.7 스텁: 인증 없음 → 운영에서는 서버 권한 검증 필수) ----------------

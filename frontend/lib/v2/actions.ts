@@ -22,6 +22,8 @@ export const MEETING_ACTION = {
   requestChange: "request_change",
   downloadExcel: "download_excel",
   viewHistory: "view_history",
+  /** 회의록 질의응답(작업 89-2a): 질문창 열기 버튼. 서버가 판단하며 화면은 이 값만 본다 */
+  askMeeting: "ask_meeting",
 } as const;
 
 /** 업무 단위 동작(상세 응답의 각 업무 allowedActions. 다른 응답에서는 null) */

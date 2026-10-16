@@ -68,6 +68,7 @@ import { AssigneeDialog } from "@/components/v2/AssigneeDialog";
 import { ChangeRequestDialog, type ChangeRequestTarget } from "@/components/v2/ChangeRequestDialog";
 import { useChangeRequests } from "@/components/v2/ChangeRequestHistory";
 import { MeetingActions, type MeetingActionKind } from "@/components/v2/MeetingActions";
+import { MeetingChat } from "@/components/v2/MeetingChat";
 import { MeetingConfirmButton } from "@/components/v2/MeetingConfirmButton";
 import { ReasonDialog, type ReasonAction } from "@/components/v2/ReasonDialog";
 import { SimilarItemsDialog } from "@/components/v2/SimilarItemsDialog";
@@ -1318,6 +1319,17 @@ export default function V2MeetingDetailPage() {
           {can(meeting.allowedActions, MEETING_ACTION.confirmMeeting) ? (
             <MeetingConfirmButton meetingId={meeting.id} title={meeting.title} onConfirmed={onMeetingConfirmed} />
           ) : null}
+          {/* 질의 서랍(작업 89-2a): 근거를 누르면 전사문 위치로 이동하고, 음성이 있으면 그 시각으로 이동한다 */}
+          <MeetingChat
+            key={`chat-${meeting.id}`}
+            meetingId={meeting.id}
+            allowed={meeting.allowedActions}
+            onCitation={(citation, trigger) => {
+              if (citation.startSec === null) return;
+              onViewTranscript(citation.startSec, trigger, "");
+              if (meeting.hasAudio !== false) onSeek(citation.startSec);
+            }}
+          />
           <MeetingActions allowed={meeting.allowedActions} onSelect={openMeetingAction} />
         </div>
       </header>

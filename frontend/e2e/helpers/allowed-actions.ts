@@ -16,7 +16,7 @@ export interface AllowOptions {
 
 const MEETING_ORDER = [
   "confirm_meeting", "hold_meeting", "resume_meeting", "end_meeting", "delete_meeting", "edit_minutes", "upload_update", "add_item",
-  "edit_speakers", "reprocess_meeting", "resolve_change_request", "request_change", "download_excel", "view_history",
+  "edit_speakers", "reprocess_meeting", "resolve_change_request", "request_change", "download_excel", "view_history", "ask_meeting",
 ];
 const ITEM_ORDER = ["confirm_item", "close_item", "delete_item", "set_assignee", "set_due", "request_change", "find_similar_items", "request_supersede", "supersede_item"];
 
@@ -30,6 +30,7 @@ export function meetingActions(detail: Detail, account: Account, options: AllowO
   const holdable = status === "awaiting_confirmation" || status === "confirmed";
   const out = ["request_change", "download_excel", "view_history"];
   if (account.rank !== "staff") out.push("resolve_change_request");
+  if (phase !== "deleted" && (status === "awaiting_confirmation" || status === "confirmed")) out.push("ask_meeting"); // 정리된 회의록이 있는 열람 가능 회의록(서버 판단 흉내, 작업 89-2a)
   if (lead) {
     if (!locked) {
       out.push("edit_minutes", "upload_update", "add_item", "edit_speakers");
